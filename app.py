@@ -58,6 +58,57 @@ def get_db():
     return conn
 
 
+def init_db():
+    """Crea las tablas si no existen (primer arranque en una base vacía) y,
+    si se definieron INITIAL_ADMIN_USER / INITIAL_ADMIN_PASSWORD y todavía no
+    hay ningún usuario, da de alta ese primer administrador."""
+    db = get_db()
+    db.executescript("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            es_admin INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_usuario ON usuarios (lower(usuario));
+
+        CREATE TABLE IF NOT EXISTS catalogo_vendedores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vendedor TEXT NOT NULL UNIQUE,
+            plaza TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS catalogo_desarrolladores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            desarrollador TEXT NOT NULL UNIQUE,
+            plaza TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS catalogo_presupuesto (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mes TEXT NOT NULL,
+            vendedor TEXT NOT NULL,
+            desarrollador TEXT,
+            presupuesto NUMERIC NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_catalogo_presupuesto_mes_vendedor_dev
+            ON catalogo_presupuesto (mes, vendedor, coalesce(desarrollador, ''));
+    """)
+    db.commit()
+
+    hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
+    admin_inicial = os.environ.get("INITIAL_ADMIN_USER")
+    clave_inicial = os.environ.get("INITIAL_ADMIN_PASSWORD")
+    if hay_usuarios == 0 and admin_inicial and clave_inicial:
+        db.execute(
+            "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (?, ?, 1)",
+            (admin_inicial, generate_password_hash(clave_inicial, method=HASH_METHOD)),
+        )
+        db.commit()
+    db.close()
+
+
 def parse_presupuesto(raw):
     cleaned = (raw or "").replace(",", "").replace("$", "").replace(" ", "").strip()
     return float(cleaned)
@@ -222,6 +273,8 @@ def construir_datos_dashboard():
         "vendedores": sorted(set(f["vendedor"] for f in filas)),
     }
 
+
+init_db()
 
 app = Flask(__name__)
 app.secret_key = get_secret_key()
