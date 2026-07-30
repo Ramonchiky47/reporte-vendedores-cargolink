@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Editar Presupuesto{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<script>
+function formatearMiles(input) {
+  let valor = input.value.replace(/[^0-9.]/g, "");
+  const partes = valor.split(".");
+  let entero = partes[0] || "";
+  const decimal = partes.length > 1 ? "." + partes[1].slice(0, 2) : "";
+  entero = entero.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  input.value = entero + decimal;
+}
+</script>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>Editar presupuesto</h2>
+      <form method="post" action="{{ url_for('catalogo_presupuesto_editar', fila_id=fila.id) }}">
+        <div class="row">
+          <div class="field">
+            <label for="mes">Mes</label>
+            <select id="mes" name="mes" required>
+              {% for opt in opciones_mes %}
+              <option value="{{ opt.value }}" {{ 'selected' if opt.value == fila.mes else '' }}>{{ opt.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="vendedor">Vendedor</label>
+            <select id="vendedor" name="vendedor" required>
+              {% if fila.vendedor not in vendedores %}
+              <option value="{{ fila.vendedor }}" selected>{{ fila.vendedor }} (fuera del catálogo)</option>
+              {% endif %}
+              {% for v in vendedores %}
+              <option value="{{ v }}" {{ 'selected' if v == fila.vendedor else '' }}>{{ v }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="desarrollador">Desarrollador</label>
+            <select id="desarrollador" name="desarrollador">
+              <option value="">Sin desarrollador</option>
+              {% if fila.desarrollador and fila.desarrollador not in desarrolladores %}
+              <option value="{{ fila.desarrollador }}" selected>{{ fila.desarrollador }} (fuera del catálogo)</option>
+              {% endif %}
+              {% for d in desarrolladores %}
+              <option value="{{ d }}" {{ 'selected' if d == fila.desarrollador else '' }}>{{ d }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="presupuesto">Presupuesto</label>
+            <input type="text" id="presupuesto" name="presupuesto" inputmode="decimal" value="{{ '{:,.2f}'.format(fila.presupuesto) }}" oninput="formatearMiles(this)" required>
+          </div>
+        </div>
+        <button type="submit">Guardar cambios</button>
+        <a class="btn secondary" href="{{ url_for('catalogo_presupuesto') }}">Cancelar</a>
+      </form>
+    </div>
+{% endblock %}

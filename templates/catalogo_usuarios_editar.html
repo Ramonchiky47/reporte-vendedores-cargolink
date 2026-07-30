@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Editar Usuario{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Editar usuario</h2>
+      <form method="post" action="{{ url_for('catalogo_usuarios_editar', fila_id=fila.id) }}">
+        <div class="row">
+          <div class="field">
+            <label for="usuario">Usuario</label>
+            <input type="text" id="usuario" name="usuario" value="{{ fila.usuario }}" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="clave">Nueva contraseña</label>
+            <input type="password" id="clave" name="clave" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label for="clave_confirmar">Confirmar nueva contraseña</label>
+            <input type="password" id="clave_confirmar" name="clave_confirmar" autocomplete="new-password">
+          </div>
+        </div>
+        <p class="hint">Deja la contraseña en blanco para conservar la actual.</p>
+        <label style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.85rem;color:#334155;margin-bottom:1rem;">
+          <input type="checkbox" name="es_admin" style="width:auto;" {{ 'checked' if fila.es_admin else '' }}> Es administrador (acceso a Catálogos)
+        </label>
+        <button type="submit">Guardar cambios</button>
+        <a class="btn secondary" href="{{ url_for('catalogo_usuarios') }}">Cancelar</a>
+      </form>
+    </div>
+{% endblock %}

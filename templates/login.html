@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>CargoLink · Acceso</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    background: #0f172a;
+  }
+  .card {
+    background: #ffffff; border-radius: 12px; padding: 2.5rem 2.25rem; width: 100%; max-width: 360px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  }
+  h1 { font-size: 1.25rem; margin: 0 0 .25rem; color: #0f172a; }
+  p.sub { margin: 0 0 1.5rem; color: #64748b; font-size: .9rem; }
+  label { display: block; font-size: .85rem; color: #334155; margin-bottom: .35rem; font-weight: 600; }
+  input {
+    width: 100%; box-sizing: border-box; padding: .6rem .75rem; margin-bottom: 1rem;
+    border: 1px solid #cbd5e1; border-radius: 8px; font-size: .95rem;
+  }
+  input:focus { outline: 2px solid #007CC3; border-color: #007CC3; }
+  button {
+    width: 100%; padding: .7rem; background: #007CC3; color: #fff; border: none; border-radius: 8px;
+    font-size: .95rem; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #0069a3; }
+  .flash { background: #fee2e2; color: #b91c1c; padding: .6rem .75rem; border-radius: 8px; font-size: .85rem; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Reporte de Vendedores</h1>
+    <p class="sub">CargoLink FWD · Inicia sesión para continuar</p>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post" action="{{ url_for('login') }}">
+      <label for="usuario">Usuario</label>
+      <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus>
+      <label for="clave">Contraseña</label>
+      <input type="password" id="clave" name="clave" autocomplete="current-password" required>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

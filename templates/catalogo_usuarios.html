@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Catálogo de Usuarios{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Nuevo usuario</h2>
+      <form method="post" action="{{ url_for('catalogo_usuarios') }}">
+        <div class="row">
+          <div class="field">
+            <label for="usuario">Usuario</label>
+            <input type="text" id="usuario" name="usuario" autocomplete="off" required>
+          </div>
+          <div class="field">
+            <label for="clave">Contraseña</label>
+            <input type="password" id="clave" name="clave" autocomplete="new-password" required>
+          </div>
+          <div class="field">
+            <label for="clave_confirmar">Confirmar contraseña</label>
+            <input type="password" id="clave_confirmar" name="clave_confirmar" autocomplete="new-password" required>
+          </div>
+        </div>
+        <label style="display:flex;align-items:center;gap:.4rem;font-weight:600;font-size:.85rem;color:#334155;margin-bottom:1rem;">
+          <input type="checkbox" name="es_admin" style="width:auto;"> Es administrador (acceso a Catálogos)
+        </label>
+        <button type="submit">Agregar</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Usuarios registrados</h2>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Rol</th><th>Creado</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.usuario }}{% if fila.id == session.get('usuario_id') %} <span style="color:#64748b;font-weight:400;">(tú)</span>{% endif %}</td>
+            <td>{{ "Administrador" if fila.es_admin else "Usuario" }}</td>
+            <td>{{ fila.creado_en }}</td>
+            <td class="actions">
+              <a class="btn small secondary" href="{{ url_for('catalogo_usuarios_editar', fila_id=fila.id) }}">Editar</a>
+              <form class="inline" method="post" action="{{ url_for('catalogo_usuarios_eliminar', fila_id=fila.id) }}" onsubmit="return confirm('¿Eliminar este usuario?');">
+                <button class="small danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay usuarios registrados.</p>
+      {% endif %}
+    </div>
+{% endblock %}

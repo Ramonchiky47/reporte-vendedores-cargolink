@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Catálogos{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Catálogo de Vendedores</h2>
+      <p class="hint">Asocia cada Vendedor a la Plaza a la que pertenece.</p>
+      <a class="btn" href="{{ url_for('catalogo_vendedores') }}">Abrir catálogo de Vendedores</a>
+    </div>
+    <div class="card">
+      <h2>Catálogo de Desarrolladores</h2>
+      <p class="hint">Asocia cada Desarrollador a la Plaza a la que pertenece. Es un catálogo independiente del de Vendedores.</p>
+      <a class="btn" href="{{ url_for('catalogo_desarrolladores') }}">Abrir catálogo de Desarrolladores</a>
+    </div>
+    <div class="card">
+      <h2>Catálogo de Usuarios</h2>
+      <p class="hint">Usuarios y contraseñas que pueden ingresar a esta app.</p>
+      <a class="btn" href="{{ url_for('catalogo_usuarios') }}">Abrir catálogo de Usuarios</a>
+    </div>
+    <div class="card">
+      <h2>Catálogo de Presupuesto</h2>
+      <p class="hint">Presupuesto mensual por Vendedor y Desarrollador.</p>
+      <a class="btn" href="{{ url_for('catalogo_presupuesto') }}">Abrir catálogo de Presupuesto</a>
+    </div>
+{% endblock %}

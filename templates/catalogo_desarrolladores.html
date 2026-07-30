@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Catálogo de Desarrolladores{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Nuevo desarrollador</h2>
+      <form method="post" action="{{ url_for('catalogo_desarrolladores') }}">
+        <div class="row">
+          <div class="field">
+            <label for="desarrollador">Desarrollador</label>
+            <input type="text" id="desarrollador" name="desarrollador" required>
+          </div>
+          <div class="field">
+            <label for="plaza">Plaza</label>
+            <input type="text" id="plaza" name="plaza" required>
+          </div>
+        </div>
+        <button type="submit">Agregar</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Desarrolladores registrados</h2>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Desarrollador</th><th>Plaza</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.desarrollador }}</td>
+            <td>{{ fila.plaza }}</td>
+            <td class="actions">
+              <a class="btn small secondary" href="{{ url_for('catalogo_desarrolladores_editar', fila_id=fila.id) }}">Editar</a>
+              <form class="inline" method="post" action="{{ url_for('catalogo_desarrolladores_eliminar', fila_id=fila.id) }}" onsubmit="return confirm('¿Eliminar este desarrollador?');">
+                <button class="small danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay desarrolladores registrados.</p>
+      {% endif %}
+    </div>
+{% endblock %}

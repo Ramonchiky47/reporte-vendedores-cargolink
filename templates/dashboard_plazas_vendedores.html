@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Dashboard{% endblock %}
+{% set active = "dashboard_plazas_vendedores" %}
+{% block extra_head %}
+<style>
+  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .header-titulo h2 { margin: 0 0 .25rem; }
+  .meta { font-size: .78rem; color: #64748b; margin: 0; }
+  .filtro-mes-bloque { max-width: 260px; }
+  .filtro-mes-bloque h3 {
+    margin: 0 0 .5rem; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #64748b;
+  }
+  select#filtro-mes {
+    width: 100%; padding: .55rem .7rem; border-radius: 8px; border: 1px solid #cbd5e1;
+    font-size: .9rem; font-weight: 600;
+  }
+
+  .tabla-scroll { overflow-x: auto; }
+  table.reporte { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
+  table.reporte thead th {
+    text-align: right; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+    color: #64748b; font-weight: 700; padding: 0 .5rem .5rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+  }
+  table.reporte thead th:first-child { text-align: left; }
+  table.reporte tbody td {
+    padding: .4rem .5rem; text-align: right; border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+  }
+  table.reporte tbody td:first-child {
+    text-align: left; font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+  }
+  table.reporte tbody tr.na td:first-child { color: #94a3b8; font-style: italic; font-weight: 500; }
+  table.reporte td.dif.neg { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+  table.reporte td.dif.pos { color: #166534; font-weight: 700; }
+  table.reporte td.alc.sinppto { color: #94a3b8; font-style: italic; }
+  table.reporte tfoot td {
+    padding: .55rem .5rem; text-align: right; font-weight: 700; border-top: 2px solid #0f172a;
+  }
+  table.reporte tfoot td:first-child { text-align: left; }
+  table.reporte tfoot td.dif.neg { color: #b91c1c; }
+  table.reporte tfoot td.dif.pos { color: #166534; }
+  p.subt { margin: 0 0 .7rem; font-size: .75rem; color: #64748b; }
+  p.nota { font-size: .75rem; color: #64748b; line-height: 1.5; }
+
+  table.reporte tbody tr.clicable { cursor: pointer; }
+  table.reporte tbody tr.clicable td:first-child {
+    color: #007CC3; text-decoration: underline; text-decoration-color: transparent;
+  }
+  table.reporte tbody tr.clicable:hover td:first-child { text-decoration-color: #007CC3; }
+
+  table.reporte tbody tr.margen-bajo td { background: #fee2e2; color: #b91c1c; }
+  table.reporte tbody tr.margen-bajo td:first-child { color: #b91c1c; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
+    align-items: flex-start; justify-content: center; padding: 4vh 1.5rem; z-index: 50; overflow-y: auto;
+  }
+  .modal-overlay.abierto { display: flex; }
+  .modal-panel {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 880px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;
+  }
+  .modal-head h2 { margin: 0; font-size: 1rem; }
+  .modal-head p { margin: .2rem 0 0; font-size: .78rem; color: #64748b; }
+  .modal-volver {
+    display: none; background: none; border: none; padding: 0 0 .35rem; margin: 0;
+    font-size: .78rem; color: #007CC3; cursor: pointer; font-weight: 600;
+  }
+  .modal-volver.visible { display: inline-block; }
+  .modal-volver:hover { text-decoration: underline; }
+  .modal-titulo-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .modal-accion {
+    display: none; background: #f1f5f9; border: 1px solid #cbd5e1; color: #334155;
+    font-size: .72rem; font-weight: 600; padding: .3rem .65rem; border-radius: 999px; cursor: pointer;
+  }
+  .modal-accion.visible { display: inline-block; }
+  .modal-accion:hover { border-color: #007CC3; color: #007CC3; }
+  .modal-cerrar {
+    background: none; border: none; font-size: 1.3rem; line-height: 1; color: #64748b; cursor: pointer;
+    padding: .2rem .4rem; border-radius: 6px;
+  }
+  .modal-cerrar:hover { background: #f1f5f9; color: #0f172a; }
+  .modal-body { padding: 1rem 1.5rem 1.5rem; overflow-y: auto; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <div class="header-row">
+        <div class="header-titulo">
+          <h2>Venta por Plaza</h2>
+          <p class="meta">Reporte: {{ datos.archivo }} · generado {{ datos.generado_en }}</p>
+        </div>
+        <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
+      </div>
+      <div class="filtro-mes-bloque">
+        <h3>Fecha de creación</h3>
+        <select id="filtro-mes"></select>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="subt" id="subt-plaza"></p>
+      <div class="tabla-scroll"><table class="reporte" id="tabla-plaza"></table></div>
+    </div>
+
+    <div class="card">
+      <p class="nota">
+        % Alc Ppto = Profit ÷ Presupuesto · Dif Ppto = Profit − Presupuesto.
+        "#N/D" agrupa vendedores con ventas o presupuesto sin una Plaza asignada todavía en el catálogo de Vendedores.
+        Haz clic en una Plaza para ver sus vendedores, y en un vendedor para ver el detalle de sus bookings del mes.
+      </p>
+    </div>
+
+    <div class="modal-overlay" id="modal-detalle">
+      <div class="modal-panel">
+        <div class="modal-head">
+          <div>
+            <button type="button" class="modal-volver" id="modal-volver">← Volver</button>
+            <div class="modal-titulo-row">
+              <h2 id="modal-titulo">Detalle</h2>
+              <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
+            </div>
+            <p id="modal-subtitulo"></p>
+          </div>
+          <button type="button" class="modal-cerrar" id="modal-cerrar" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="tabla-scroll"><table class="reporte" id="tabla-detalle"></table></div>
+        </div>
+      </div>
+    </div>
+
+<script id="datos-reporte" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  "use strict";
+  const datos = JSON.parse(document.getElementById("datos-reporte").textContent);
+  const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  const estado = { mes: datos.meses[datos.meses.length - 1] };
+
+  function etiquetaMes(mes) {
+    const [anio, m] = mes.split("-");
+    return MESES_ES[parseInt(m, 10) - 1] + " " + anio;
+  }
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function fmtPct(n) { return (n * 100).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + "%"; }
+  function fmtFecha(f) {
+    const [fecha, hora] = f.split(" ");
+    const [anio, mes, dia] = fecha.split("-");
+    return `${dia}/${mes}/${anio} ${hora}`;
+  }
+
+  const selMes = document.getElementById("filtro-mes");
+  datos.meses.forEach((mes) => {
+    const opt = document.createElement("option");
+    opt.value = mes;
+    opt.textContent = etiquetaMes(mes);
+    if (mes === estado.mes) opt.selected = true;
+    selMes.appendChild(opt);
+  });
+  selMes.addEventListener("change", () => { estado.mes = selMes.value; render(); });
+
+  function sumar(filas) {
+    return filas.reduce((acc, f) => {
+      acc.cant_book += f.cant_book; acc.venta += f.venta; acc.profit += f.profit; acc.ppto += f.ppto;
+      return acc;
+    }, { cant_book: 0, venta: 0, profit: 0, ppto: 0 });
+  }
+  function celdaMetricas(row) {
+    const alc = row.ppto > 0 ? row.profit / row.ppto : null;
+    const dif = row.profit - row.ppto;
+    const alcTd = alc === null ? '<td class="alc sinppto">—</td>' : `<td class="alc">${fmtPct(alc)}</td>`;
+    const difClase = dif < 0 ? "neg" : "pos";
+    return `
+      <td>${row.cant_book ? fmtEntero(row.cant_book) : (row.cant_book === 0 ? "—" : "")}</td>
+      <td>${row.venta ? fmtMoneda(row.venta) : "—"}</td>
+      <td>${row.profit ? fmtMoneda(row.profit) : "—"}</td>
+      <td>${row.ppto ? fmtMoneda(row.ppto) : "—"}</td>
+      ${alcTd}
+      <td class="dif ${difClase}">${fmtMoneda(dif)}</td>
+    `;
+  }
+
+  function renderTablaPlaza() {
+    const filas = datos.filas.filter((f) => f.mes === estado.mes);
+    const porPlaza = new Map();
+    filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
+    const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
+    filasAgregadas.sort((a, b) => b.profit - a.profit);
+
+    const tabla = document.getElementById("tabla-plaza");
+    if (filasAgregadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este mes.</caption>';
+      document.getElementById("subt-plaza").textContent = "";
+      return;
+    }
+    const total = sumar(filas);
+    tabla.innerHTML = `
+      <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+      <tbody>${filasAgregadas.map((r) => `<tr class="clicable ${r.plaza === '#N/D' ? 'na' : ''}" data-plaza="${r.plaza.replace(/"/g, "&quot;")}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+      <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+    `;
+    document.getElementById("subt-plaza").textContent = `${filasAgregadas.length} plaza(s) · ${etiquetaMes(estado.mes)}`;
+
+    tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+      tr.addEventListener("click", () => abrirVendedoresDePlaza(tr.dataset.plaza));
+    });
+  }
+
+  // ---- modal: navegación (Vendedores | Plaza -> Vendedores) -> Bookings -> Resumen por cliente ----
+  const modal = document.getElementById("modal-detalle");
+  const btnVolver = document.getElementById("modal-volver");
+  const btnResumenCliente = document.getElementById("btn-resumen-cliente");
+  let volverA = null;
+
+  function renderVendedoresEnModal(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+
+    const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} vendedor(es) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (ordenadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin vendedores para este filtro.</caption>';
+    } else {
+      const total = sumar(ordenadas);
+      tabla.innerHTML = `
+        <thead><tr><th>Vendedor</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${ordenadas.map((r) => `<tr class="clicable" data-vendedor="${r.vendedor.replace(/"/g, "&quot;")}"><td>${r.vendedor}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeVendedor(
+          tr.dataset.vendedor,
+          () => renderVendedoresEnModal(titulo, filas, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function abrirVendedoresDePlaza(plaza) {
+    const filas = datos.filas.filter((f) => f.mes === estado.mes && f.plaza === plaza);
+    renderVendedoresEnModal(plaza, filas, null);
+  }
+
+  function abrirTodosLosVendedores() {
+    const filas = datos.filas.filter((f) => f.mes === estado.mes);
+    renderVendedoresEnModal("Vendedores", filas, null);
+  }
+
+  function bookingsDe(vendedor) {
+    return datos.detalle
+      .filter((d) => d.vendedor === vendedor && d.mes === estado.mes)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+
+  function abrirBookingsDeVendedor(vendedor, volverCallback) {
+    renderBookingsDeVendedor(vendedor, bookingsDe(vendedor), volverCallback);
+  }
+
+  function renderBookingsDeVendedor(vendedor, bookings, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+
+    document.getElementById("modal-titulo").textContent = vendedor;
+    document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaMes(estado.mes)}`;
+
+    btnResumenCliente.classList.toggle("visible", bookings.length > 0);
+    btnResumenCliente.onclick = () => renderResumenCliente(
+      vendedor, bookings, () => renderBookingsDeVendedor(vendedor, bookings, volverCallback)
+    );
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (bookings.length === 0) {
+      tabla.innerHTML = '<caption>Sin bookings para este vendedor en el mes seleccionado.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Referencia</th>
+            <th style="text-align:left;">Fecha de creación</th>
+            <th style="text-align:left;">Ejecutivo</th>
+            <th style="text-align:left;">Venta por</th>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Profit</th>
+            <th>Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bookings.map((b) => `
+            <tr class="${b.margen < 0.07 ? 'margen-bajo' : ''}">
+              <td style="text-align:left;">${b.referencia}</td>
+              <td style="text-align:left;">${fmtFecha(b.fecha)}</td>
+              <td style="text-align:left;">${b.ejecutivo}</td>
+              <td style="text-align:left;">${b.venta_por}</td>
+              <td style="text-align:left;">${b.cliente_servicio}</td>
+              <td>${fmtMoneda(b.profit)}</td>
+              <td>${fmtPct(b.margen)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  function renderResumenCliente(vendedor, bookings, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+
+    const porCliente = new Map();
+    bookings.forEach((b) => {
+      const clave = b.cliente_servicio || "(sin cliente)";
+      if (!porCliente.has(clave)) porCliente.set(clave, { cliente: clave, cantidad: 0, profit: 0 });
+      const acc = porCliente.get(clave);
+      acc.cantidad += 1;
+      acc.profit += b.profit;
+    });
+    const filas = Array.from(porCliente.values()).sort((a, b) => b.profit - a.profit);
+
+    document.getElementById("modal-titulo").textContent = vendedor;
+    document.getElementById("modal-subtitulo").textContent =
+      `Resumen por cliente · ${filas.length} cliente(s) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este vendedor en el mes seleccionado.</caption>';
+    } else {
+      const totalCant = filas.reduce((acc, f) => acc + f.cantidad, 0);
+      const totalProfit = filas.reduce((acc, f) => acc + f.profit, 0);
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Cantidad de Booking</th>
+            <th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filas.map((f) => `
+            <tr>
+              <td style="text-align:left;">${f.cliente}</td>
+              <td>${fmtEntero(f.cantidad)}</td>
+              <td>${fmtMoneda(f.profit)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr><td>Total general</td><td>${fmtEntero(totalCant)}</td><td>${fmtMoneda(totalProfit)}</td></tr>
+        </tfoot>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  btnVolver.addEventListener("click", () => { if (volverA) volverA(); });
+  document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
+
+  function cerrarModal() { modal.classList.remove("abierto"); }
+  document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+
+  function render() {
+    renderTablaPlaza();
+  }
+  render();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Reporte de Vendedores{% endblock %}
+{% set active = "dashboard" %}
+{% block content %}
+    <div class="card">
+      <h2>Generar reporte</h2>
+      <form method="post" action="{{ url_for('generar') }}">
+        <div class="row">
+          <div class="field">
+            <label for="fecha_inicio">Fecha inicio (opcional)</label>
+            <input type="date" id="fecha_inicio" name="fecha_inicio">
+          </div>
+          <div class="field">
+            <label for="fecha_fin">Fecha fin (opcional)</label>
+            <input type="date" id="fecha_fin" name="fecha_fin">
+          </div>
+        </div>
+        <p class="hint">Si se dejan en blanco, se descarga todo el año en curso a la fecha.</p>
+        <button type="submit">Generar reporte de vendedores</button>
+      </form>
+
+      {% if resultado %}
+        <div class="result {{ 'ok' if resultado.ok else 'error' }}">
+          {{ resultado.mensaje }}
+          {% if resultado.ok %}
+            <br><a href="{{ url_for('descargar', filename=resultado.archivo) }}">Descargar {{ resultado.archivo }}</a>
+          {% endif %}
+          {% if resultado.detalle %}
+            <pre>{{ resultado.detalle }}</pre>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+{% endblock %}

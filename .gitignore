@@ -1,0 +1,17 @@
+# secretos y configuración local
+.env
+.secret_key
+config.json
+
+# datos locales (persisten en el Volume de Railway, no en el repo)
+reporte_vendedores.db
+reporte_vendedores.db-journal
+Reporte_Vendedores_*.xlsx
+Reporte_de_Vendedores_*.xlsx
+
+# python
+__pycache__/
+*.pyc
+
+# sistema
+.DS_Store

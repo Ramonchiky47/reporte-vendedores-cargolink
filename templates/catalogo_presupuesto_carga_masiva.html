@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Carga masiva de Presupuesto{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Carga masiva de presupuesto</h2>
+      <p class="hint">
+        Sube un archivo .csv o .xlsx con las columnas <strong>mes, vendedor, desarrollador, presupuesto</strong>
+        (mes en formato AAAA-MM, por ejemplo 2026-07). Si ya existe un presupuesto para el mismo mes, vendedor y
+        desarrollador, se actualiza; si no existe, se agrega.
+      </p>
+      <p><a href="{{ url_for('catalogo_presupuesto_plantilla') }}">Descargar plantilla .xlsx</a></p>
+      <form method="post" action="{{ url_for('catalogo_presupuesto_carga_masiva') }}" enctype="multipart/form-data">
+        <div class="row">
+          <div class="field">
+            <label for="archivo">Archivo (.csv o .xlsx)</label>
+            <input type="file" id="archivo" name="archivo" accept=".csv,.xlsx" required>
+          </div>
+        </div>
+        <button type="submit">Cargar archivo</button>
+        <a class="btn secondary" href="{{ url_for('catalogo_presupuesto') }}">Cancelar</a>
+      </form>
+
+      {% if resultado %}
+        <div class="result {{ 'ok' if resultado.ok else 'error' }}">
+          {{ resultado.mensaje }}
+          {% if resultado.errores %}
+            <pre>{{ resultado.errores | join('\n') }}</pre>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+{% endblock %}
