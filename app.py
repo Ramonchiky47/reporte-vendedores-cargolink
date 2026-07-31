@@ -28,7 +28,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 HASH_METHOD = "pbkdf2:sha256"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -37,7 +37,7 @@ CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores
 
 
 def get_secret_key():
-    env_key = os.environ.get("SECRET_KEY")
+    env_key = (os.environ.get("SECRET_KEY") or "").strip()
     if env_key:
         return env_key
     # Sin SECRET_KEY fija, las sesiones no sobreviven un reinicio del proceso
@@ -120,8 +120,8 @@ def init_db():
     db.commit()
 
     hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
-    admin_inicial = os.environ.get("INITIAL_ADMIN_USER")
-    clave_inicial = os.environ.get("INITIAL_ADMIN_PASSWORD")
+    admin_inicial = (os.environ.get("INITIAL_ADMIN_USER") or "").strip()
+    clave_inicial = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
     if hay_usuarios == 0 and admin_inicial and clave_inicial:
         db.execute(
             "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (%s, %s, true)",
@@ -191,8 +191,8 @@ def normalizar(texto):
 def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
     """Se conecta a CargoLink, descarga el reporte de vendedores del rango
     dado y regresa una lista de dicts (uno por booking). No toca el disco."""
-    usuario = os.environ.get("CARGOLINK_USUARIO")
-    password = os.environ.get("CARGOLINK_PASSWORD")
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
     if not usuario or not password:
         raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
 
