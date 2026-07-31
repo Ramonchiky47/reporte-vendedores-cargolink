@@ -23,7 +23,7 @@
         <div class="result {{ 'ok' if resultado.ok else 'error' }}">
           {{ resultado.mensaje }}
           {% if resultado.ok %}
-            <br><a href="{{ url_for('descargar', filename=resultado.archivo) }}">Descargar {{ resultado.archivo }}</a>
+            <br><a href="{{ url_for('descargar') }}">Descargar Excel</a>
           {% endif %}
           {% if resultado.detalle %}
             <pre>{{ resultado.detalle }}</pre>

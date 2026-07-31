@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""App local con login y un botón para generar el Reporte de Vendedores de CargoLink."""
+"""App con login y un botón para generar el Reporte de Vendedores de CargoLink.
+
+Backend de datos: Postgres (Supabase), vía DATABASE_URL. Pensada para correr
+tanto local como en una plataforma serverless (Vercel): no depende de disco
+persistente ni de subprocesos — la descarga de CargoLink corre inline y los
+resultados se guardan directo en la base de datos.
+"""
 
 import csv
 import io
@@ -7,55 +13,42 @@ import json
 import os
 import re
 import secrets
-import sqlite3
-import subprocess
 from datetime import datetime
 from functools import wraps
 
 import openpyxl
+import psycopg
+import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, send_file, send_from_directory, session, url_for
+from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from psycopg.rows import dict_row
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
-# DATA_DIR es donde vive todo lo que debe persistir (base de datos, clave de
-# sesión, reportes descargados). En local es la propia carpeta webapp/; en
-# Railway se apunta a la ruta del Volume vía la variable de entorno DATA_DIR.
-DATA_DIR = os.environ.get("DATA_DIR") or BASE_DIR
-os.makedirs(DATA_DIR, exist_ok=True)
-
-REPORTS_DIR = os.environ.get("REPORTES_DIR") or DATA_DIR
-os.makedirs(REPORTS_DIR, exist_ok=True)
-
-SCRIPT_PATH = os.path.join(BASE_DIR, "descargar_reporte.py")
-SECRET_KEY_PATH = os.path.join(DATA_DIR, ".secret_key")
-DB_PATH = os.path.join(DATA_DIR, "reporte_vendedores.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 HASH_METHOD = "pbkdf2:sha256"
-
-REPORT_FILENAME_RE = re.compile(r"^Reporte_Vendedores_\d{4}-\d{2}-\d{2}_al_\d{4}-\d{2}-\d{2}\.xlsx$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
+CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
 
 
 def get_secret_key():
     env_key = os.environ.get("SECRET_KEY")
     if env_key:
         return env_key
-    if os.path.exists(SECRET_KEY_PATH):
-        with open(SECRET_KEY_PATH, "r") as f:
-            return f.read().strip()
-    key = secrets.token_hex(32)
-    with open(SECRET_KEY_PATH, "w") as f:
-        f.write(key)
-    return key
+    # Sin SECRET_KEY fija, las sesiones no sobreviven un reinicio del proceso
+    # (normal en serverless). Sirve para correr rápido en local sin configurar nada.
+    return secrets.token_hex(32)
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    if not DATABASE_URL:
+        raise RuntimeError("Falta la variable de entorno DATABASE_URL.")
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
 def init_db():
@@ -63,37 +56,66 @@ def init_db():
     si se definieron INITIAL_ADMIN_USER / INITIAL_ADMIN_PASSWORD y todavía no
     hay ningún usuario, da de alta ese primer administrador."""
     db = get_db()
-    db.executescript("""
+    db.execute("""
         CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario TEXT NOT NULL,
-            password_hash TEXT NOT NULL,
-            creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            es_admin INTEGER NOT NULL DEFAULT 0
+            id bigint generated always as identity primary key,
+            usuario text not null,
+            password_hash text not null,
+            creado_en timestamptz not null default now(),
+            es_admin boolean not null default false
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_usuario ON usuarios (lower(usuario));
-
+    """)
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_usuario ON usuarios (lower(usuario));")
+    db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            vendedor TEXT NOT NULL UNIQUE,
-            plaza TEXT NOT NULL
+            id bigint generated always as identity primary key,
+            vendedor text not null unique,
+            plaza text not null
         );
-
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_desarrolladores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            desarrollador TEXT NOT NULL UNIQUE,
-            plaza TEXT NOT NULL
+            id bigint generated always as identity primary key,
+            desarrollador text not null unique,
+            plaza text not null
         );
-
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_presupuesto (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            mes TEXT NOT NULL,
-            vendedor TEXT NOT NULL,
-            desarrollador TEXT,
-            presupuesto NUMERIC NOT NULL
+            id bigint generated always as identity primary key,
+            mes text not null,
+            vendedor text not null,
+            desarrollador text,
+            presupuesto numeric not null
         );
+    """)
+    db.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_catalogo_presupuesto_mes_vendedor_dev
             ON catalogo_presupuesto (mes, vendedor, coalesce(desarrollador, ''));
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS reporte_bookings (
+            id bigint generated always as identity primary key,
+            mes text not null,
+            vendedor text not null,
+            referencia text,
+            fecha timestamptz,
+            ejecutivo text,
+            venta_por text,
+            cliente_servicio text,
+            venta numeric not null default 0,
+            profit numeric not null default 0,
+            margen numeric not null default 0
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_reporte_bookings_mes_vendedor ON reporte_bookings (mes, vendedor);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS reporte_generaciones (
+            id bigint generated always as identity primary key,
+            fecha_inicio date not null,
+            fecha_fin date not null,
+            generado_en timestamptz not null default now()
+        );
     """)
     db.commit()
 
@@ -102,7 +124,7 @@ def init_db():
     clave_inicial = os.environ.get("INITIAL_ADMIN_PASSWORD")
     if hay_usuarios == 0 and admin_inicial and clave_inicial:
         db.execute(
-            "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (?, ?, 1)",
+            "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (%s, %s, true)",
             (admin_inicial, generate_password_hash(clave_inicial, method=HASH_METHOD)),
         )
         db.commit()
@@ -121,16 +143,12 @@ MESES_ES = [
 
 
 def get_vendedores(db):
-    filas = db.execute(
-        "SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor"
-    ).fetchall()
+    filas = db.execute("SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor").fetchall()
     return [f["vendedor"] for f in filas]
 
 
 def get_desarrolladores(db):
-    filas = db.execute(
-        "SELECT desarrollador FROM catalogo_desarrolladores ORDER BY desarrollador"
-    ).fetchall()
+    filas = db.execute("SELECT desarrollador FROM catalogo_desarrolladores ORDER BY desarrollador").fetchall()
     return [f["desarrollador"] for f in filas]
 
 
@@ -170,78 +188,132 @@ def normalizar(texto):
     return (texto or "").strip().upper()
 
 
-def archivo_reporte_mas_reciente():
-    candidatos = [
-        f for f in os.listdir(REPORTS_DIR)
-        if REPORT_FILENAME_RE.match(f) and os.path.isfile(os.path.join(REPORTS_DIR, f))
-    ]
-    if not candidatos:
-        return None
-    candidatos.sort(key=lambda f: os.path.getmtime(os.path.join(REPORTS_DIR, f)), reverse=True)
-    return os.path.join(REPORTS_DIR, candidatos[0])
+def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
+    """Se conecta a CargoLink, descarga el reporte de vendedores del rango
+    dado y regresa una lista de dicts (uno por booking). No toca el disco."""
+    usuario = os.environ.get("CARGOLINK_USUARIO")
+    password = os.environ.get("CARGOLINK_PASSWORD")
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    report_url = (
+        f"{CARGOLINK_REPORT_URL}?fecha_inicio={fecha_inicio}&fecha_fin={fecha_fin}&"
+        f"ejecutivo=undefined&vendedor=undefined&id_cliente=undefined&"
+        f"sucursal=undefined&id_cliente_factura=undefined&status_booking=1,2"
+    )
+    res = sesion.get(report_url, headers=headers, timeout=120)
+    if res.status_code != 200 or len(res.content) == 0:
+        raise RuntimeError("Error al descargar el reporte desde CargoLink.")
+
+    soup = BeautifulSoup(res.content, "html.parser")
+    header_map = None
+    bookings = []
+    campos_necesarios = {
+        "Referencia": "referencia", "Fecha de creacion": "fecha", "Vendedor": "vendedor",
+        "Ejecutivo": "ejecutivo", "Venta por": "venta_por", "Cliente servicio": "cliente_servicio",
+        "Venta": "venta", "Profit": "profit", "Margen": "margen",
+    }
+
+    for tr in soup.find_all("tr"):
+        celdas = [td.get_text(strip=True) for td in tr.find_all(["th", "td"])]
+        if not celdas:
+            continue
+        if len(celdas) == 1:
+            continue  # fila de título ("REPORTE DE VENDEDORES")
+        if "Referencia" in celdas or "Vendedor" in celdas:
+            header_map = {i: nombre for i, nombre in enumerate(celdas)}
+            continue
+        if header_map is None:
+            continue
+
+        fila = {campos_necesarios[header_map[i]]: v for i, v in enumerate(celdas) if header_map.get(i) in campos_necesarios}
+        if not fila.get("vendedor") or not fila.get("fecha"):
+            continue
+
+        fecha_texto = fila["fecha"].split(" ")[0]
+        try:
+            fecha_dt = datetime.strptime(fila["fecha"], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            try:
+                fecha_dt = datetime.strptime(fecha_texto, "%Y-%m-%d")
+            except ValueError:
+                continue
+
+        def num(v):
+            v = (v or "0").replace(",", "").replace("$", "").replace("%", "").strip()
+            try:
+                return float(v)
+            except ValueError:
+                return 0.0
+
+        bookings.append({
+            "mes": fecha_dt.strftime("%Y-%m"),
+            "vendedor": fila["vendedor"],
+            "referencia": fila.get("referencia", ""),
+            "fecha": fecha_dt,
+            "ejecutivo": fila.get("ejecutivo", ""),
+            "venta_por": fila.get("venta_por", ""),
+            "cliente_servicio": fila.get("cliente_servicio", ""),
+            "venta": num(fila.get("venta")),
+            "profit": num(fila.get("profit")),
+            "margen": num(fila.get("margen")),
+        })
+
+    return bookings
 
 
 def construir_datos_dashboard():
-    ruta_reporte = archivo_reporte_mas_reciente()
-    if ruta_reporte is None:
+    db = get_db()
+    meta = db.execute(
+        "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
+    ).fetchone()
+    if meta is None:
+        db.close()
         return None
 
-    db = get_db()
     catalogo_vendedor = {}
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
         catalogo_vendedor[normalizar(r["vendedor"])] = {"plaza": r["plaza"], "nombre": r["vendedor"]}
 
     presupuesto_por_mes_vendedor = {}
-    nombre_por_norm = {}
     for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto"):
         clave = (r["mes"], normalizar(r["vendedor"]))
-        presupuesto_por_mes_vendedor[clave] = presupuesto_por_mes_vendedor.get(clave, 0.0) + r["presupuesto"]
-        nombre_por_norm.setdefault(normalizar(r["vendedor"]), r["vendedor"])
-    db.close()
+        presupuesto_por_mes_vendedor[clave] = presupuesto_por_mes_vendedor.get(clave, 0.0) + float(r["presupuesto"])
 
-    wb = openpyxl.load_workbook(ruta_reporte, data_only=True)
-    ws = wb.active
-    filas_hoja = list(ws.iter_rows(values_only=True))
-    header = filas_hoja[2]
-    idx = {name: i for i, name in enumerate(header) if name}
-    i_fecha = idx["Fecha de creacion"]
-    i_vendedor = idx["Vendedor"]
-    i_venta = idx["Venta"]
-    i_profit = idx["Profit"]
-    i_referencia = idx["Referencia"]
-    i_ejecutivo = idx["Ejecutivo"]
-    i_venta_por = idx["Venta por"]
-    i_cliente_servicio = idx["Cliente servicio"]
-    i_margen = idx["Margen"]
+    bookings = db.execute(
+        "SELECT mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen "
+        "FROM reporte_bookings"
+    ).fetchall()
+    db.close()
 
     agregados = {}
     detalle = []
-    for r in filas_hoja[3:]:
-        fecha = r[i_fecha]
-        vendedor_raw = r[i_vendedor]
-        if not isinstance(fecha, datetime) or not isinstance(vendedor_raw, str):
-            continue
-        mes = fecha.strftime("%Y-%m")
-        vkey = normalizar(vendedor_raw)
-        nombre_por_norm.setdefault(vkey, vendedor_raw)
-        clave = (mes, vkey)
+    for r in bookings:
+        vkey = normalizar(r["vendedor"])
+        clave = (r["mes"], vkey)
         agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
         agg["cant_book"] += 1
-        agg["venta"] += float(r[i_venta] or 0)
-        agg["profit"] += float(r[i_profit] or 0)
+        agg["venta"] += float(r["venta"])
+        agg["profit"] += float(r["profit"])
 
         cat = catalogo_vendedor.get(vkey)
-        nombre_canonico = cat["nombre"] if cat else nombre_por_norm[vkey]
+        nombre_canonico = cat["nombre"] if cat else r["vendedor"]
         detalle.append({
-            "mes": mes,
+            "mes": r["mes"],
             "vendedor": nombre_canonico,
-            "referencia": r[i_referencia] or "",
-            "fecha": fecha.strftime("%Y-%m-%d %H:%M"),
-            "ejecutivo": r[i_ejecutivo] or "",
-            "venta_por": r[i_venta_por] or "",
-            "cliente_servicio": r[i_cliente_servicio] or "",
-            "profit": round(float(r[i_profit] or 0), 2),
-            "margen": round(float(r[i_margen] or 0), 4),
+            "referencia": r["referencia"] or "",
+            "fecha": r["fecha"].strftime("%Y-%m-%d %H:%M") if r["fecha"] else "",
+            "ejecutivo": r["ejecutivo"] or "",
+            "venta_por": r["venta_por"] or "",
+            "cliente_servicio": r["cliente_servicio"] or "",
+            "profit": round(float(r["profit"]), 2),
+            "margen": round(float(r["margen"]), 4),
         })
 
     for clave in presupuesto_por_mes_vendedor:
@@ -251,7 +323,7 @@ def construir_datos_dashboard():
     for (mes, vkey), agg in agregados.items():
         cat = catalogo_vendedor.get(vkey)
         plaza = cat["plaza"] if cat else "#N/D"
-        nombre = cat["nombre"] if cat else nombre_por_norm.get(vkey, vkey)
+        nombre = cat["nombre"] if cat else vkey
         ppto = presupuesto_por_mes_vendedor.get((mes, vkey), 0.0)
         filas.append({
             "mes": mes,
@@ -264,8 +336,8 @@ def construir_datos_dashboard():
         })
 
     return {
-        "archivo": os.path.basename(ruta_reporte),
-        "generado_en": datetime.fromtimestamp(os.path.getmtime(ruta_reporte)).strftime("%d/%m/%Y %H:%M"),
+        "archivo": f"Reporte {meta['fecha_inicio']} al {meta['fecha_fin']}",
+        "generado_en": meta["generado_en"].strftime("%d/%m/%Y %H:%M"),
         "filas": filas,
         "detalle": detalle,
         "meses": sorted(set(f["mes"] for f in filas)),
@@ -274,7 +346,10 @@ def construir_datos_dashboard():
     }
 
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    print(f"Aviso: no se pudo inicializar la base de datos al arrancar ({e}).")
 
 app = Flask(__name__)
 app.secret_key = get_secret_key()
@@ -309,7 +384,7 @@ def login():
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "")
         db = get_db()
-        fila = db.execute("SELECT * FROM usuarios WHERE lower(usuario) = lower(?)", (usuario,)).fetchone()
+        fila = db.execute("SELECT * FROM usuarios WHERE lower(usuario) = lower(%s)", (usuario,)).fetchone()
         db.close()
         if fila and check_password_hash(fila["password_hash"], clave):
             session["logged_in"] = True
@@ -339,50 +414,79 @@ def generar():
     fecha_inicio = request.form.get("fecha_inicio", "").strip()
     fecha_fin = request.form.get("fecha_fin", "").strip()
 
-    args = ["python3", SCRIPT_PATH]
-    if fecha_inicio:
-        if not DATE_RE.match(fecha_inicio):
-            session["resultado"] = {"ok": False, "mensaje": "Fecha de inicio inválida."}
-            return redirect(url_for("dashboard"))
-        args.append(fecha_inicio)
-        if fecha_fin:
-            if not DATE_RE.match(fecha_fin):
-                session["resultado"] = {"ok": False, "mensaje": "Fecha de fin inválida."}
-                return redirect(url_for("dashboard"))
-            args.append(fecha_fin)
+    if fecha_inicio and not DATE_RE.match(fecha_inicio):
+        session["resultado"] = {"ok": False, "mensaje": "Fecha de inicio inválida."}
+        return redirect(url_for("dashboard"))
+    if fecha_fin and not DATE_RE.match(fecha_fin):
+        session["resultado"] = {"ok": False, "mensaje": "Fecha de fin inválida."}
+        return redirect(url_for("dashboard"))
+
+    now = datetime.now()
+    fecha_inicio = fecha_inicio or f"{now.year}-01-01"
+    fecha_fin = fecha_fin or now.strftime("%Y-%m-%d")
 
     try:
-        entorno = {**os.environ, "REPORTES_DIR": REPORTS_DIR}
-        proc = subprocess.run(args, cwd=REPORTS_DIR, env=entorno, capture_output=True, text=True, timeout=300)
-    except subprocess.TimeoutExpired:
-        session["resultado"] = {"ok": False, "mensaje": "Tiempo de espera agotado al generar el reporte."}
+        bookings = descargar_bookings_cargolink(fecha_inicio, fecha_fin)
+    except Exception as e:
+        session["resultado"] = {"ok": False, "mensaje": "Error al generar el reporte.", "detalle": str(e)[:1500]}
         return redirect(url_for("dashboard"))
 
-    output = (proc.stdout or "") + (proc.stderr or "")
-    if proc.returncode != 0:
-        session["resultado"] = {"ok": False, "mensaje": "Error al generar el reporte.", "detalle": output[-2000:]}
+    if not bookings:
+        session["resultado"] = {"ok": False, "mensaje": "CargoLink no devolvió bookings para ese rango de fechas."}
         return redirect(url_for("dashboard"))
 
-    match = re.search(r"Excel guardado exitosamente en: (.+\.xlsx)", output)
-    if not match:
-        session["resultado"] = {"ok": False, "mensaje": "No se pudo localizar el archivo generado.", "detalle": output[-2000:]}
-        return redirect(url_for("dashboard"))
+    db = get_db()
+    db.execute("DELETE FROM reporte_bookings")
+    for b in bookings:
+        db.execute(
+            "INSERT INTO reporte_bookings (mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen) "
+            "VALUES (%(mes)s, %(vendedor)s, %(referencia)s, %(fecha)s, %(ejecutivo)s, %(venta_por)s, %(cliente_servicio)s, %(venta)s, %(profit)s, %(margen)s)",
+            b,
+        )
+    db.execute(
+        "INSERT INTO reporte_generaciones (fecha_inicio, fecha_fin) VALUES (%s, %s)",
+        (fecha_inicio, fecha_fin),
+    )
+    db.commit()
+    db.close()
 
-    filename = os.path.basename(match.group(1).strip())
-    if not REPORT_FILENAME_RE.match(filename):
-        session["resultado"] = {"ok": False, "mensaje": "Nombre de archivo generado no reconocido."}
-        return redirect(url_for("dashboard"))
-
-    session["resultado"] = {"ok": True, "mensaje": "Reporte generado correctamente.", "archivo": filename}
+    session["resultado"] = {"ok": True, "mensaje": f"Reporte generado correctamente ({len(bookings)} bookings)."}
     return redirect(url_for("dashboard"))
 
 
-@app.route("/descargar/<path:filename>")
+@app.route("/descargar")
 @login_required
-def descargar(filename):
-    if not REPORT_FILENAME_RE.match(filename):
-        return "Archivo no válido", 400
-    return send_from_directory(REPORTS_DIR, filename, as_attachment=True)
+def descargar():
+    db = get_db()
+    filas = db.execute(
+        "SELECT mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen "
+        "FROM reporte_bookings ORDER BY fecha DESC"
+    ).fetchall()
+    db.close()
+    if not filas:
+        flash("Todavía no hay ningún reporte generado.")
+        return redirect(url_for("dashboard"))
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Reporte Vendedores"
+    encabezados = ["Referencia", "Fecha de creación", "Vendedor", "Ejecutivo", "Venta por", "Cliente servicio", "Venta", "Profit", "Margen"]
+    ws.append(encabezados)
+    for r in filas:
+        ws.append([
+            r["referencia"], r["fecha"].strftime("%Y-%m-%d %H:%M") if r["fecha"] else "", r["vendedor"],
+            r["ejecutivo"], r["venta_por"], r["cliente_servicio"],
+            float(r["venta"]), float(r["profit"]), float(r["margen"]),
+        ])
+    ws.freeze_panes = "A2"
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=True, download_name="Reporte_Vendedores.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/dashboard")
@@ -413,13 +517,12 @@ def catalogo_vendedores():
             flash("Vendedor y Plaza son obligatorios.")
         else:
             try:
-                db.execute(
-                    "INSERT INTO catalogo_vendedores (vendedor, plaza) VALUES (?, ?)",
-                    (vendedor, plaza),
-                )
+                db.execute("INSERT INTO catalogo_vendedores (vendedor, plaza) VALUES (%s, %s)", (vendedor, plaza))
                 db.commit()
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese Vendedor ya existe en el catálogo.")
+        db.close()
         return redirect(url_for("catalogo_vendedores"))
 
     filas = db.execute("SELECT * FROM catalogo_vendedores ORDER BY plaza, vendedor").fetchall()
@@ -439,16 +542,17 @@ def catalogo_vendedores_editar(fila_id):
         else:
             try:
                 db.execute(
-                    "UPDATE catalogo_vendedores SET vendedor = ?, plaza = ? WHERE id = ?",
+                    "UPDATE catalogo_vendedores SET vendedor = %s, plaza = %s WHERE id = %s",
                     (vendedor, plaza, fila_id),
                 )
                 db.commit()
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese Vendedor ya existe en el catálogo.")
             db.close()
             return redirect(url_for("catalogo_vendedores"))
 
-    fila = db.execute("SELECT * FROM catalogo_vendedores WHERE id = ?", (fila_id,)).fetchone()
+    fila = db.execute("SELECT * FROM catalogo_vendedores WHERE id = %s", (fila_id,)).fetchone()
     db.close()
     if fila is None:
         return "No encontrado", 404
@@ -459,7 +563,7 @@ def catalogo_vendedores_editar(fila_id):
 @admin_required
 def catalogo_vendedores_eliminar(fila_id):
     db = get_db()
-    db.execute("DELETE FROM catalogo_vendedores WHERE id = ?", (fila_id,))
+    db.execute("DELETE FROM catalogo_vendedores WHERE id = %s", (fila_id,))
     db.commit()
     db.close()
     return redirect(url_for("catalogo_vendedores"))
@@ -476,13 +580,12 @@ def catalogo_desarrolladores():
             flash("Desarrollador y Plaza son obligatorios.")
         else:
             try:
-                db.execute(
-                    "INSERT INTO catalogo_desarrolladores (desarrollador, plaza) VALUES (?, ?)",
-                    (desarrollador, plaza),
-                )
+                db.execute("INSERT INTO catalogo_desarrolladores (desarrollador, plaza) VALUES (%s, %s)", (desarrollador, plaza))
                 db.commit()
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese Desarrollador ya existe en el catálogo.")
+        db.close()
         return redirect(url_for("catalogo_desarrolladores"))
 
     filas = db.execute("SELECT * FROM catalogo_desarrolladores ORDER BY plaza, desarrollador").fetchall()
@@ -502,16 +605,17 @@ def catalogo_desarrolladores_editar(fila_id):
         else:
             try:
                 db.execute(
-                    "UPDATE catalogo_desarrolladores SET desarrollador = ?, plaza = ? WHERE id = ?",
+                    "UPDATE catalogo_desarrolladores SET desarrollador = %s, plaza = %s WHERE id = %s",
                     (desarrollador, plaza, fila_id),
                 )
                 db.commit()
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese Desarrollador ya existe en el catálogo.")
             db.close()
             return redirect(url_for("catalogo_desarrolladores"))
 
-    fila = db.execute("SELECT * FROM catalogo_desarrolladores WHERE id = ?", (fila_id,)).fetchone()
+    fila = db.execute("SELECT * FROM catalogo_desarrolladores WHERE id = %s", (fila_id,)).fetchone()
     db.close()
     if fila is None:
         return "No encontrado", 404
@@ -522,7 +626,7 @@ def catalogo_desarrolladores_editar(fila_id):
 @admin_required
 def catalogo_desarrolladores_eliminar(fila_id):
     db = get_db()
-    db.execute("DELETE FROM catalogo_desarrolladores WHERE id = ?", (fila_id,))
+    db.execute("DELETE FROM catalogo_desarrolladores WHERE id = %s", (fila_id,))
     db.commit()
     db.close()
     return redirect(url_for("catalogo_desarrolladores"))
@@ -536,7 +640,7 @@ def catalogo_usuarios():
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "")
         clave_confirmar = request.form.get("clave_confirmar", "")
-        es_admin = 1 if request.form.get("es_admin") else 0
+        es_admin = bool(request.form.get("es_admin"))
         if not usuario or not clave:
             flash("Usuario y contraseña son obligatorios.")
         elif clave != clave_confirmar:
@@ -544,12 +648,14 @@ def catalogo_usuarios():
         else:
             try:
                 db.execute(
-                    "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (?, ?, ?)",
+                    "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (%s, %s, %s)",
                     (usuario, generate_password_hash(clave, method=HASH_METHOD), es_admin),
                 )
                 db.commit()
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese usuario ya existe.")
+        db.close()
         return redirect(url_for("catalogo_usuarios"))
 
     filas = db.execute("SELECT id, usuario, creado_en, es_admin FROM usuarios ORDER BY usuario").fetchall()
@@ -565,9 +671,9 @@ def catalogo_usuarios_editar(fila_id):
         usuario = request.form.get("usuario", "").strip()
         clave = request.form.get("clave", "")
         clave_confirmar = request.form.get("clave_confirmar", "")
-        es_admin = 1 if request.form.get("es_admin") else 0
-        admins_actuales = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = 1").fetchone()["c"]
-        fila_actual = db.execute("SELECT es_admin FROM usuarios WHERE id = ?", (fila_id,)).fetchone()
+        es_admin = bool(request.form.get("es_admin"))
+        admins_actuales = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = true").fetchone()["c"]
+        fila_actual = db.execute("SELECT es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
         if not usuario:
             flash("El usuario es obligatorio.")
         elif clave != clave_confirmar:
@@ -578,24 +684,25 @@ def catalogo_usuarios_editar(fila_id):
             try:
                 if clave:
                     db.execute(
-                        "UPDATE usuarios SET usuario = ?, password_hash = ?, es_admin = ? WHERE id = ?",
+                        "UPDATE usuarios SET usuario = %s, password_hash = %s, es_admin = %s WHERE id = %s",
                         (usuario, generate_password_hash(clave, method=HASH_METHOD), es_admin, fila_id),
                     )
                 else:
                     db.execute(
-                        "UPDATE usuarios SET usuario = ?, es_admin = ? WHERE id = ?",
+                        "UPDATE usuarios SET usuario = %s, es_admin = %s WHERE id = %s",
                         (usuario, es_admin, fila_id),
                     )
                 db.commit()
                 if fila_id == session.get("usuario_id"):
                     session["usuario"] = usuario
                     session["es_admin"] = bool(es_admin)
-            except sqlite3.IntegrityError:
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
                 flash("Ese usuario ya existe.")
             db.close()
             return redirect(url_for("catalogo_usuarios"))
 
-    fila = db.execute("SELECT id, usuario, es_admin FROM usuarios WHERE id = ?", (fila_id,)).fetchone()
+    fila = db.execute("SELECT id, usuario, es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
     db.close()
     if fila is None:
         return "No encontrado", 404
@@ -607,8 +714,8 @@ def catalogo_usuarios_editar(fila_id):
 def catalogo_usuarios_eliminar(fila_id):
     db = get_db()
     total = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
-    admins = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = 1").fetchone()["c"]
-    fila = db.execute("SELECT es_admin FROM usuarios WHERE id = ?", (fila_id,)).fetchone()
+    admins = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = true").fetchone()["c"]
+    fila = db.execute("SELECT es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
     if total <= 1:
         flash("No puedes eliminar el único usuario que queda.")
     elif fila_id == session.get("usuario_id"):
@@ -616,7 +723,7 @@ def catalogo_usuarios_eliminar(fila_id):
     elif fila and fila["es_admin"] and admins <= 1:
         flash("No puedes eliminar al único administrador que queda.")
     else:
-        db.execute("DELETE FROM usuarios WHERE id = ?", (fila_id,))
+        db.execute("DELETE FROM usuarios WHERE id = %s", (fila_id,))
         db.commit()
     db.close()
     return redirect(url_for("catalogo_usuarios"))
@@ -642,17 +749,17 @@ def catalogo_presupuesto():
             if presupuesto is not None:
                 try:
                     db.execute(
-                        "INSERT INTO catalogo_presupuesto (mes, vendedor, desarrollador, presupuesto) VALUES (?, ?, ?, ?)",
+                        "INSERT INTO catalogo_presupuesto (mes, vendedor, desarrollador, presupuesto) VALUES (%s, %s, %s, %s)",
                         (mes, vendedor, desarrollador, presupuesto),
                     )
                     db.commit()
-                except sqlite3.IntegrityError:
+                except psycopg.errors.UniqueViolation:
+                    db.rollback()
                     flash("Ya existe un presupuesto para ese Mes, Vendedor y Desarrollador.")
+        db.close()
         return redirect(url_for("catalogo_presupuesto"))
 
-    filas = db.execute(
-        "SELECT * FROM catalogo_presupuesto ORDER BY mes DESC, vendedor"
-    ).fetchall()
+    filas = db.execute("SELECT * FROM catalogo_presupuesto ORDER BY mes DESC, vendedor").fetchall()
     vendedores = get_vendedores(db)
     desarrolladores = get_desarrolladores(db)
     db.close()
@@ -683,16 +790,17 @@ def catalogo_presupuesto_editar(fila_id):
             if presupuesto is not None:
                 try:
                     db.execute(
-                        "UPDATE catalogo_presupuesto SET mes = ?, vendedor = ?, desarrollador = ?, presupuesto = ? WHERE id = ?",
+                        "UPDATE catalogo_presupuesto SET mes = %s, vendedor = %s, desarrollador = %s, presupuesto = %s WHERE id = %s",
                         (mes, vendedor, desarrollador, presupuesto, fila_id),
                     )
                     db.commit()
-                except sqlite3.IntegrityError:
+                except psycopg.errors.UniqueViolation:
+                    db.rollback()
                     flash("Ya existe un presupuesto para ese Mes, Vendedor y Desarrollador.")
                 db.close()
                 return redirect(url_for("catalogo_presupuesto"))
 
-    fila = db.execute("SELECT * FROM catalogo_presupuesto WHERE id = ?", (fila_id,)).fetchone()
+    fila = db.execute("SELECT * FROM catalogo_presupuesto WHERE id = %s", (fila_id,)).fetchone()
     vendedores = get_vendedores(db)
     desarrolladores = get_desarrolladores(db)
     db.close()
@@ -708,7 +816,7 @@ def catalogo_presupuesto_editar(fila_id):
 @admin_required
 def catalogo_presupuesto_eliminar(fila_id):
     db = get_db()
-    db.execute("DELETE FROM catalogo_presupuesto WHERE id = ?", (fila_id,))
+    db.execute("DELETE FROM catalogo_presupuesto WHERE id = %s", (fila_id,))
     db.commit()
     db.close()
     return redirect(url_for("catalogo_presupuesto"))
@@ -781,18 +889,15 @@ def catalogo_presupuesto_carga_masiva():
                 continue
 
             existente = db.execute(
-                "SELECT id FROM catalogo_presupuesto WHERE mes = ? AND vendedor = ? AND coalesce(desarrollador, '') = coalesce(?, '')",
+                "SELECT id FROM catalogo_presupuesto WHERE mes = %s AND vendedor = %s AND coalesce(desarrollador, '') = coalesce(%s, '')",
                 (mes, vendedor, desarrollador),
             ).fetchone()
             if existente:
-                db.execute(
-                    "UPDATE catalogo_presupuesto SET presupuesto = ? WHERE id = ?",
-                    (presupuesto, existente["id"]),
-                )
+                db.execute("UPDATE catalogo_presupuesto SET presupuesto = %s WHERE id = %s", (presupuesto, existente["id"]))
                 actualizados += 1
             else:
                 db.execute(
-                    "INSERT INTO catalogo_presupuesto (mes, vendedor, desarrollador, presupuesto) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO catalogo_presupuesto (mes, vendedor, desarrollador, presupuesto) VALUES (%s, %s, %s, %s)",
                     (mes, vendedor, desarrollador, presupuesto),
                 )
                 agregados += 1
