@@ -84,14 +84,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS catalogo_presupuesto (
             id bigint generated always as identity primary key,
             mes text not null,
-            vendedor text not null,
+            vendedor text,
             desarrollador text,
-            presupuesto numeric not null
+            presupuesto numeric not null,
+            CONSTRAINT chk_catalogo_presupuesto_vendedor_o_desarrollador
+                CHECK (vendedor IS NOT NULL OR desarrollador IS NOT NULL)
         );
     """)
     db.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_catalogo_presupuesto_mes_vendedor_dev
-            ON catalogo_presupuesto (mes, vendedor, coalesce(desarrollador, ''));
+            ON catalogo_presupuesto (mes, coalesce(vendedor, ''), coalesce(desarrollador, ''));
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS reporte_bookings (
@@ -282,7 +284,7 @@ def construir_datos_dashboard():
         catalogo_vendedor[normalizar(r["vendedor"])] = {"plaza": r["plaza"], "nombre": r["vendedor"]}
 
     presupuesto_por_mes_vendedor = {}
-    for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto"):
+    for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
         clave = (r["mes"], normalizar(r["vendedor"]))
         presupuesto_por_mes_vendedor[clave] = presupuesto_por_mes_vendedor.get(clave, 0.0) + float(r["presupuesto"])
 
@@ -735,11 +737,13 @@ def catalogo_presupuesto():
     db = get_db()
     if request.method == "POST":
         mes = request.form.get("mes", "").strip()
-        vendedor = request.form.get("vendedor", "").strip()
+        vendedor = request.form.get("vendedor", "").strip() or None
         desarrollador = request.form.get("desarrollador", "").strip() or None
         presupuesto_raw = request.form.get("presupuesto", "")
-        if not mes or not vendedor or not presupuesto_raw:
-            flash("Mes, Vendedor y Presupuesto son obligatorios.")
+        if not mes or not presupuesto_raw:
+            flash("Mes y Presupuesto son obligatorios.")
+        elif not vendedor and not desarrollador:
+            flash("Debes indicar al menos un Vendedor o un Desarrollador.")
         else:
             try:
                 presupuesto = parse_presupuesto(presupuesto_raw)
@@ -776,11 +780,13 @@ def catalogo_presupuesto_editar(fila_id):
     db = get_db()
     if request.method == "POST":
         mes = request.form.get("mes", "").strip()
-        vendedor = request.form.get("vendedor", "").strip()
+        vendedor = request.form.get("vendedor", "").strip() or None
         desarrollador = request.form.get("desarrollador", "").strip() or None
         presupuesto_raw = request.form.get("presupuesto", "")
-        if not mes or not vendedor or not presupuesto_raw:
-            flash("Mes, Vendedor y Presupuesto son obligatorios.")
+        if not mes or not presupuesto_raw:
+            flash("Mes y Presupuesto son obligatorios.")
+        elif not vendedor and not desarrollador:
+            flash("Debes indicar al menos un Vendedor o un Desarrollador.")
         else:
             try:
                 presupuesto = parse_presupuesto(presupuesto_raw)
@@ -872,12 +878,15 @@ def catalogo_presupuesto_carga_masiva():
         errores = []
         for numero_fila, fila in enumerate(filas_crudas, start=2):
             mes = str(fila.get("mes") or "").strip()
-            vendedor = str(fila.get("vendedor") or "").strip()
+            vendedor = str(fila.get("vendedor") or "").strip() or None
             desarrollador = str(fila.get("desarrollador") or "").strip() or None
             presupuesto_raw = fila.get("presupuesto")
 
-            if not mes or not vendedor or presupuesto_raw in (None, ""):
-                errores.append(f"Fila {numero_fila}: faltan datos obligatorios (mes, vendedor o presupuesto).")
+            if not mes or presupuesto_raw in (None, ""):
+                errores.append(f"Fila {numero_fila}: faltan datos obligatorios (mes o presupuesto).")
+                continue
+            if not vendedor and not desarrollador:
+                errores.append(f"Fila {numero_fila}: debe indicar Vendedor o Desarrollador.")
                 continue
             if mes not in MESES_VALIDOS:
                 errores.append(f"Fila {numero_fila}: mes '{mes}' inválido, usa formato AAAA-MM.")
@@ -889,7 +898,7 @@ def catalogo_presupuesto_carga_masiva():
                 continue
 
             existente = db.execute(
-                "SELECT id FROM catalogo_presupuesto WHERE mes = %s AND vendedor = %s AND coalesce(desarrollador, '') = coalesce(%s, '')",
+                "SELECT id FROM catalogo_presupuesto WHERE mes = %s AND coalesce(vendedor, '') = coalesce(%s, '') AND coalesce(desarrollador, '') = coalesce(%s, '')",
                 (mes, vendedor, desarrollador),
             ).fetchone()
             if existente:

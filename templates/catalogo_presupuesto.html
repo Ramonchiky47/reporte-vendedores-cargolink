@@ -16,9 +16,7 @@ function formatearMiles(input) {
 {% block content %}
     <div class="card">
       <h2>Nuevo presupuesto</h2>
-      {% if not vendedores %}
-      <p class="hint">No hay vendedores registrados todavía. Primero da de alta al menos uno en el <a href="{{ url_for('catalogo_vendedores') }}">catálogo de Vendedores</a>.</p>
-      {% endif %}
+      <p class="hint">Indica al menos un Vendedor o un Desarrollador (puedes dejar el otro en blanco).</p>
       <form method="post" action="{{ url_for('catalogo_presupuesto') }}">
         <div class="row">
           <div class="field">
@@ -31,8 +29,8 @@ function formatearMiles(input) {
           </div>
           <div class="field">
             <label for="vendedor">Vendedor</label>
-            <select id="vendedor" name="vendedor" required {{ 'disabled' if not vendedores else '' }}>
-              <option value="">Selecciona...</option>
+            <select id="vendedor" name="vendedor">
+              <option value="">Sin vendedor</option>
               {% for v in vendedores %}
               <option value="{{ v }}">{{ v }}</option>
               {% endfor %}
@@ -74,7 +72,7 @@ function formatearMiles(input) {
           {% for fila in filas %}
           <tr>
             <td>{{ fila.mes }}</td>
-            <td>{{ fila.vendedor }}</td>
+            <td>{{ fila.vendedor or '—' }}</td>
             <td>{{ fila.desarrollador or '—' }}</td>
             <td>${{ "{:,.2f}".format(fila.presupuesto) }}</td>
             <td class="actions">

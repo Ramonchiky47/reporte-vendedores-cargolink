@@ -16,6 +16,7 @@ function formatearMiles(input) {
 {% block content %}
     <div class="card">
       <h2>Editar presupuesto</h2>
+      <p class="hint">Indica al menos un Vendedor o un Desarrollador (puedes dejar el otro en blanco).</p>
       <form method="post" action="{{ url_for('catalogo_presupuesto_editar', fila_id=fila.id) }}">
         <div class="row">
           <div class="field">
@@ -28,8 +29,9 @@ function formatearMiles(input) {
           </div>
           <div class="field">
             <label for="vendedor">Vendedor</label>
-            <select id="vendedor" name="vendedor" required>
-              {% if fila.vendedor not in vendedores %}
+            <select id="vendedor" name="vendedor">
+              <option value="">Sin vendedor</option>
+              {% if fila.vendedor and fila.vendedor not in vendedores %}
               <option value="{{ fila.vendedor }}" selected>{{ fila.vendedor }} (fuera del catálogo)</option>
               {% endif %}
               {% for v in vendedores %}
