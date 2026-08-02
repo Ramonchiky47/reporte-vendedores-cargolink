@@ -98,6 +98,7 @@
         <div class="header-botones">
           <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
           <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
+          <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
         </div>
       </div>
       <div class="filtro-mes-bloque">
@@ -319,6 +320,50 @@
     renderDesarrolladoresEnModal("Customer (Desarrolladores)", filas, null);
   }
 
+  function abrirBookingsEnCero() {
+    volverA = null;
+    btnVolver.classList.remove("visible");
+    btnResumenCliente.classList.remove("visible");
+
+    const bookings = datos.detalle
+      .filter((d) => d.mes === estado.mes && d.profit === 0)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+    document.getElementById("modal-titulo").textContent = "Booking en 0";
+    document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (bookings.length === 0) {
+      tabla.innerHTML = '<caption>Sin bookings en 0 para el mes seleccionado.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Referencia</th>
+            <th style="text-align:left;">Fecha de creación</th>
+            <th style="text-align:left;">Vendedor</th>
+            <th style="text-align:left;">Ejecutivo</th>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bookings.map((b) => `
+            <tr>
+              <td style="text-align:left;">${b.referencia}</td>
+              <td style="text-align:left;">${fmtFecha(b.fecha)}</td>
+              <td style="text-align:left;">${b.vendedor}</td>
+              <td style="text-align:left;">${b.ejecutivo}</td>
+              <td style="text-align:left;">${b.cliente_servicio}</td>
+              <td>${fmtMoneda(b.profit)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
   function renderBookingsDeVendedor(vendedor, bookings, volverCallback) {
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
@@ -418,6 +463,7 @@
   btnVolver.addEventListener("click", () => { if (volverA) volverA(); });
   document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
   document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
+  document.getElementById("btn-ver-booking-cero").addEventListener("click", abrirBookingsEnCero);
 
   function cerrarModal() { modal.classList.remove("abierto"); }
   document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
