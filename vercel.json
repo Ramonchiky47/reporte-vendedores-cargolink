@@ -4,5 +4,9 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "api/index.py" }
+  ],
+  "crons": [
+    { "path": "/cron/generar-reporte", "schedule": "0 21 * * *" },
+    { "path": "/cron/generar-reporte", "schedule": "0 2 * * *" }
   ]
 }

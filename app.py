@@ -457,6 +457,41 @@ def dashboard():
     return render_template("dashboard.html", resultado=session.pop("resultado", None))
 
 
+def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
+    """Descarga bookings de CargoLink y reemplaza reporte_bookings.
+    Regresa (ok: bool, mensaje: str, detalle: str|None)."""
+    try:
+        bookings = descargar_bookings_cargolink(fecha_inicio, fecha_fin)
+    except Exception as e:
+        return False, "Error al generar el reporte.", str(e)[:1500]
+
+    if not bookings:
+        return False, "CargoLink no devolvió bookings para ese rango de fechas.", None
+
+    columnas = ["mes", "vendedor", "referencia", "fecha", "ejecutivo", "venta_por", "cliente_servicio", "venta", "profit", "margen"]
+    TAMANO_LOTE = 500
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM reporte_bookings")
+    for inicio in range(0, len(bookings), TAMANO_LOTE):
+        lote = bookings[inicio:inicio + TAMANO_LOTE]
+        placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas)) + ")"] * len(lote))
+        valores = [b[c] for b in lote for c in columnas]
+        cur.execute(
+            f"INSERT INTO reporte_bookings ({', '.join(columnas)}) VALUES {placeholders}",
+            valores,
+        )
+    cur.execute(
+        "INSERT INTO reporte_generaciones (fecha_inicio, fecha_fin) VALUES (%s, %s)",
+        (fecha_inicio, fecha_fin),
+    )
+    db.commit()
+    db.close()
+
+    return True, f"Reporte generado correctamente ({len(bookings)} bookings).", None
+
+
 @app.route("/generar", methods=["POST"])
 @admin_required
 def generar():
@@ -470,37 +505,31 @@ def generar():
         session["resultado"] = {"ok": False, "mensaje": "Fecha de fin inválida."}
         return redirect(url_for("dashboard"))
 
-    now = datetime.now()
+    now = datetime.now(TZ_LOCAL)
     fecha_inicio = fecha_inicio or f"{now.year}-01-01"
     fecha_fin = fecha_fin or now.strftime("%Y-%m-%d")
 
-    try:
-        bookings = descargar_bookings_cargolink(fecha_inicio, fecha_fin)
-    except Exception as e:
-        session["resultado"] = {"ok": False, "mensaje": "Error al generar el reporte.", "detalle": str(e)[:1500]}
-        return redirect(url_for("dashboard"))
-
-    if not bookings:
-        session["resultado"] = {"ok": False, "mensaje": "CargoLink no devolvió bookings para ese rango de fechas."}
-        return redirect(url_for("dashboard"))
-
-    db = get_db()
-    db.execute("DELETE FROM reporte_bookings")
-    for b in bookings:
-        db.execute(
-            "INSERT INTO reporte_bookings (mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen) "
-            "VALUES (%(mes)s, %(vendedor)s, %(referencia)s, %(fecha)s, %(ejecutivo)s, %(venta_por)s, %(cliente_servicio)s, %(venta)s, %(profit)s, %(margen)s)",
-            b,
-        )
-    db.execute(
-        "INSERT INTO reporte_generaciones (fecha_inicio, fecha_fin) VALUES (%s, %s)",
-        (fecha_inicio, fecha_fin),
-    )
-    db.commit()
-    db.close()
-
-    session["resultado"] = {"ok": True, "mensaje": f"Reporte generado correctamente ({len(bookings)} bookings)."}
+    ok, mensaje, detalle = ejecutar_generacion_reporte(fecha_inicio, fecha_fin)
+    session["resultado"] = {"ok": ok, "mensaje": mensaje, "detalle": detalle}
     return redirect(url_for("dashboard"))
+
+
+@app.route("/cron/generar-reporte", methods=["GET", "POST"])
+def cron_generar_reporte():
+    cron_secret = os.environ.get("CRON_SECRET", "").strip()
+    auth = request.headers.get("Authorization", "")
+    if not cron_secret or auth != f"Bearer {cron_secret}":
+        return {"ok": False, "error": "no autorizado"}, 401
+
+    now = datetime.now(TZ_LOCAL)
+    fecha_inicio = f"{now.year}-01-01"
+    fecha_fin = now.strftime("%Y-%m-%d")
+
+    ok, mensaje, detalle = ejecutar_generacion_reporte(fecha_inicio, fecha_fin)
+    respuesta = {"ok": ok, "mensaje": mensaje, "fecha_inicio": fecha_inicio, "fecha_fin": fecha_fin}
+    if detalle:
+        respuesta["detalle"] = detalle
+    return respuesta, (200 if ok else 500)
 
 
 @app.route("/descargar")

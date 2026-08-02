@@ -350,9 +350,19 @@
       const total = sumar(filas);
       tabla.innerHTML = `
         <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
-        <tbody>${filasAgregadas.map((r) => `<tr class="${r.plaza === '#N/D' ? 'na' : ''}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tbody>${filasAgregadas.map((r) => `<tr class="clicable ${r.plaza === '#N/D' ? 'na' : ''}" data-plaza="${r.plaza.replace(/"/g, "&quot;")}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
         <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
       `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          const plaza = tr.dataset.plaza;
+          const filasPlaza = filas.filter((f) => f.plaza === plaza);
+          renderDesarrolladoresEnModal(
+            plaza, filasPlaza,
+            () => renderResumenPlazaDesarrolladores(titulo, filas, volverCallback)
+          );
+        });
+      });
     }
     modal.classList.add("abierto");
   }
