@@ -15,6 +15,7 @@ import re
 import secrets
 from datetime import datetime
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 import openpyxl
 import psycopg
@@ -29,6 +30,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
+TZ_LOCAL = ZoneInfo(os.environ.get("TZ_LOCAL", "America/Mexico_City"))
 HASH_METHOD = "pbkdf2:sha256"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -380,7 +382,7 @@ def construir_datos_dashboard():
 
     return {
         "archivo": f"Reporte {meta['fecha_inicio']} al {meta['fecha_fin']}",
-        "generado_en": meta["generado_en"].strftime("%d/%m/%Y %H:%M"),
+        "generado_en": meta["generado_en"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M"),
         "filas": filas,
         "filas_desarrolladores": filas_desarrolladores,
         "detalle": detalle,
@@ -710,6 +712,8 @@ def catalogo_usuarios():
 
     filas = db.execute("SELECT id, usuario, creado_en, es_admin FROM usuarios ORDER BY usuario").fetchall()
     db.close()
+    for fila in filas:
+        fila["creado_en"] = fila["creado_en"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M")
     return render_template("catalogo_usuarios.html", filas=filas)
 
 
