@@ -15,7 +15,8 @@
     background: #007CC3; color: #fff; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
     flex-wrap: wrap; gap: .5rem;
   }
-  header h1 { font-size: 1.05rem; margin: 0; }
+  header h1 { font-size: .92rem; margin: 0; }
+  header .autor { font-size: .68rem; opacity: .75; margin: .1rem 0 0; }
   nav { display: flex; gap: 1rem; align-items: center; }
   nav a { color: #fff; opacity: .85; font-size: .85rem; text-decoration: none; }
   nav a:hover, nav a.active { opacity: 1; text-decoration: underline; }
@@ -59,9 +60,12 @@
 </head>
 <body>
   <header>
-    <h1>CargoLink · Reporte de Vendedores</h1>
+    <div>
+      <h1>Reporte de Ventas</h1>
+      <p class="autor">By Ing Ramón Villanueva</p>
+    </div>
     <nav>
-      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Reporte</a>
+      {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Reporte</a>{% endif %}
       <a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Dashboard</a>
       {% if session.get('es_admin') %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
       {% if session.get('usuario') %}<span style="opacity:.75;">{{ session['usuario'] }}</span>{% endif %}

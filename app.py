@@ -418,7 +418,7 @@ def admin_required(view):
             return redirect(url_for("login"))
         if not session.get("es_admin"):
             flash("Esa sección es solo para administradores.")
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("dashboard_plazas_vendedores"))
         return view(*args, **kwargs)
 
     return wrapped
@@ -437,7 +437,8 @@ def login():
             session["usuario"] = fila["usuario"]
             session["usuario_id"] = fila["id"]
             session["es_admin"] = bool(fila["es_admin"])
-            return redirect(url_for("dashboard"))
+            destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
+            return redirect(url_for(destino))
         flash("Usuario o contraseña incorrectos.")
     return render_template("login.html")
 
@@ -449,13 +450,13 @@ def logout():
 
 
 @app.route("/", methods=["GET"])
-@login_required
+@admin_required
 def dashboard():
     return render_template("dashboard.html", resultado=session.pop("resultado", None))
 
 
 @app.route("/generar", methods=["POST"])
-@login_required
+@admin_required
 def generar():
     fecha_inicio = request.form.get("fecha_inicio", "").strip()
     fecha_fin = request.form.get("fecha_fin", "").strip()
@@ -501,7 +502,7 @@ def generar():
 
 
 @app.route("/descargar")
-@login_required
+@admin_required
 def descargar():
     db = get_db()
     filas = db.execute(
@@ -540,8 +541,11 @@ def descargar():
 def dashboard_plazas_vendedores():
     datos = construir_datos_dashboard()
     if datos is None:
-        flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
-        return redirect(url_for("dashboard"))
+        if session.get("es_admin"):
+            flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
+            return redirect(url_for("dashboard"))
+        flash("Todavía no hay ningún reporte generado. Pídele a un administrador que genere uno.")
+        return render_template("dashboard_plazas_vendedores.html", datos_json="null", datos=None)
     datos_json = json.dumps(datos).replace("</", "<\\/")
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
 

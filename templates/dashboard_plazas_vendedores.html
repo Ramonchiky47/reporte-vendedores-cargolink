@@ -89,6 +89,11 @@
 </style>
 {% endblock %}
 {% block content %}
+{% if not datos %}
+    <div class="card">
+      <p class="empty">Todavía no hay ningún reporte generado.</p>
+    </div>
+{% else %}
     <div class="card">
       <div class="header-row">
         <div class="header-titulo">
@@ -128,6 +133,7 @@
             <div class="modal-titulo-row">
               <h2 id="modal-titulo">Detalle</h2>
               <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
+              <button type="button" class="modal-accion" id="btn-resumen-plaza">Resumen por Plaza</button>
             </div>
             <p id="modal-subtitulo"></p>
           </div>
@@ -225,12 +231,14 @@
   const modal = document.getElementById("modal-detalle");
   const btnVolver = document.getElementById("modal-volver");
   const btnResumenCliente = document.getElementById("btn-resumen-cliente");
+  const btnResumenPlaza = document.getElementById("btn-resumen-plaza");
   let volverA = null;
 
   function renderVendedoresEnModal(titulo, filas, volverCallback) {
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
 
     const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
     document.getElementById("modal-titulo").textContent = titulo;
@@ -295,6 +303,11 @@
     document.getElementById("modal-titulo").textContent = titulo;
     document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} desarrollador(es) · ${etiquetaMes(estado.mes)}`;
 
+    btnResumenPlaza.classList.toggle("visible", ordenadas.length > 0);
+    btnResumenPlaza.onclick = () => renderResumenPlazaDesarrolladores(
+      titulo, filas, () => renderDesarrolladoresEnModal(titulo, filas, volverCallback)
+    );
+
     const tabla = document.getElementById("tabla-detalle");
     if (ordenadas.length === 0) {
       tabla.innerHTML = '<caption>Sin desarrolladores para este filtro.</caption>';
@@ -315,6 +328,35 @@
     modal.classList.add("abierto");
   }
 
+  function renderResumenPlazaDesarrolladores(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+
+    const porPlaza = new Map();
+    filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
+    const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
+    filasAgregadas.sort((a, b) => b.profit - a.profit);
+
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent =
+      `Resumen por Plaza · ${filasAgregadas.length} plaza(s) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filasAgregadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este filtro.</caption>';
+    } else {
+      const total = sumar(filas);
+      tabla.innerHTML = `
+        <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${filasAgregadas.map((r) => `<tr class="${r.plaza === '#N/D' ? 'na' : ''}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
   function abrirTodosLosDesarrolladores() {
     const filas = (datos.filas_desarrolladores || []).filter((f) => f.mes === estado.mes);
     renderDesarrolladoresEnModal("Customer (Desarrolladores)", filas, null);
@@ -324,6 +366,7 @@
     volverA = null;
     btnVolver.classList.remove("visible");
     btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
 
     const bookings = datos.detalle
       .filter((d) => d.mes === estado.mes && d.profit === 0)
@@ -367,6 +410,7 @@
   function renderBookingsDeVendedor(vendedor, bookings, volverCallback) {
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenPlaza.classList.remove("visible");
 
     document.getElementById("modal-titulo").textContent = vendedor;
     document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaMes(estado.mes)}`;
@@ -414,6 +458,7 @@
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
 
     const porCliente = new Map();
     bookings.forEach((b) => {
@@ -476,4 +521,5 @@
   render();
 })();
 </script>
+{% endif %}
 {% endblock %}
