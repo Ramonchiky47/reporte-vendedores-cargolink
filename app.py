@@ -283,10 +283,19 @@ def construir_datos_dashboard():
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
         catalogo_vendedor[normalizar(r["vendedor"])] = {"plaza": r["plaza"], "nombre": r["vendedor"]}
 
+    catalogo_desarrollador = {}
+    for r in db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores"):
+        catalogo_desarrollador[normalizar(r["desarrollador"])] = {"plaza": r["plaza"], "nombre": r["desarrollador"]}
+
     presupuesto_por_mes_vendedor = {}
     for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
         clave = (r["mes"], normalizar(r["vendedor"]))
         presupuesto_por_mes_vendedor[clave] = presupuesto_por_mes_vendedor.get(clave, 0.0) + float(r["presupuesto"])
+
+    presupuesto_por_mes_desarrollador = {}
+    for r in db.execute("SELECT mes, desarrollador, presupuesto FROM catalogo_presupuesto WHERE desarrollador IS NOT NULL"):
+        clave = (r["mes"], normalizar(r["desarrollador"]))
+        presupuesto_por_mes_desarrollador[clave] = presupuesto_por_mes_desarrollador.get(clave, 0.0) + float(r["presupuesto"])
 
     bookings = db.execute(
         "SELECT mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen "
@@ -295,6 +304,7 @@ def construir_datos_dashboard():
     db.close()
 
     agregados = {}
+    agregados_desarrollador = {}
     detalle = []
     for r in bookings:
         vkey = normalizar(r["vendedor"])
@@ -303,6 +313,13 @@ def construir_datos_dashboard():
         agg["cant_book"] += 1
         agg["venta"] += float(r["venta"])
         agg["profit"] += float(r["profit"])
+
+        if r["ejecutivo"]:
+            dkey = normalizar(r["ejecutivo"])
+            agg_d = agregados_desarrollador.setdefault((r["mes"], dkey), {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+            agg_d["cant_book"] += 1
+            agg_d["venta"] += float(r["venta"])
+            agg_d["profit"] += float(r["profit"])
 
         cat = catalogo_vendedor.get(vkey)
         nombre_canonico = cat["nombre"] if cat else r["vendedor"]
@@ -320,6 +337,8 @@ def construir_datos_dashboard():
 
     for clave in presupuesto_por_mes_vendedor:
         agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+    for clave in presupuesto_por_mes_desarrollador:
+        agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
 
     filas = []
     for (mes, vkey), agg in agregados.items():
@@ -337,14 +356,39 @@ def construir_datos_dashboard():
             "ppto": round(ppto, 2),
         })
 
+    filas_desarrolladores = []
+    for (mes, dkey), agg in agregados_desarrollador.items():
+        cat = catalogo_desarrollador.get(dkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        nombre = cat["nombre"] if cat else dkey
+        ppto = presupuesto_por_mes_desarrollador.get((mes, dkey), 0.0)
+        filas_desarrolladores.append({
+            "mes": mes,
+            "desarrollador": nombre,
+            "plaza": plaza,
+            "cant_book": agg["cant_book"],
+            "venta": round(agg["venta"], 2),
+            "profit": round(agg["profit"], 2),
+            "ppto": round(ppto, 2),
+        })
+
+    todos_los_meses = sorted(set(f["mes"] for f in filas) | set(f["mes"] for f in filas_desarrolladores))
+    mes_actual = datetime.now().strftime("%Y-%m")
+    if mes_actual not in todos_los_meses:
+        todos_los_meses.append(mes_actual)
+        todos_los_meses.sort()
+
     return {
         "archivo": f"Reporte {meta['fecha_inicio']} al {meta['fecha_fin']}",
         "generado_en": meta["generado_en"].strftime("%d/%m/%Y %H:%M"),
         "filas": filas,
+        "filas_desarrolladores": filas_desarrolladores,
         "detalle": detalle,
-        "meses": sorted(set(f["mes"] for f in filas)),
+        "meses": todos_los_meses,
+        "mes_actual": mes_actual,
         "plazas": sorted(set(f["plaza"] for f in filas)),
         "vendedores": sorted(set(f["vendedor"] for f in filas)),
+        "desarrolladores": sorted(set(f["desarrollador"] for f in filas_desarrolladores)),
     }
 
 

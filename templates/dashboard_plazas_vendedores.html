@@ -4,6 +4,7 @@
 {% block extra_head %}
 <style>
   .header-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .header-botones { display: flex; gap: .6rem; flex-wrap: wrap; }
   .header-titulo h2 { margin: 0 0 .25rem; }
   .meta { font-size: .78rem; color: #64748b; margin: 0; }
   .filtro-mes-bloque { max-width: 260px; }
@@ -94,7 +95,10 @@
           <h2>Venta por Plaza</h2>
           <p class="meta">Reporte: {{ datos.archivo }} · generado {{ datos.generado_en }}</p>
         </div>
-        <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
+        <div class="header-botones">
+          <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
+          <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
+        </div>
       </div>
       <div class="filtro-mes-bloque">
         <h3>Fecha de creación</h3>
@@ -141,7 +145,7 @@
   const datos = JSON.parse(document.getElementById("datos-reporte").textContent);
   const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
-  const estado = { mes: datos.meses[datos.meses.length - 1] };
+  const estado = { mes: datos.mes_actual || datos.meses[datos.meses.length - 1] };
 
   function etiquetaMes(mes) {
     const [anio, m] = mes.split("-");
@@ -267,8 +271,52 @@
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
   }
 
+  function bookingsDeEjecutivo(ejecutivo) {
+    return datos.detalle
+      .filter((d) => d.ejecutivo === ejecutivo && d.mes === estado.mes)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+
   function abrirBookingsDeVendedor(vendedor, volverCallback) {
     renderBookingsDeVendedor(vendedor, bookingsDe(vendedor), volverCallback);
+  }
+
+  function abrirBookingsDeEjecutivo(ejecutivo, volverCallback) {
+    renderBookingsDeVendedor(ejecutivo, bookingsDeEjecutivo(ejecutivo), volverCallback);
+  }
+
+  function renderDesarrolladoresEnModal(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+
+    const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} desarrollador(es) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (ordenadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin desarrolladores para este filtro.</caption>';
+    } else {
+      const total = sumar(ordenadas);
+      tabla.innerHTML = `
+        <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${ordenadas.map((r) => `<tr class="clicable" data-desarrollador="${r.desarrollador.replace(/"/g, "&quot;")}"><td>${r.desarrollador}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeEjecutivo(
+          tr.dataset.desarrollador,
+          () => renderDesarrolladoresEnModal(titulo, filas, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function abrirTodosLosDesarrolladores() {
+    const filas = (datos.filas_desarrolladores || []).filter((f) => f.mes === estado.mes);
+    renderDesarrolladoresEnModal("Customer (Desarrolladores)", filas, null);
   }
 
   function renderBookingsDeVendedor(vendedor, bookings, volverCallback) {
@@ -369,6 +417,7 @@
 
   btnVolver.addEventListener("click", () => { if (volverA) volverA(); });
   document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
+  document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
 
   function cerrarModal() { modal.classList.remove("abierto"); }
   document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
