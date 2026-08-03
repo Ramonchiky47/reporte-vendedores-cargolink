@@ -333,6 +333,7 @@ def construir_datos_dashboard():
             "ejecutivo": r["ejecutivo"] or "",
             "venta_por": r["venta_por"] or "",
             "cliente_servicio": r["cliente_servicio"] or "",
+            "venta": round(float(r["venta"]), 2),
             "profit": round(float(r["profit"]), 2),
             "margen": round(float(r["margen"]), 4),
         })

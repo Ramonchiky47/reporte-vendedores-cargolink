@@ -51,6 +51,12 @@
 
   table.reporte tbody tr.margen-bajo td { background: #fee2e2; color: #b91c1c; }
   table.reporte tbody tr.margen-bajo td:first-child { color: #b91c1c; }
+  .tag-av2 {
+    display: inline-block; font-size: .62rem; font-weight: 700; letter-spacing: .02em;
+    background: #eef6fc; color: #007CC3; border: 1px solid #bfe0f5;
+    border-radius: 999px; padding: .05rem .45rem; margin-left: .4rem; vertical-align: middle;
+  }
+  table.reporte td.sinppto { color: #94a3b8; font-style: italic; }
 
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
@@ -134,6 +140,7 @@
               <h2 id="modal-titulo">Detalle</h2>
               <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
               <button type="button" class="modal-accion" id="btn-resumen-plaza">Resumen por Plaza</button>
+              <button type="button" class="modal-accion" id="btn-desglosar-av2">Desglosar AV2 Customer</button>
             </div>
             <p id="modal-subtitulo"></p>
           </div>
@@ -232,6 +239,7 @@
   const btnVolver = document.getElementById("modal-volver");
   const btnResumenCliente = document.getElementById("btn-resumen-cliente");
   const btnResumenPlaza = document.getElementById("btn-resumen-plaza");
+  const btnDesglosarAV2 = document.getElementById("btn-desglosar-av2");
   let volverA = null;
 
   function renderVendedoresEnModal(titulo, filas, volverCallback) {
@@ -239,6 +247,7 @@
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
     btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
 
     const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
     document.getElementById("modal-titulo").textContent = titulo;
@@ -294,6 +303,10 @@
     renderBookingsDeVendedor(ejecutivo, bookingsDeEjecutivo(ejecutivo), volverCallback, "vendedor");
   }
 
+  function tieneAV2Customer(filas) {
+    return filas.some((f) => (f.desarrollador || "").toUpperCase() === "AV2 CUSTOMER");
+  }
+
   function renderDesarrolladoresEnModal(titulo, filas, volverCallback) {
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
@@ -307,6 +320,10 @@
     btnResumenPlaza.onclick = () => renderResumenPlazaDesarrolladores(
       titulo, filas, () => renderDesarrolladoresEnModal(titulo, filas, volverCallback)
     );
+
+    btnDesglosarAV2.classList.toggle("visible", tieneAV2Customer(filas));
+    btnDesglosarAV2.textContent = "Desglosar AV2 Customer";
+    btnDesglosarAV2.onclick = () => renderDesarrolladoresAV2Desglosado(titulo, filas, volverCallback);
 
     const tabla = document.getElementById("tabla-detalle");
     if (ordenadas.length === 0) {
@@ -328,11 +345,70 @@
     modal.classList.add("abierto");
   }
 
+  function renderDesarrolladoresAV2Desglosado(titulo, filasOriginal, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+
+    const sinAV2 = filasOriginal.filter((f) => (f.desarrollador || "").toUpperCase() !== "AV2 CUSTOMER");
+
+    const porVendedor = new Map();
+    bookingsDeEjecutivo("AV2 Customer")
+      .concat(bookingsDeEjecutivo("AV2 CUSTOMER"))
+      .forEach((b) => {
+        if (!porVendedor.has(b.vendedor)) {
+          porVendedor.set(b.vendedor, { desarrollador: b.vendedor, cant_book: 0, venta: 0, profit: 0, ppto: 0, esAV2: true });
+        }
+        const acc = porVendedor.get(b.vendedor);
+        acc.cant_book += 1;
+        acc.venta += b.venta;
+        acc.profit += b.profit;
+      });
+    const combinadas = sinAV2.concat(Array.from(porVendedor.values())).sort((a, b) => b.venta - a.venta);
+
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent =
+      `${combinadas.length} fila(s) · AV2 Customer desglosado por Vendedor, ordenado por Venta · ${etiquetaMes(estado.mes)}`;
+
+    btnDesglosarAV2.classList.add("visible");
+    btnDesglosarAV2.textContent = "Agrupar AV2 Customer";
+    btnDesglosarAV2.onclick = () => renderDesarrolladoresEnModal(titulo, filasOriginal, volverCallback);
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (combinadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este filtro.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${combinadas.map((r) => `
+          <tr class="${r.esAV2 ? '' : 'clicable'}" data-desarrollador="${(r.desarrollador || '').replace(/"/g, "&quot;")}">
+            <td>${r.desarrollador}${r.esAV2 ? '<span class="tag-av2">AV2</span>' : ''}</td>
+            <td>${fmtEntero(r.cant_book)}</td>
+            <td>${fmtMoneda(r.venta)}</td>
+            <td>${fmtMoneda(r.profit)}</td>
+            ${r.esAV2
+              ? '<td class="sinppto">—</td><td class="sinppto">—</td><td class="sinppto">—</td>'
+              : celdaMetricas(r)}
+          </tr>
+        `).join("")}</tbody>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeEjecutivo(
+          tr.dataset.desarrollador,
+          () => renderDesarrolladoresAV2Desglosado(titulo, filasOriginal, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
   function renderResumenPlazaDesarrolladores(titulo, filas, volverCallback) {
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
     btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
 
     const porPlaza = new Map();
     filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
@@ -377,6 +453,7 @@
     btnVolver.classList.remove("visible");
     btnResumenCliente.classList.remove("visible");
     btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
 
     const bookings = datos.detalle
       .filter((d) => d.mes === estado.mes && d.profit === 0)
@@ -424,6 +501,7 @@
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
 
     document.getElementById("modal-titulo").textContent = vendedor;
     document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaMes(estado.mes)}`;
@@ -472,6 +550,7 @@
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
     btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
 
     const porCliente = new Map();
     bookings.forEach((b) => {
