@@ -104,7 +104,7 @@
       <div class="header-row">
         <div class="header-titulo">
           <h2>Venta por Plaza</h2>
-          <p class="meta">Reporte: {{ datos.archivo }} · generado {{ datos.generado_en }}</p>
+          <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
         </div>
         <div class="header-botones">
           <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
@@ -628,6 +628,11 @@
         .map((c) => `"${celdaATexto(c).replace(/"/g, '""')}"`)
         .join(",");
     });
+
+    const metaGenerado = document.getElementById("meta-generado-en");
+    if (metaGenerado) {
+      lineas.unshift(`"\u00DAltima actualizaci\u00F3n: ${metaGenerado.textContent.trim()}"`);
+    }
 
     const csv = "\uFEFF" + lineas.join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
