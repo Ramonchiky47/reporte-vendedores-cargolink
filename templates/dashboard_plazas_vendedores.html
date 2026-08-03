@@ -287,11 +287,11 @@
   }
 
   function abrirBookingsDeVendedor(vendedor, volverCallback) {
-    renderBookingsDeVendedor(vendedor, bookingsDe(vendedor), volverCallback);
+    renderBookingsDeVendedor(vendedor, bookingsDe(vendedor), volverCallback, "ejecutivo");
   }
 
   function abrirBookingsDeEjecutivo(ejecutivo, volverCallback) {
-    renderBookingsDeVendedor(ejecutivo, bookingsDeEjecutivo(ejecutivo), volverCallback);
+    renderBookingsDeVendedor(ejecutivo, bookingsDeEjecutivo(ejecutivo), volverCallback, "vendedor");
   }
 
   function renderDesarrolladoresEnModal(titulo, filas, volverCallback) {
@@ -417,7 +417,10 @@
     modal.classList.add("abierto");
   }
 
-  function renderBookingsDeVendedor(vendedor, bookings, volverCallback) {
+  function renderBookingsDeVendedor(vendedor, bookings, volverCallback, campoComplementario) {
+    campoComplementario = campoComplementario || "ejecutivo";
+    const etiquetaComplementario = campoComplementario === "vendedor" ? "Vendedor" : "Ejecutivo";
+
     volverA = volverCallback || null;
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenPlaza.classList.remove("visible");
@@ -427,7 +430,7 @@
 
     btnResumenCliente.classList.toggle("visible", bookings.length > 0);
     btnResumenCliente.onclick = () => renderResumenCliente(
-      vendedor, bookings, () => renderBookingsDeVendedor(vendedor, bookings, volverCallback)
+      vendedor, bookings, () => renderBookingsDeVendedor(vendedor, bookings, volverCallback, campoComplementario)
     );
 
     const tabla = document.getElementById("tabla-detalle");
@@ -439,7 +442,7 @@
           <tr>
             <th style="text-align:left;">Referencia</th>
             <th style="text-align:left;">Fecha de creación</th>
-            <th style="text-align:left;">Ejecutivo</th>
+            <th style="text-align:left;">${etiquetaComplementario}</th>
             <th style="text-align:left;">Venta por</th>
             <th style="text-align:left;">Cliente servicio</th>
             <th>Profit</th>
@@ -451,7 +454,7 @@
             <tr class="${b.margen < 0.07 ? 'margen-bajo' : ''}">
               <td style="text-align:left;">${b.referencia}</td>
               <td style="text-align:left;">${fmtFecha(b.fecha)}</td>
-              <td style="text-align:left;">${b.ejecutivo}</td>
+              <td style="text-align:left;">${b[campoComplementario]}</td>
               <td style="text-align:left;">${b.venta_por}</td>
               <td style="text-align:left;">${b.cliente_servicio}</td>
               <td>${fmtMoneda(b.profit)}</td>
