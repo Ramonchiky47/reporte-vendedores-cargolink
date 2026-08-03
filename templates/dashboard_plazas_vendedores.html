@@ -110,6 +110,7 @@
           <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
           <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
           <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
+          <button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>
         </div>
       </div>
       <div class="filtro-mes-bloque">
@@ -141,6 +142,7 @@
               <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
               <button type="button" class="modal-accion" id="btn-resumen-plaza">Resumen por Plaza</button>
               <button type="button" class="modal-accion" id="btn-desglosar-av2">Desglosar AV2 Customer</button>
+              <button type="button" class="modal-accion visible" id="btn-exportar-detalle">Exportar</button>
             </div>
             <p id="modal-subtitulo"></p>
           </div>
@@ -193,18 +195,24 @@
       return acc;
     }, { cant_book: 0, venta: 0, profit: 0, ppto: 0 });
   }
-  function celdaMetricas(row) {
+  function celdaPresupuesto(row) {
     const alc = row.ppto > 0 ? row.profit / row.ppto : null;
     const dif = row.profit - row.ppto;
     const alcTd = alc === null ? '<td class="alc sinppto">—</td>' : `<td class="alc">${fmtPct(alc)}</td>`;
     const difClase = dif < 0 ? "neg" : "pos";
     return `
-      <td>${row.cant_book ? fmtEntero(row.cant_book) : (row.cant_book === 0 ? "—" : "")}</td>
-      <td>${row.venta ? fmtMoneda(row.venta) : "—"}</td>
-      <td>${row.profit ? fmtMoneda(row.profit) : "—"}</td>
       <td>${row.ppto ? fmtMoneda(row.ppto) : "—"}</td>
       ${alcTd}
       <td class="dif ${difClase}">${fmtMoneda(dif)}</td>
+    `;
+  }
+
+  function celdaMetricas(row) {
+    return `
+      <td>${row.cant_book ? fmtEntero(row.cant_book) : (row.cant_book === 0 ? "—" : "")}</td>
+      <td>${row.venta ? fmtMoneda(row.venta) : "—"}</td>
+      <td>${row.profit ? fmtMoneda(row.profit) : "—"}</td>
+      ${celdaPresupuesto(row)}
     `;
   }
 
@@ -389,7 +397,7 @@
             <td>${fmtMoneda(r.profit)}</td>
             ${r.esAV2
               ? '<td class="sinppto">—</td><td class="sinppto">—</td><td class="sinppto">—</td>'
-              : celdaMetricas(r)}
+              : celdaPresupuesto(r)}
           </tr>
         `).join("")}</tbody>
       `;
@@ -601,6 +609,50 @@
   document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
   document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
   document.getElementById("btn-ver-booking-cero").addEventListener("click", abrirBookingsEnCero);
+
+  // ---- exportar tabla visible a CSV (lo abre Excel directo) ----
+  function celdaATexto(celda) {
+    const clon = celda.cloneNode(true);
+    clon.querySelectorAll(".tag-av2").forEach((el) => el.remove());
+    return clon.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${celdaATexto(c).replace(/"/g, '""')}"`)
+        .join(",");
+    });
+
+    const csv = "\uFEFF" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function nombreArchivoCSV(prefijo) {
+    const limpio = prefijo.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return `${limpio}_${estado.mes}.csv`;
+  }
+
+  document.getElementById("btn-exportar-plaza").addEventListener("click", () => {
+    exportarTablaCSV("tabla-plaza", nombreArchivoCSV("Venta_por_Plaza"));
+  });
+  document.getElementById("btn-exportar-detalle").addEventListener("click", () => {
+    const titulo = document.getElementById("modal-titulo").textContent || "Reporte";
+    exportarTablaCSV("tabla-detalle", nombreArchivoCSV(titulo));
+  });
 
   function cerrarModal() { modal.classList.remove("abierto"); }
   document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
