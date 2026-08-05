@@ -72,7 +72,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
             vendedor text not null unique,
-            plaza text not null
+            plaza text not null,
+            ocultar_detalle boolean not null default false
         );
     """)
     db.execute("""
@@ -282,8 +283,12 @@ def construir_datos_dashboard():
         return None
 
     catalogo_vendedor = {}
-    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
-        catalogo_vendedor[normalizar(r["vendedor"])] = {"plaza": r["plaza"], "nombre": r["vendedor"]}
+    for r in db.execute("SELECT vendedor, plaza, ocultar_detalle FROM catalogo_vendedores"):
+        catalogo_vendedor[normalizar(r["vendedor"])] = {
+            "plaza": r["plaza"],
+            "nombre": r["vendedor"],
+            "ocultar_detalle": r["ocultar_detalle"],
+        }
 
     catalogo_desarrollador = {}
     for r in db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores"):
@@ -325,18 +330,22 @@ def construir_datos_dashboard():
 
         cat = catalogo_vendedor.get(vkey)
         nombre_canonico = cat["nombre"] if cat else r["vendedor"]
-        detalle.append({
-            "mes": r["mes"],
-            "vendedor": nombre_canonico,
-            "referencia": r["referencia"] or "",
-            "fecha": r["fecha"].strftime("%Y-%m-%d %H:%M") if r["fecha"] else "",
-            "ejecutivo": r["ejecutivo"] or "",
-            "venta_por": r["venta_por"] or "",
-            "cliente_servicio": r["cliente_servicio"] or "",
-            "venta": round(float(r["venta"]), 2),
-            "profit": round(float(r["profit"]), 2),
-            "margen": round(float(r["margen"]), 4),
-        })
+        # Los totales (agregados/filas de arriba) siempre incluyen a todos los
+        # vendedores; solo el detalle a nivel booking se omite para quien
+        # tenga marcado "ocultar_detalle" en su catálogo.
+        if not (cat and cat["ocultar_detalle"]):
+            detalle.append({
+                "mes": r["mes"],
+                "vendedor": nombre_canonico,
+                "referencia": r["referencia"] or "",
+                "fecha": r["fecha"].strftime("%Y-%m-%d %H:%M") if r["fecha"] else "",
+                "ejecutivo": r["ejecutivo"] or "",
+                "venta_por": r["venta_por"] or "",
+                "cliente_servicio": r["cliente_servicio"] or "",
+                "venta": round(float(r["venta"]), 2),
+                "profit": round(float(r["profit"]), 2),
+                "margen": round(float(r["margen"]), 4),
+            })
 
     for clave in presupuesto_por_mes_vendedor:
         agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
@@ -595,11 +604,15 @@ def catalogo_vendedores():
     if request.method == "POST":
         vendedor = request.form.get("vendedor", "").strip()
         plaza = request.form.get("plaza", "").strip()
+        ocultar_detalle = request.form.get("ocultar_detalle") == "on"
         if not vendedor or not plaza:
             flash("Vendedor y Plaza son obligatorios.")
         else:
             try:
-                db.execute("INSERT INTO catalogo_vendedores (vendedor, plaza) VALUES (%s, %s)", (vendedor, plaza))
+                db.execute(
+                    "INSERT INTO catalogo_vendedores (vendedor, plaza, ocultar_detalle) VALUES (%s, %s, %s)",
+                    (vendedor, plaza, ocultar_detalle),
+                )
                 db.commit()
             except psycopg.errors.UniqueViolation:
                 db.rollback()
@@ -619,13 +632,14 @@ def catalogo_vendedores_editar(fila_id):
     if request.method == "POST":
         vendedor = request.form.get("vendedor", "").strip()
         plaza = request.form.get("plaza", "").strip()
+        ocultar_detalle = request.form.get("ocultar_detalle") == "on"
         if not vendedor or not plaza:
             flash("Vendedor y Plaza son obligatorios.")
         else:
             try:
                 db.execute(
-                    "UPDATE catalogo_vendedores SET vendedor = %s, plaza = %s WHERE id = %s",
-                    (vendedor, plaza, fila_id),
+                    "UPDATE catalogo_vendedores SET vendedor = %s, plaza = %s, ocultar_detalle = %s WHERE id = %s",
+                    (vendedor, plaza, ocultar_detalle, fila_id),
                 )
                 db.commit()
             except psycopg.errors.UniqueViolation:

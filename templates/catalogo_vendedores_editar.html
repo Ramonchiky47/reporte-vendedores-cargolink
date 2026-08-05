@@ -15,6 +15,9 @@
             <input type="text" id="plaza" name="plaza" value="{{ fila.plaza }}" required>
           </div>
         </div>
+        <div class="field checkbox">
+          <label><input type="checkbox" name="ocultar_detalle" {% if fila.ocultar_detalle %}checked{% endif %}> Ocultar detalle de ventas de este vendedor en el reporte</label>
+        </div>
         <button type="submit">Guardar cambios</button>
         <a class="btn secondary" href="{{ url_for('catalogo_vendedores') }}">Cancelar</a>
       </form>
