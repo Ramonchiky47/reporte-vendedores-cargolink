@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Reportes{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-accent: #007CC3;
+    --rp-accent-wash: rgba(0, 124, 195, .10);
+    --rp-muted-line: #94a3b8;
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+    --rp-surface: #ffffff;
+  }
+  main { max-width: 1120px; }
+
+  .rp-filtros {
+    display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+  }
+  .rp-filtros .field { min-width: 160px; }
+  .rp-filtros .hint-inline { font-size: .78rem; color: var(--rp-ink-3); margin: 0 0 .1rem; flex-basis: 100%; }
+
+  .rp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .rp-kpi { background: #fff; border-radius: 12px; padding: 1.1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .rp-kpi .label { font-size: .74rem; color: var(--rp-ink-2); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+  .rp-kpi .value { font-size: 1.5rem; font-weight: 700; color: var(--rp-ink); margin-top: .2rem; }
+
+  .rp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem; }
+  .rp-card { position: relative; }
+  .rp-card .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.5rem 0 1rem; }
+  .rp-card.wide { grid-column: 1 / -1; }
+
+  .rp-legend { display: flex; gap: 1.1rem; font-size: .78rem; color: var(--rp-ink-2); margin-bottom: .6rem; }
+  .rp-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  .rp-legend i { width: 14px; height: 2px; border-radius: 2px; display: inline-block; }
+
+  .rp-tooltip {
+    position: fixed; pointer-events: none; background: #0f172a; color: #fff; font-size: .76rem;
+    padding: .5rem .65rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    opacity: 0; transform: translate(-50%, -100%); transition: opacity .08s ease; z-index: 40; white-space: nowrap;
+  }
+  .rp-tooltip.visible { opacity: 1; }
+  .rp-tooltip .t-title { font-weight: 700; margin-bottom: .2rem; }
+  .rp-tooltip .t-row { display: flex; gap: .5rem; justify-content: space-between; }
+  .rp-tooltip .t-row .t-val { font-weight: 700; }
+
+  .rp-bar-row { cursor: default; }
+  .rp-bar-row:hover rect.rp-bar { filter: brightness(1.08); }
+  .rp-bar-label { font-size: .72rem; fill: var(--rp-ink-2); }
+  .rp-bar-value { font-size: .72rem; fill: var(--rp-ink); font-weight: 700; }
+  .rp-axis-line { stroke: var(--rp-grid); stroke-width: 1; }
+  .rp-grid-line { stroke: var(--rp-grid); stroke-width: 1; }
+  .rp-crosshair { stroke: var(--rp-ink-3); stroke-width: 1; opacity: 0; }
+
+  .rp-empty { color: var(--rp-ink-3); font-size: .85rem; padding: 2rem 0; text-align: center; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <div class="card">
+    <p class="empty">Todavía no hay datos para graficar. Genera un reporte primero en "Reporte" o "Dashboard".</p>
+  </div>
+{% else %}
+  <div class="card">
+    <h2>Reportes</h2>
+    <div class="rp-filtros">
+      <p class="hint-inline">El filtro de fecha aplica a todas las gráficas de abajo, excepto a "Profit mensual" (siempre muestra el histórico completo).</p>
+      <div class="field">
+        <label for="rp-desde">Desde</label>
+        <input type="date" id="rp-desde">
+      </div>
+      <div class="field">
+        <label for="rp-hasta">Hasta</label>
+        <input type="date" id="rp-hasta">
+      </div>
+      <button type="button" class="btn secondary" id="rp-reset">Todo el histórico</button>
+    </div>
+
+    <div class="rp-kpis" id="rp-kpis"></div>
+  </div>
+
+  <div class="rp-grid">
+    <div class="card rp-card wide">
+      <h2>Profit mensual</h2>
+      <p class="sub">Histórico completo, no se filtra por fecha</p>
+      <div class="rp-legend">
+        <span><i style="background: var(--rp-accent);"></i> Profit</span>
+        <span><i style="background: var(--rp-muted-line);"></i> Venta (referencia)</span>
+      </div>
+      <div id="rp-chart-mensual"></div>
+    </div>
+
+    <div class="card rp-card">
+      <h2>Top clientes por profit</h2>
+      <p class="sub">Los 10 con mayor profit en el rango filtrado</p>
+      <div id="rp-chart-clientes"></div>
+    </div>
+
+    <div class="card rp-card">
+      <h2>Profit por tipo de venta</h2>
+      <p class="sub">Cliente propio / Agente extranjero, en el rango filtrado</p>
+      <div id="rp-chart-tipo"></div>
+    </div>
+
+    <div class="card rp-card">
+      <h2>Profit por plaza</h2>
+      <p class="sub">Según catálogo de vendedores, en el rango filtrado</p>
+      <div id="rp-chart-plaza"></div>
+    </div>
+
+    <div class="card rp-card">
+      <h2>Top vendedores por profit</h2>
+      <p class="sub">Los 10 con mayor profit en el rango filtrado</p>
+      <div id="rp-chart-vendedores"></div>
+    </div>
+  </div>
+
+  <div class="rp-tooltip" id="rp-tooltip"></div>
+
+<script id="datos-reportes" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-reportes").textContent);
+  const tooltip = document.getElementById("rp-tooltip");
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  function fmtMonedaCompacta(n) {
+    const abs = Math.abs(n);
+    const signo = n < 0 ? "-" : "";
+    if (abs >= 1000000) return signo + "$" + (abs / 1000000).toFixed(1) + "M";
+    if (abs >= 1000) return signo + "$" + (abs / 1000).toFixed(0) + "K";
+    return fmtMoneda(n);
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function mostrarTooltip(x, y, titulo, filas) {
+    const filasHtml = filas.map((f) =>
+      `<div class="t-row"><span>${escaparHtml(f.label)}</span><span class="t-val">${escaparHtml(f.valor)}</span></div>`
+    ).join("");
+    tooltip.innerHTML = `<div class="t-title"></div>${filasHtml}`;
+    tooltip.querySelector(".t-title").textContent = titulo;
+    tooltip.style.left = x + "px";
+    tooltip.style.top = (y - 10) + "px";
+    tooltip.classList.add("visible");
+  }
+  function ocultarTooltip() { tooltip.classList.remove("visible"); }
+
+  // ---- KPIs + agregaciones por dimension (respetan el filtro de fecha) ----
+  function agruparYSumar(filas, campo, topN) {
+    const mapa = new Map();
+    for (const f of filas) {
+      const clave = f[campo];
+      if (!mapa.has(clave)) mapa.set(clave, { nombre: clave, venta: 0, profit: 0, cant: 0 });
+      const acc = mapa.get(clave);
+      acc.venta += f.venta;
+      acc.profit += f.profit;
+      acc.cant += 1;
+    }
+    const ordenado = Array.from(mapa.values()).sort((a, b) => b.profit - a.profit);
+    if (ordenado.length <= topN) return ordenado;
+    const top = ordenado.slice(0, topN);
+    const resto = ordenado.slice(topN);
+    const otros = resto.reduce((acc, r) => {
+      acc.venta += r.venta; acc.profit += r.profit; acc.cant += r.cant; return acc;
+    }, { nombre: "Otros", venta: 0, profit: 0, cant: 0 });
+    top.push(otros);
+    return top;
+  }
+
+  function renderKpis(filas) {
+    const totalVenta = filas.reduce((a, f) => a + f.venta, 0);
+    const totalProfit = filas.reduce((a, f) => a + f.profit, 0);
+    const margen = totalVenta ? (totalProfit / totalVenta) : 0;
+    const cont = document.getElementById("rp-kpis");
+    cont.innerHTML = `
+      <div class="rp-kpi"><div class="label">Bookings</div><div class="value">${fmtEntero(filas.length)}</div></div>
+      <div class="rp-kpi"><div class="label">Venta</div><div class="value">${fmtMonedaCompacta(totalVenta)}</div></div>
+      <div class="rp-kpi"><div class="label">Profit</div><div class="value">${fmtMonedaCompacta(totalProfit)}</div></div>
+      <div class="rp-kpi"><div class="label">Margen</div><div class="value">${Math.round(margen * 100)}%</div></div>
+    `;
+  }
+
+  // ---- Gráfica de barras horizontales (magnitud, un solo hue) ----
+  function renderBarChart(contenedorId, filas) {
+    const cont = document.getElementById(contenedorId);
+    cont.innerHTML = "";
+    if (filas.length === 0) {
+      cont.innerHTML = '<p class="rp-empty">Sin datos en este rango.</p>';
+      return;
+    }
+    const ancho = cont.clientWidth || 380;
+    const altoFila = 28;
+    const alto = filas.length * altoFila + 10;
+    const maxProfit = Math.max(...filas.map((f) => f.profit), 1);
+    const margenIzq = 4;
+    const margenDer = 90;
+    const anchoBarraMax = ancho - margenIzq - margenDer;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", alto);
+    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+
+    filas.forEach((f, i) => {
+      const y = i * altoFila;
+      const w = Math.max((f.profit / maxProfit) * anchoBarraMax, 2);
+      const grupo = document.createElementNS(svg.namespaceURI, "g");
+      grupo.setAttribute("class", "rp-bar-row");
+
+      const nombre = document.createElementNS(svg.namespaceURI, "text");
+      nombre.setAttribute("x", margenIzq);
+      nombre.setAttribute("y", y + 12);
+      nombre.setAttribute("class", "rp-bar-label");
+      nombre.textContent = f.nombre.length > 26 ? f.nombre.slice(0, 25) + "…" : f.nombre;
+      grupo.appendChild(nombre);
+
+      const rect = document.createElementNS(svg.namespaceURI, "rect");
+      rect.setAttribute("class", "rp-bar");
+      rect.setAttribute("x", margenIzq);
+      rect.setAttribute("y", y + 16);
+      rect.setAttribute("width", w);
+      rect.setAttribute("height", 8);
+      rect.setAttribute("rx", 4);
+      rect.setAttribute("fill", "var(--rp-accent)");
+      grupo.appendChild(rect);
+
+      const valor = document.createElementNS(svg.namespaceURI, "text");
+      valor.setAttribute("x", margenIzq + w + 8);
+      valor.setAttribute("y", y + 23);
+      valor.setAttribute("class", "rp-bar-value");
+      valor.textContent = fmtMonedaCompacta(f.profit);
+      grupo.appendChild(valor);
+
+      const hit = document.createElementNS(svg.namespaceURI, "rect");
+      hit.setAttribute("x", 0);
+      hit.setAttribute("y", y);
+      hit.setAttribute("width", ancho);
+      hit.setAttribute("height", altoFila);
+      hit.setAttribute("fill", "transparent");
+      grupo.appendChild(hit);
+
+      grupo.addEventListener("pointermove", (e) => {
+        mostrarTooltip(e.clientX, e.clientY, f.nombre, [
+          { label: "Profit", valor: fmtMoneda(f.profit) },
+          { label: "Venta", valor: fmtMoneda(f.venta) },
+          { label: "Bookings", valor: fmtEntero(f.cant) },
+        ]);
+      });
+      grupo.addEventListener("pointerleave", ocultarTooltip);
+
+      svg.appendChild(grupo);
+    });
+
+    cont.appendChild(svg);
+  }
+
+  // ---- Gráfica de línea mensual (profit + venta de referencia), histórico completo ----
+  function renderLineChart(contenedorId, serie) {
+    const cont = document.getElementById(contenedorId);
+    cont.innerHTML = "";
+    if (serie.length === 0) {
+      cont.innerHTML = '<p class="rp-empty">Sin datos.</p>';
+      return;
+    }
+    const ancho = cont.clientWidth || 900;
+    const alto = 260;
+    const margen = { top: 16, right: 16, bottom: 28, left: 56 };
+    const anchoPlot = ancho - margen.left - margen.right;
+    const altoPlot = alto - margen.top - margen.bottom;
+
+    const maxValor = Math.max(...serie.map((s) => Math.max(s.profit, s.venta)), 1);
+    const pasoY = maxValor / 4;
+    const x = (i) => margen.left + (serie.length === 1 ? anchoPlot / 2 : (i / (serie.length - 1)) * anchoPlot);
+    const y = (v) => margen.top + altoPlot - (v / maxValor) * altoPlot;
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", alto);
+    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+
+    // gridlines + eje Y
+    for (let i = 0; i <= 4; i++) {
+      const valor = pasoY * i;
+      const yy = y(valor);
+      const linea = document.createElementNS(svg.namespaceURI, "line");
+      linea.setAttribute("x1", margen.left);
+      linea.setAttribute("x2", ancho - margen.right);
+      linea.setAttribute("y1", yy);
+      linea.setAttribute("y2", yy);
+      linea.setAttribute("class", "rp-grid-line");
+      svg.appendChild(linea);
+
+      const etiqueta = document.createElementNS(svg.namespaceURI, "text");
+      etiqueta.setAttribute("x", margen.left - 8);
+      etiqueta.setAttribute("y", yy + 3);
+      etiqueta.setAttribute("text-anchor", "end");
+      etiqueta.setAttribute("class", "rp-bar-label");
+      etiqueta.textContent = fmtMonedaCompacta(valor);
+      svg.appendChild(etiqueta);
+    }
+
+    function trazarLinea(campo, color, ancho_px) {
+      let d = "";
+      serie.forEach((s, i) => {
+        const px = x(i), py = y(s[campo]);
+        d += (i === 0 ? "M" : "L") + px + "," + py + " ";
+      });
+      const path = document.createElementNS(svg.namespaceURI, "path");
+      path.setAttribute("d", d.trim());
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", ancho_px);
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(path);
+    }
+    trazarLinea("venta", "var(--rp-muted-line)", 2);
+    trazarLinea("profit", "var(--rp-accent)", 2);
+
+    // puntos + etiquetas de mes en eje X (cada punto, con hit target grande)
+    serie.forEach((s, i) => {
+      const px = x(i);
+      const mostrarEtiqueta = serie.length <= 14 || i % Math.ceil(serie.length / 12) === 0;
+      if (mostrarEtiqueta) {
+        const etiquetaMes = document.createElementNS(svg.namespaceURI, "text");
+        etiquetaMes.setAttribute("x", px);
+        etiquetaMes.setAttribute("y", alto - 6);
+        etiquetaMes.setAttribute("text-anchor", "middle");
+        etiquetaMes.setAttribute("class", "rp-bar-label");
+        etiquetaMes.textContent = s.mes.slice(2);
+        svg.appendChild(etiquetaMes);
+      }
+
+      const dotProfit = document.createElementNS(svg.namespaceURI, "circle");
+      dotProfit.setAttribute("cx", px);
+      dotProfit.setAttribute("cy", y(s.profit));
+      dotProfit.setAttribute("r", 4);
+      dotProfit.setAttribute("fill", "var(--rp-accent)");
+      dotProfit.setAttribute("stroke", "var(--rp-surface)");
+      dotProfit.setAttribute("stroke-width", 2);
+      svg.appendChild(dotProfit);
+
+      const hit = document.createElementNS(svg.namespaceURI, "rect");
+      const anchoHit = serie.length > 1 ? anchoPlot / serie.length : anchoPlot;
+      hit.setAttribute("x", px - anchoHit / 2);
+      hit.setAttribute("y", margen.top);
+      hit.setAttribute("width", Math.max(anchoHit, 16));
+      hit.setAttribute("height", altoPlot);
+      hit.setAttribute("fill", "transparent");
+      hit.addEventListener("pointermove", (e) => {
+        mostrarTooltip(e.clientX, e.clientY, s.mes, [
+          { label: "Profit", valor: fmtMoneda(s.profit) },
+          { label: "Venta", valor: fmtMoneda(s.venta) },
+        ]);
+      });
+      hit.addEventListener("pointerleave", ocultarTooltip);
+      svg.appendChild(hit);
+    });
+
+    // etiqueta directa al final de la línea de profit (la serie protagonista)
+    const ultimo = serie[serie.length - 1];
+    const labelFin = document.createElementNS(svg.namespaceURI, "text");
+    labelFin.setAttribute("x", x(serie.length - 1));
+    labelFin.setAttribute("y", y(ultimo.profit) - 10);
+    labelFin.setAttribute("text-anchor", "end");
+    labelFin.setAttribute("class", "rp-bar-value");
+    labelFin.textContent = fmtMonedaCompacta(ultimo.profit);
+    svg.appendChild(labelFin);
+
+    cont.appendChild(svg);
+  }
+
+  function agregarPorMes(filas) {
+    const mapa = new Map();
+    for (const f of filas) {
+      if (!mapa.has(f.mes)) mapa.set(f.mes, { mes: f.mes, venta: 0, profit: 0 });
+      const acc = mapa.get(f.mes);
+      acc.venta += f.venta;
+      acc.profit += f.profit;
+    }
+    return Array.from(mapa.values()).sort((a, b) => a.mes.localeCompare(b.mes));
+  }
+
+  function renderTodo(filasFiltradas) {
+    renderKpis(filasFiltradas);
+    renderBarChart("rp-chart-clientes", agruparYSumar(filasFiltradas, "cliente", 10));
+    renderBarChart("rp-chart-tipo", agruparYSumar(filasFiltradas, "tipo", 10));
+    renderBarChart("rp-chart-plaza", agruparYSumar(filasFiltradas, "plaza", 10));
+    renderBarChart("rp-chart-vendedores", agruparYSumar(filasFiltradas, "vendedor", 10));
+  }
+
+  // La gráfica mensual siempre usa el histórico completo, sin importar el filtro.
+  renderLineChart("rp-chart-mensual", agregarPorMes(TODOS));
+
+  const inputDesde = document.getElementById("rp-desde");
+  const inputHasta = document.getElementById("rp-hasta");
+
+  const fechas = TODOS.map((f) => f.fecha).sort();
+  const fechaMin = fechas[0];
+  const fechaMax = fechas[fechas.length - 1];
+  inputDesde.value = fechaMin;
+  inputHasta.value = fechaMax;
+  inputDesde.min = fechaMin; inputDesde.max = fechaMax;
+  inputHasta.min = fechaMin; inputHasta.max = fechaMax;
+
+  function aplicarFiltro() {
+    const desde = inputDesde.value || fechaMin;
+    const hasta = inputHasta.value || fechaMax;
+    const filtradas = TODOS.filter((f) => f.fecha >= desde && f.fecha <= hasta);
+    renderTodo(filtradas);
+  }
+
+  inputDesde.addEventListener("change", aplicarFiltro);
+  inputHasta.addEventListener("change", aplicarFiltro);
+  document.getElementById("rp-reset").addEventListener("click", () => {
+    inputDesde.value = fechaMin;
+    inputHasta.value = fechaMax;
+    aplicarFiltro();
+  });
+
+  aplicarFiltro();
+  window.addEventListener("resize", aplicarFiltro);
+})();
+</script>
+{% endif %}
+{% endblock %}

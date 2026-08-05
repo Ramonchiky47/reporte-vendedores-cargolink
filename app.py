@@ -591,6 +591,44 @@ def dashboard_plazas_vendedores():
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
 
 
+@app.route("/reportes")
+@login_required
+def reportes_graficas():
+    db = get_db()
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    bookings = db.execute(
+        "SELECT fecha, vendedor, venta_por, cliente_servicio, venta, profit FROM reporte_bookings ORDER BY fecha"
+    ).fetchall()
+    db.close()
+
+    # Un registro liviano por booking (sin referencia ni margen, no se
+    # necesitan para estas gráficas de agregados) para que todo el filtrado
+    # y las sumas se hagan en el navegador, igual que en /dashboard.
+    filas = []
+    for r in bookings:
+        fecha = r["fecha"]
+        if fecha is None:
+            continue
+        vkey = normalizar(r["vendedor"])
+        filas.append({
+            "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
+            "mes": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m"),
+            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "vendedor": r["vendedor"] or "#N/D",
+            "cliente": r["cliente_servicio"] or "Sin cliente",
+            "tipo": r["venta_por"] or "Sin tipo",
+            "venta": round(float(r["venta"]), 2),
+            "profit": round(float(r["profit"]), 2),
+        })
+
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
 @app.route("/catalogos")
 @admin_required
 def catalogos():
