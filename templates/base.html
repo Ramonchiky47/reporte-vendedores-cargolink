@@ -65,7 +65,7 @@
       <p class="autor">By Ing Ramón Villanueva</p>
     </div>
     <nav>
-      {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Reporte</a>{% endif %}
+      {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
       <a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Dashboard</a>
       <a href="{{ url_for('reportes_graficas') }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>
       {% if session.get('es_admin') %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}

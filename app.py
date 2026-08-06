@@ -36,6 +36,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
 CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
+CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 
 
 def get_secret_key():
@@ -122,6 +123,23 @@ def init_db():
             generado_en timestamptz not null default now()
         );
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS asignacion_de_clientes (
+            id bigint generated always as identity primary key,
+            folio integer,
+            razon_social text not null,
+            vendedor text,
+            desarrollador text,
+            tipo_cliente text,
+            fecha_creacion timestamptz not null default now(),
+            cant_booking integer not null default 0,
+            fecha_ultimo_booking timestamptz
+        );
+    """)
+    db.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_asignacion_de_clientes_folio
+            ON asignacion_de_clientes (folio);
+    """)
     db.commit()
 
     hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
@@ -191,6 +209,15 @@ def leer_filas_xlsx(file_storage):
 
 def normalizar(texto):
     return (texto or "").strip().upper()
+
+
+def extraer_tipo_servicio(referencia):
+    """El tipo de servicio (FCLI, LCLI, DA, AI, FTL, ...) es el tercer
+    segmento de la referencia, ej. '2608-3798-FCLI' -> 'FCLI'."""
+    partes = (referencia or "").split("-")
+    if len(partes) >= 3:
+        return "-".join(partes[2:]).strip().upper() or "Sin tipo"
+    return "Sin tipo"
 
 
 def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
@@ -271,6 +298,81 @@ def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
         })
 
     return bookings
+
+
+def descargar_reporte_clientes_cargolink():
+    """Se conecta a CargoLink, descarga el Reporte de Clientes (excel real,
+    no HTML) y regresa una lista de dicts (uno por cliente). No toca el
+    disco. Columnas del excel: FOLIO, RAZÓN SOCIAL, VENDEDOR, DESARROLLADOR,
+    TIPO DE CLIENTE, SUCURSAL, FECHA DE CREACIÓN, CANT BOOKING,
+    F. ÚLT. BOOKING (SUCURSAL no se usa, no está en asignacion_de_clientes)."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    res = sesion.get(
+        CARGOLINK_REPORTE_CLIENTES_URL,
+        params={"cliente": "", "t_cliente": "", "vendedor": "", "sucursal": "", "desarrollador": "", "industria": ""},
+        headers=headers,
+        timeout=120,
+    )
+    if res.status_code != 200 or len(res.content) == 0:
+        raise RuntimeError("Error al descargar el Reporte de Clientes desde CargoLink.")
+
+    wb = openpyxl.load_workbook(io.BytesIO(res.content), data_only=True)
+    ws = wb.active
+
+    def parse_fecha(v):
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v
+        texto = str(v).strip()
+        for formato in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(texto, formato)
+            except ValueError:
+                continue
+        return None
+
+    header = None
+    clientes = []
+    for row in ws.iter_rows(values_only=True):
+        if header is None:
+            if row and row[0] == "FOLIO":
+                header = [str(h).strip() if h is not None else "" for h in row]
+            continue
+        if not row or row[0] is None:
+            continue
+
+        dato = dict(zip(header, row))
+        try:
+            folio = int(dato.get("FOLIO"))
+        except (TypeError, ValueError):
+            continue
+
+        clientes.append({
+            "folio": folio,
+            "razon_social": (dato.get("RAZÓN SOCIAL") or "").strip() or "(sin nombre)",
+            "vendedor": (dato.get("VENDEDOR") or "").strip() or None,
+            "desarrollador": (dato.get("DESARROLLADOR") or "").strip() or None,
+            "tipo_cliente": (dato.get("TIPO DE CLIENTE") or "").strip() or None,
+            # fecha_creacion es NOT NULL en la tabla; si CargoLink no trae
+            # una fecha parseable (no debería pasar, pero por seguridad),
+            # se usa el momento de la descarga en vez de mandar NULL.
+            "fecha_creacion": parse_fecha(dato.get("FECHA DE CREACIÓN")) or datetime.now(TZ_LOCAL),
+            "cant_booking": int(dato.get("CANT BOOKING") or 0),
+            "fecha_ultimo_booking": parse_fecha(dato.get("F. ÚLT. BOOKING")),
+        })
+
+    return clientes
 
 
 def construir_datos_dashboard():
@@ -497,9 +599,47 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
         (fecha_inicio, fecha_fin),
     )
     db.commit()
+
+    # Reporte de Clientes: además de los bookings, se actualiza
+    # asignacion_de_clientes usando folio como llave — los folios que ya
+    # existen se reemplazan con los datos frescos de CargoLink, y los que
+    # no existían se agregan. Es un paso adicional: si falla, no se revierte
+    # el reporte de bookings que ya se guardó arriba, solo se avisa.
+    mensaje_clientes = ""
+    try:
+        clientes = descargar_reporte_clientes_cargolink()
+        columnas_clientes = [
+            "folio", "razon_social", "vendedor", "desarrollador",
+            "tipo_cliente", "fecha_creacion", "cant_booking", "fecha_ultimo_booking",
+        ]
+        for inicio in range(0, len(clientes), TAMANO_LOTE):
+            lote = clientes[inicio:inicio + TAMANO_LOTE]
+            placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas_clientes)) + ")"] * len(lote))
+            valores = [c[col] for c in lote for col in columnas_clientes]
+            cur.execute(
+                f"""
+                INSERT INTO asignacion_de_clientes ({', '.join(columnas_clientes)})
+                VALUES {placeholders}
+                ON CONFLICT (folio) DO UPDATE SET
+                    razon_social = EXCLUDED.razon_social,
+                    vendedor = EXCLUDED.vendedor,
+                    desarrollador = EXCLUDED.desarrollador,
+                    tipo_cliente = EXCLUDED.tipo_cliente,
+                    fecha_creacion = EXCLUDED.fecha_creacion,
+                    cant_booking = EXCLUDED.cant_booking,
+                    fecha_ultimo_booking = EXCLUDED.fecha_ultimo_booking
+                """,
+                valores,
+            )
+        db.commit()
+        mensaje_clientes = f" Reporte de clientes actualizado ({len(clientes)} clientes)."
+    except Exception as e:
+        db.rollback()
+        mensaje_clientes = f" Aviso: el reporte de bookings sí se guardó, pero el reporte de clientes falló ({str(e)[:300]})."
+
     db.close()
 
-    return True, f"Reporte generado correctamente ({len(bookings)} bookings).", None
+    return True, f"Reporte generado correctamente ({len(bookings)} bookings).{mensaje_clientes}", None
 
 
 @app.route("/generar", methods=["POST"])
@@ -591,9 +731,10 @@ def dashboard_plazas_vendedores():
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
 
 
-@app.route("/reportes")
-@login_required
-def reportes_graficas():
+def construir_filas_reportes():
+    """Un registro liviano por booking (usado por /reportes y
+    /reportes/por-vendedor) para que todo el filtrado y las sumas se hagan
+    en el navegador, igual que en /dashboard."""
     db = get_db()
 
     plaza_por_vendedor = {}
@@ -601,13 +742,10 @@ def reportes_graficas():
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
 
     bookings = db.execute(
-        "SELECT fecha, vendedor, venta_por, cliente_servicio, venta, profit FROM reporte_bookings ORDER BY fecha"
+        "SELECT fecha, vendedor, ejecutivo, referencia, venta_por, cliente_servicio, venta, profit FROM reporte_bookings ORDER BY fecha"
     ).fetchall()
     db.close()
 
-    # Un registro liviano por booking (sin referencia ni margen, no se
-    # necesitan para estas gráficas de agregados) para que todo el filtrado
-    # y las sumas se hagan en el navegador, igual que en /dashboard.
     filas = []
     for r in bookings:
         fecha = r["fecha"]
@@ -621,12 +759,115 @@ def reportes_graficas():
             "vendedor": r["vendedor"] or "#N/D",
             "cliente": r["cliente_servicio"] or "Sin cliente",
             "tipo": r["venta_por"] or "Sin tipo",
+            "ejecutivo": normalizar(r["ejecutivo"]),
+            "tipoServicio": extraer_tipo_servicio(r["referencia"]),
             "venta": round(float(r["venta"]), 2),
             "profit": round(float(r["profit"]), 2),
         })
+    return filas
 
+
+@app.route("/reportes")
+@login_required
+def reportes_graficas():
+    filas = construir_filas_reportes()
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/por-vendedor")
+@login_required
+def reportes_por_vendedor():
+    filas = construir_filas_reportes()
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/clientes-asignados")
+@login_required
+def reportes_clientes_asignados():
+    db = get_db()
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    filas_clientes = db.execute(
+        "SELECT folio, razon_social, vendedor, tipo_cliente, cant_booking, fecha_ultimo_booking "
+        "FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY vendedor, razon_social"
+    ).fetchall()
+    db.close()
+
+    filas = []
+    for r in filas_clientes:
+        vkey = normalizar(r["vendedor"])
+        filas.append({
+            "folio": r["folio"],
+            "razonSocial": r["razon_social"],
+            "vendedor": r["vendedor"],
+            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "tipoCliente": r["tipo_cliente"] or "",
+            "cantBooking": r["cant_booking"],
+            "fechaUltimoBooking": r["fecha_ultimo_booking"].strftime("%Y-%m-%d") if r["fecha_ultimo_booking"] else "",
+        })
+
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_clientes_asignados.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/clientes-mensual")
+@login_required
+def reportes_clientes_mensual():
+    db = get_db()
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    # El booking pertenece al cliente (cliente_servicio) sin importar quién
+    # de reporte_bookings.vendedor lo vendió — aquí se agrupa por el
+    # vendedor ASIGNADO al cliente en asignacion_de_clientes, que es lo que
+    # pidió el usuario ("clientes asignados por vendedor"). Se guarda
+    # también el set de vendedores reales detrás de cada mes para poder
+    # marcar en rojo cuando alguna venta la generó alguien distinto al
+    # vendedor asignado actualmente.
+    mensual_por_cliente = {}
+    for r in db.execute("SELECT mes, vendedor, cliente_servicio, profit FROM reporte_bookings"):
+        ckey = normalizar(r["cliente_servicio"])
+        if not ckey:
+            continue
+        por_mes = mensual_por_cliente.setdefault(ckey, {})
+        acc = por_mes.setdefault(r["mes"], {"cant": 0, "profit": 0.0, "vendedores": set()})
+        acc["cant"] += 1
+        acc["profit"] += float(r["profit"])
+        acc["vendedores"].add(normalizar(r["vendedor"]))
+
+    filas_clientes = db.execute(
+        "SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY vendedor, razon_social"
+    ).fetchall()
+    db.close()
+
+    filas = []
+    for r in filas_clientes:
+        vkey = normalizar(r["vendedor"])
+        ckey = normalizar(r["razon_social"])
+        mensual = {}
+        for mes, acc in mensual_por_cliente.get(ckey, {}).items():
+            mensual[mes] = {
+                "cant": acc["cant"],
+                "profit": acc["profit"],
+                "otroVendedor": bool(acc["vendedores"] - {vkey}),
+            }
+        filas.append({
+            "folio": r["folio"],
+            "razonSocial": r["razon_social"],
+            "vendedor": r["vendedor"],
+            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "mensual": mensual,
+        })
+
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_clientes_mensual.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
 @app.route("/catalogos")

@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Cant Booking / Profit mensual por cliente{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+    --rp-accent: #007CC3;
+  }
+  main { max-width: 1200px; }
+
+  .rp-volver { font-size: .82rem; color: var(--rp-ink-2); text-decoration: none; display: inline-block; margin-bottom: .75rem; }
+  .rp-volver:hover { text-decoration: underline; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.25rem 0 0; }
+  .rp-filtros-cascada { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .rp-filtros-cascada .field { min-width: 200px; margin-bottom: 0; }
+  .rp-filtros-cascada select {
+    width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: .9rem; background: #fff;
+  }
+
+  /* Ver reportes_por_vendedor.html: "hidden" pierde contra ".btn { display }". */
+  .rp-oculto { display: none !important; }
+
+  .rp-metrica-toggle { display: flex; gap: .4rem; margin: 1rem 0; }
+  .rp-metrica-toggle button {
+    padding: .5rem 1rem; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; color: var(--rp-ink-2);
+    font-size: .85rem; font-weight: 600; cursor: pointer;
+  }
+  .rp-metrica-toggle button.activo { background: var(--rp-accent); border-color: var(--rp-accent); color: #fff; }
+
+  #rp-tabla-seleccion { margin: 0 0 1rem; font-weight: 600; color: var(--rp-ink-2); }
+
+  .rp-tabla-scroll {
+    max-width: 100%; max-height: 70vh; overflow-x: auto; overflow-y: auto;
+    border: 1px solid var(--rp-grid); border-radius: 8px;
+  }
+  .rp-tabla-scroll table { width: auto; min-width: 100%; font-size: .78rem; }
+  .rp-tabla-scroll thead th { position: sticky; top: 0; z-index: 1; }
+  .rp-tabla-scroll td, .rp-tabla-scroll th { white-space: nowrap; }
+  .rp-tabla-scroll td:first-child, .rp-tabla-scroll th:first-child {
+    position: sticky; left: 0; z-index: 2; background: #f8fafc; box-shadow: 1px 0 0 var(--rp-grid);
+  }
+  .rp-tabla-scroll thead th:first-child { z-index: 3; }
+  .rp-tabla-scroll td:not(:nth-child(1)):not(:nth-child(2)),
+  .rp-tabla-scroll th:not(:nth-child(1)):not(:nth-child(2)) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .rp-tabla-scroll td.total, .rp-tabla-scroll th.total { font-weight: 700; }
+  /* Rojo: ese mes tiene al menos una venta que no generó el vendedor
+     actualmente asignado al cliente (mismos tonos que .flash/.result.error
+     de base.html, para ser consistente con "alerta" en el resto de la app). */
+  .rp-tabla-scroll td.otro-vendedor { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+  .rp-badge-otro { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #fee2e2; border: 1px solid #b91c1c; vertical-align: middle; }
+
+  .rp-tabla-scroll::-webkit-scrollbar { height: 12px; width: 12px; }
+  .rp-tabla-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  .rp-tabla-scroll { scrollbar-color: #94a3b8 #f1f5f9; scrollbar-width: auto; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <div class="card">
+    <p class="empty">Todavía no hay clientes asignados. Genera el reporte de vendedores primero (también actualiza asignacion_de_clientes).</p>
+  </div>
+{% else %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Cant Booking / Profit mensual por cliente</h2>
+        <p class="sub">Clientes asignados al vendedor seleccionado, mensual (Ene-Dic) y Total, ordenado descendente por el total.</p>
+      </div>
+      <button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>
+    </div>
+
+    <div class="rp-filtros-cascada">
+      <div class="field">
+        <label for="rp-filtro-plaza">Plaza</label>
+        <select id="rp-filtro-plaza"></select>
+      </div>
+      <button type="button" class="btn" id="rp-aplicar-plaza">Aplicar</button>
+
+      <div class="field rp-oculto" id="rp-bloque-vendedor">
+        <label for="rp-filtro-vendedor">Vendedor</label>
+        <select id="rp-filtro-vendedor"></select>
+      </div>
+      <button type="button" class="btn rp-oculto" id="rp-aplicar-vendedor">Aplicar</button>
+    </div>
+
+    <div class="rp-metrica-toggle">
+      <button type="button" class="activo" id="rp-btn-cant" data-metrica="cant">Cant Booking</button>
+      <button type="button" id="rp-btn-profit" data-metrica="profit">Importe de Profit</button>
+    </div>
+    <p class="sub"><span class="rp-badge-otro">&nbsp;</span> = ese mes tiene al menos una venta que generó otro vendedor, distinto al asignado actualmente al cliente.</p>
+    <p class="sub" id="rp-tabla-seleccion"></p>
+
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-mensual">
+        <thead><tr id="rp-tabla-mensual-head"></tr></thead>
+        <tbody id="rp-tabla-mensual-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script id="datos-clientes-mensual" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-clientes-mensual").textContent);
+  const MESES_ABR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // "Año en curso" = el año más reciente con datos mensuales, no el
+  // reloj del navegador (mismo criterio que los otros reportes).
+  let anioActual = null;
+  for (const c of TODOS) {
+    for (const mes of Object.keys(c.mensual)) {
+      const anio = mes.slice(0, 4);
+      if (!anioActual || anio > anioActual) anioActual = anio;
+    }
+  }
+  anioActual = anioActual || String(new Date().getFullYear());
+
+  // Precalcula, por cliente, los 12 valores del año (cant y profit) y sus
+  // totales — se hace una sola vez, independiente del toggle de métrica.
+  const clientesConMensual = TODOS.map((c) => {
+    const cantPorMes = [];
+    const profitPorMes = [];
+    const otroVendedorPorMes = [];
+    for (let m = 1; m <= 12; m++) {
+      const clave = `${anioActual}-${String(m).padStart(2, "0")}`;
+      const dato = c.mensual[clave];
+      cantPorMes.push(dato ? dato.cant : 0);
+      profitPorMes.push(dato ? dato.profit : 0);
+      // true si ese mes tiene al menos una venta que no generó el vendedor
+      // actualmente asignado al cliente.
+      otroVendedorPorMes.push(!!(dato && dato.otroVendedor));
+    }
+    return {
+      folio: c.folio,
+      razonSocial: c.razonSocial,
+      vendedor: c.vendedor,
+      plaza: c.plaza,
+      cantPorMes,
+      profitPorMes,
+      otroVendedorPorMes,
+      totalCant: cantPorMes.reduce((a, v) => a + v, 0),
+      totalProfit: profitPorMes.reduce((a, v) => a + v, 0),
+    };
+  });
+
+  const vendedoresPorPlaza = new Map();
+  for (const c of clientesConMensual) {
+    if (!vendedoresPorPlaza.has(c.plaza)) vendedoresPorPlaza.set(c.plaza, new Set());
+    vendedoresPorPlaza.get(c.plaza).add(c.vendedor);
+  }
+  const plazasOrdenadas = Array.from(vendedoresPorPlaza.keys()).sort();
+  const todosLosVendedores = Array.from(new Set(clientesConMensual.map((c) => c.vendedor))).sort();
+
+  let metricaActual = "cant";
+  let filtroPlaza = "__todas__";
+  let filtroVendedor = "__todos__";
+
+  function renderTabla() {
+    const filas = clientesConMensual.filter(
+      (c) => (filtroPlaza === "__todas__" || c.plaza === filtroPlaza) && (filtroVendedor === "__todos__" || c.vendedor === filtroVendedor),
+    );
+
+    const esCant = metricaActual === "cant";
+    const porMesKey = esCant ? "cantPorMes" : "profitPorMes";
+    const totalKey = esCant ? "totalCant" : "totalProfit";
+    const fmt = esCant ? fmtEntero : fmtMoneda;
+
+    const ordenadas = filas.slice().sort((a, b) => b[totalKey] - a[totalKey]);
+
+    const thead = document.getElementById("rp-tabla-mensual-head");
+    thead.innerHTML = "<th>Folio</th><th>Cliente</th>" +
+      MESES_ABR.map((m) => `<th>${m}</th>`).join("") + '<th class="total">Total</th>';
+
+    const tbody = document.getElementById("rp-tabla-mensual-body");
+    const etiquetaPlaza = filtroPlaza === "__todas__" ? "Todas las plazas" : filtroPlaza;
+    const etiquetaVendedor = filtroVendedor === "__todos__" ? "Todos los vendedores" : filtroVendedor;
+    document.getElementById("rp-tabla-seleccion").textContent =
+      `Plaza: ${etiquetaPlaza} · Vendedor: ${etiquetaVendedor} · ${ordenadas.length} cliente(s) · ${anioActual} · ${esCant ? "Cant Booking" : "Importe de Profit"}`;
+
+    if (ordenadas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="15" class="empty">Sin clientes para esta selección.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = ordenadas.map((c) => `
+      <tr>
+        <td>${escaparHtml(String(c.folio))}</td>
+        <td>${escaparHtml(c.razonSocial)}</td>
+        ${c[porMesKey].map((v, i) => `<td class="${c.otroVendedorPorMes[i] ? "otro-vendedor" : ""}">${v ? fmt(v) : "—"}</td>`).join("")}
+        <td class="total">${fmt(c[totalKey])}</td>
+      </tr>
+    `).join("");
+  }
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${c.textContent.replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(",");
+    });
+    const csv = "\uFEFF" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const selectPlaza = document.getElementById("rp-filtro-plaza");
+  const selectVendedor = document.getElementById("rp-filtro-vendedor");
+  const bloqueVendedor = document.getElementById("rp-bloque-vendedor");
+  const btnAplicarPlaza = document.getElementById("rp-aplicar-plaza");
+  const btnAplicarVendedor = document.getElementById("rp-aplicar-vendedor");
+  const btnCant = document.getElementById("rp-btn-cant");
+  const btnProfit = document.getElementById("rp-btn-profit");
+
+  selectPlaza.innerHTML = '<option value="__todas__">Todas las plazas</option>' +
+    plazasOrdenadas.map((p) => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("");
+
+  function poblarVendedores(plaza) {
+    const vendedores = plaza === "__todas__" ? todosLosVendedores : Array.from(vendedoresPorPlaza.get(plaza) || []).sort();
+    selectVendedor.innerHTML = '<option value="__todos__">Todos los vendedores</option>' +
+      vendedores.map((v) => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join("");
+  }
+
+  btnAplicarPlaza.addEventListener("click", () => {
+    filtroPlaza = selectPlaza.value;
+    filtroVendedor = "__todos__";
+    poblarVendedores(filtroPlaza);
+    bloqueVendedor.classList.remove("rp-oculto");
+    btnAplicarVendedor.classList.remove("rp-oculto");
+    renderTabla();
+  });
+
+  btnAplicarVendedor.addEventListener("click", () => {
+    filtroVendedor = selectVendedor.value;
+    renderTabla();
+  });
+
+  function elegirMetrica(metrica) {
+    metricaActual = metrica;
+    btnCant.classList.toggle("activo", metrica === "cant");
+    btnProfit.classList.toggle("activo", metrica === "profit");
+    renderTabla();
+  }
+  btnCant.addEventListener("click", () => elegirMetrica("cant"));
+  btnProfit.addEventListener("click", () => elegirMetrica("profit"));
+
+  document.getElementById("rp-exportar-tabla").addEventListener("click", () => {
+    const sufijo = metricaActual === "cant" ? "CantBooking" : "Profit";
+    exportarTablaCSV("rp-tabla-mensual", `Clientes_mensual_${sufijo}_${new Date().toISOString().slice(0, 10)}.csv`);
+  });
+
+  renderTabla();
+})();
+</script>
+{% endif %}
+{% endblock %}
