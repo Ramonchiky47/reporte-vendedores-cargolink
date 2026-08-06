@@ -56,6 +56,12 @@
      de base.html, para ser consistente con "alerta" en el resto de la app). */
   .rp-tabla-scroll td.otro-vendedor { background: #fee2e2; color: #b91c1c; font-weight: 700; }
   .rp-badge-otro { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #fee2e2; border: 1px solid #b91c1c; vertical-align: middle; }
+  /* Amarillo: ese mes el cliente no tuvo ninguna venta. */
+  .rp-tabla-scroll td.sin-venta-mes { background: #fef9c3; color: #854d0e; }
+  .rp-badge-sinventa { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #fef9c3; border: 1px solid #854d0e; vertical-align: middle; }
+
+  .rp-leyenda-clientes { display: flex; gap: 1.25rem; flex-wrap: wrap; margin: 0 0 .5rem; font-size: .82rem; color: var(--rp-ink-2); }
+  .rp-leyenda-clientes b { color: var(--rp-ink); }
 
   .rp-tabla-scroll::-webkit-scrollbar { height: 12px; width: 12px; }
   .rp-tabla-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
@@ -100,7 +106,9 @@
       <button type="button" id="rp-btn-profit" data-metrica="profit">Importe de Profit</button>
     </div>
     <p class="sub"><span class="rp-badge-otro">&nbsp;</span> = ese mes tiene al menos una venta que generó otro vendedor, distinto al asignado actualmente al cliente.</p>
+    <p class="sub"><span class="rp-badge-sinventa">&nbsp;</span> = ese mes el cliente no tuvo ninguna venta.</p>
     <p class="sub" id="rp-tabla-seleccion"></p>
+    <div class="rp-leyenda-clientes" id="rp-leyenda-clientes"></div>
 
     <div class="rp-tabla-scroll">
       <table id="rp-tabla-mensual">
@@ -200,6 +208,17 @@
     document.getElementById("rp-tabla-seleccion").textContent =
       `Plaza: ${etiquetaPlaza} · Vendedor: ${etiquetaVendedor} · ${ordenadas.length} cliente(s) · ${anioActual} · ${esCant ? "Cant Booking" : "Importe de Profit"}`;
 
+    // "Con venta" / "sin venta" se basan en si el cliente tuvo algún
+    // booking en el año (totalCant), sin importar qué métrica esté
+    // seleccionada — si no hubo bookings tampoco hubo profit.
+    const conVenta = filas.filter((c) => c.totalCant > 0).length;
+    const sinVenta = filas.length - conVenta;
+    const pctSinVenta = filas.length > 0 ? Math.round((sinVenta / filas.length) * 100) : 0;
+    document.getElementById("rp-leyenda-clientes").innerHTML =
+      `<span>Clientes con venta: <b>${fmtEntero(conVenta)}</b></span>` +
+      `<span>Clientes sin venta: <b>${fmtEntero(sinVenta)}</b></span>` +
+      `<span>% clientes sin venta: <b>${pctSinVenta}%</b></span>`;
+
     if (ordenadas.length === 0) {
       tbody.innerHTML = `<tr><td colspan="15" class="empty">Sin clientes para esta selección.</td></tr>`;
       return;
@@ -209,7 +228,10 @@
       <tr>
         <td>${escaparHtml(String(c.folio))}</td>
         <td>${escaparHtml(c.razonSocial)}</td>
-        ${c[porMesKey].map((v, i) => `<td class="${c.otroVendedorPorMes[i] ? "otro-vendedor" : ""}">${v ? fmt(v) : "—"}</td>`).join("")}
+        ${c[porMesKey].map((v, i) => {
+          const clase = c.otroVendedorPorMes[i] ? "otro-vendedor" : (c.cantPorMes[i] === 0 ? "sin-venta-mes" : "");
+          return `<td class="${clase}">${v ? fmt(v) : "—"}</td>`;
+        }).join("")}
         <td class="total">${fmt(c[totalKey])}</td>
       </tr>
     `).join("");
