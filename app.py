@@ -140,6 +140,14 @@ def init_db():
         CREATE UNIQUE INDEX IF NOT EXISTS uq_asignacion_de_clientes_folio
             ON asignacion_de_clientes (folio);
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS usuario_plazas (
+            id bigint generated always as identity primary key,
+            usuario_id bigint not null references usuarios(id) on delete cascade,
+            plaza text not null,
+            unique (usuario_id, plaza)
+        );
+    """)
     db.commit()
 
     hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
@@ -209,6 +217,17 @@ def leer_filas_xlsx(file_storage):
 
 def normalizar(texto):
     return (texto or "").strip().upper()
+
+
+def get_plazas_catalogo():
+    """Todas las plazas conocidas (unión de catalogo_vendedores y
+    catalogo_desarrolladores), para poblar los checkboxes de visibilidad."""
+    db = get_db()
+    filas_v = db.execute("SELECT DISTINCT plaza FROM catalogo_vendedores").fetchall()
+    filas_d = db.execute("SELECT DISTINCT plaza FROM catalogo_desarrolladores").fetchall()
+    db.close()
+    plazas = {f["plaza"] for f in filas_v if f["plaza"]} | {f["plaza"] for f in filas_d if f["plaza"]}
+    return sorted(plazas)
 
 
 def extraer_tipo_servicio(referencia):
@@ -375,7 +394,7 @@ def descargar_reporte_clientes_cargolink():
     return clientes
 
 
-def construir_datos_dashboard():
+def construir_datos_dashboard(plazas_permitidas=None):
     db = get_db()
     meta = db.execute(
         "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
@@ -417,25 +436,36 @@ def construir_datos_dashboard():
     detalle = []
     for r in bookings:
         vkey = normalizar(r["vendedor"])
-        clave = (r["mes"], vkey)
-        agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
-        agg["cant_book"] += 1
-        agg["venta"] += float(r["venta"])
-        agg["profit"] += float(r["profit"])
+        cat = catalogo_vendedor.get(vkey)
+        plaza_vendedor = cat["plaza"] if cat else "#N/D"
+        vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
 
-        if r["ejecutivo"]:
-            dkey = normalizar(r["ejecutivo"])
+        dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
+        cat_d = catalogo_desarrollador.get(dkey) if dkey else None
+        plaza_desarrollador = cat_d["plaza"] if cat_d else "#N/D"
+        desarrollador_permitido = plazas_permitidas is None or plaza_desarrollador in plazas_permitidas
+
+        if vendedor_permitido:
+            clave = (r["mes"], vkey)
+            agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+            agg["cant_book"] += 1
+            agg["venta"] += float(r["venta"])
+            agg["profit"] += float(r["profit"])
+
+        if dkey and desarrollador_permitido:
             agg_d = agregados_desarrollador.setdefault((r["mes"], dkey), {"cant_book": 0, "venta": 0.0, "profit": 0.0})
             agg_d["cant_book"] += 1
             agg_d["venta"] += float(r["venta"])
             agg_d["profit"] += float(r["profit"])
 
-        cat = catalogo_vendedor.get(vkey)
         nombre_canonico = cat["nombre"] if cat else r["vendedor"]
         # Los totales (agregados/filas de arriba) siempre incluyen a todos los
         # vendedores; solo el detalle a nivel booking se omite para quien
-        # tenga marcado "ocultar_detalle" en su catálogo.
-        if not (cat and cat["ocultar_detalle"]):
+        # tenga marcado "ocultar_detalle" en su catálogo. Un booking entra al
+        # detalle si su vendedor O su desarrollador pertenece a una plaza
+        # permitida (una misma fila puede ser relevante para el reporte de
+        # Vendedores o el de Customer por separado).
+        if (vendedor_permitido or desarrollador_permitido) and not (cat and cat["ocultar_detalle"]):
             detalle.append({
                 "mes": r["mes"],
                 "vendedor": nombre_canonico,
@@ -450,9 +480,17 @@ def construir_datos_dashboard():
             })
 
     for clave in presupuesto_por_mes_vendedor:
-        agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+        _, vkey = clave
+        cat = catalogo_vendedor.get(vkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        if plazas_permitidas is None or plaza in plazas_permitidas:
+            agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
     for clave in presupuesto_por_mes_desarrollador:
-        agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+        _, dkey = clave
+        cat = catalogo_desarrollador.get(dkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        if plazas_permitidas is None or plaza in plazas_permitidas:
+            agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
 
     filas = []
     for (mes, vkey), agg in agregados.items():
@@ -536,6 +574,24 @@ def admin_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def plazas_permitidas_usuario():
+    """None = el usuario en sesión ve todas las plazas (sin restricción).
+    Si no es None, es el set de plazas que puede ver. Los administradores
+    siempre ven todo, sin importar si tienen filas en usuario_plazas —
+    evita que un admin se bloquee a sí mismo por error."""
+    if session.get("es_admin"):
+        return None
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return None
+    db = get_db()
+    filas = db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,)).fetchall()
+    db.close()
+    if not filas:
+        return None
+    return {f["plaza"] for f in filas}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -720,7 +776,7 @@ def descargar():
 @app.route("/dashboard")
 @login_required
 def dashboard_plazas_vendedores():
-    datos = construir_datos_dashboard()
+    datos = construir_datos_dashboard(plazas_permitidas_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -731,7 +787,7 @@ def dashboard_plazas_vendedores():
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
 
 
-def construir_filas_reportes():
+def construir_filas_reportes(plazas_permitidas=None):
     """Un registro liviano por booking (usado por /reportes y
     /reportes/por-vendedor) para que todo el filtrado y las sumas se hagan
     en el navegador, igual que en /dashboard."""
@@ -752,10 +808,13 @@ def construir_filas_reportes():
         if fecha is None:
             continue
         vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
         filas.append({
             "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
             "mes": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m"),
-            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "plaza": plaza,
             "vendedor": r["vendedor"] or "#N/D",
             "cliente": r["cliente_servicio"] or "Sin cliente",
             "tipo": r["venta_por"] or "Sin tipo",
@@ -770,7 +829,7 @@ def construir_filas_reportes():
 @app.route("/reportes")
 @login_required
 def reportes_graficas():
-    filas = construir_filas_reportes()
+    filas = construir_filas_reportes(plazas_permitidas_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -778,7 +837,7 @@ def reportes_graficas():
 @app.route("/reportes/por-vendedor")
 @login_required
 def reportes_por_vendedor():
-    filas = construir_filas_reportes()
+    filas = construir_filas_reportes(plazas_permitidas_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -798,14 +857,18 @@ def reportes_clientes_asignados():
     ).fetchall()
     db.close()
 
+    plazas_permitidas = plazas_permitidas_usuario()
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
         filas.append({
             "folio": r["folio"],
             "razonSocial": r["razon_social"],
             "vendedor": r["vendedor"],
-            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "plaza": plaza,
             "tipoCliente": r["tipo_cliente"] or "",
             "cantBooking": r["cant_booking"],
             "fechaUltimoBooking": r["fecha_ultimo_booking"].strftime("%Y-%m-%d") if r["fecha_ultimo_booking"] else "",
@@ -847,10 +910,14 @@ def reportes_clientes_mensual():
     ).fetchall()
     db.close()
 
+    plazas_permitidas = plazas_permitidas_usuario()
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
         ckey = normalizar(r["razon_social"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
         mensual = {}
         for mes, acc in mensual_por_cliente.get(ckey, {}).items():
             mensual[mes] = {
@@ -862,7 +929,7 @@ def reportes_clientes_mensual():
             "folio": r["folio"],
             "razonSocial": r["razon_social"],
             "vendedor": r["vendedor"],
-            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "plaza": plaza,
             "mensual": mensual,
         })
 
@@ -874,6 +941,64 @@ def reportes_clientes_mensual():
 @admin_required
 def catalogos():
     return render_template("catalogos.html")
+
+
+@app.route("/catalogos/visibilidad-plazas")
+@admin_required
+def visibilidad_plazas():
+    db = get_db()
+    usuarios_filas = db.execute("SELECT id, usuario, es_admin FROM usuarios ORDER BY usuario").fetchall()
+    plazas_por_usuario = {}
+    for r in db.execute("SELECT usuario_id, plaza FROM usuario_plazas ORDER BY plaza"):
+        plazas_por_usuario.setdefault(r["usuario_id"], []).append(r["plaza"])
+    db.close()
+
+    filas = []
+    for u in usuarios_filas:
+        filas.append({
+            "id": u["id"],
+            "usuario": u["usuario"],
+            "es_admin": u["es_admin"],
+            "plazas": plazas_por_usuario.get(u["id"], []),
+        })
+    return render_template("visibilidad_plazas.html", filas=filas)
+
+
+@app.route("/catalogos/visibilidad-plazas/<int:usuario_id>/editar", methods=["GET", "POST"])
+@admin_required
+def visibilidad_plazas_editar(usuario_id):
+    db = get_db()
+    usuario = db.execute("SELECT id, usuario FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    if usuario is None:
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        todas_las_plazas = request.form.get("todas_las_plazas") == "on"
+        plazas_seleccionadas = request.form.getlist("plazas")
+        if not todas_las_plazas and not plazas_seleccionadas:
+            flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
+        else:
+            db.execute("DELETE FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))
+            if not todas_las_plazas:
+                for plaza in plazas_seleccionadas:
+                    db.execute(
+                        "INSERT INTO usuario_plazas (usuario_id, plaza) VALUES (%s, %s)",
+                        (usuario_id, plaza),
+                    )
+            db.commit()
+            db.close()
+            return redirect(url_for("visibilidad_plazas"))
+
+    plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))}
+    db.close()
+    return render_template(
+        "visibilidad_plazas_editar.html",
+        usuario=usuario,
+        plazas_catalogo=get_plazas_catalogo(),
+        plazas_actuales=plazas_actuales,
+        sin_restriccion=len(plazas_actuales) == 0,
+    )
 
 
 @app.route("/catalogos/vendedores", methods=["GET", "POST"])

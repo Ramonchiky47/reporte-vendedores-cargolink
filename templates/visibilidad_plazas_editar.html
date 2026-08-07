@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Visibilidad de Plazas · {{ usuario.usuario }}{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<style>
+  .vp-plazas { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .5rem .75rem; margin: .75rem 0 1.25rem; }
+  .vp-plazas label { display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .88rem; color: #0f172a; margin-bottom: 0; }
+  .vp-plazas input[type="checkbox"] { width: auto; }
+  #vp-todas { font-weight: 700; }
+  .vp-plazas.deshabilitado { opacity: .45; pointer-events: none; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>Visibilidad de Plazas · {{ usuario.usuario }}</h2>
+      <p class="hint">Marca las plazas que este usuario puede ver, o "Todas las plazas" para no restringirlo. Los cambios se guardan hasta darle clic a Aceptar.</p>
+
+      <form method="post" action="{{ url_for('visibilidad_plazas_editar', usuario_id=usuario.id) }}">
+        <div class="field checkbox">
+          <label><input type="checkbox" id="vp-todas" name="todas_las_plazas" {% if sin_restriccion %}checked{% endif %}> Todas las plazas</label>
+        </div>
+
+        <div class="vp-plazas{% if sin_restriccion %} deshabilitado{% endif %}" id="vp-lista-plazas">
+          {% for plaza in plazas_catalogo %}
+          <label>
+            <input type="checkbox" name="plazas" value="{{ plaza }}" {% if plaza in plazas_actuales %}checked{% endif %}>
+            {{ plaza }}
+          </label>
+          {% endfor %}
+        </div>
+
+        <button type="submit">Aceptar</button>
+        <a class="btn secondary" href="{{ url_for('visibilidad_plazas') }}">Cancelar</a>
+      </form>
+    </div>
+
+<script>
+(function () {
+  const checkTodas = document.getElementById("vp-todas");
+  const listaPlazas = document.getElementById("vp-lista-plazas");
+  checkTodas.addEventListener("change", () => {
+    listaPlazas.classList.toggle("deshabilitado", checkTodas.checked);
+  });
+})();
+</script>
+{% endblock %}
