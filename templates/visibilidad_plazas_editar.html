@@ -29,6 +29,10 @@
           {% endfor %}
         </div>
 
+        <div class="field checkbox">
+          <label><input type="checkbox" name="puede_exportar" {% if usuario.puede_exportar %}checked{% endif %}> Puede exportar (botón "Exportar" en Dashboard y Reportes)</label>
+        </div>
+
         <button type="submit">Aceptar</button>
         <a class="btn secondary" href="{{ url_for('visibilidad_plazas') }}">Cancelar</a>
       </form>

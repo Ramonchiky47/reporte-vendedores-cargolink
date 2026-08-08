@@ -64,7 +64,7 @@
   }
   .modal-overlay.abierto { display: flex; }
   .modal-panel {
-    background: #fff; border-radius: 12px; width: 100%; max-width: 880px;
+    background: #fff; border-radius: 12px; width: 100%; max-width: 1400px;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
   }
   .modal-head {
@@ -110,7 +110,8 @@
           <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
           <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
           <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
-          <button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>
+          <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
+          {% if puede_exportar %}<button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>{% endif %}
         </div>
       </div>
       <div class="filtro-mes-bloque">
@@ -142,7 +143,7 @@
               <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
               <button type="button" class="modal-accion" id="btn-resumen-plaza">Resumen por Plaza</button>
               <button type="button" class="modal-accion" id="btn-desglosar-av2">Desglosar AV2 Customer</button>
-              <button type="button" class="modal-accion visible" id="btn-exportar-detalle">Exportar</button>
+              {% if puede_exportar %}<button type="button" class="modal-accion visible" id="btn-exportar-detalle">Exportar</button>{% endif %}
             </div>
             <p id="modal-subtitulo"></p>
           </div>
@@ -502,6 +503,101 @@
     modal.classList.add("abierto");
   }
 
+  function abrirResumenClientesGlobal() {
+    volverA = null;
+    btnVolver.classList.remove("visible");
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const bookings = datos.detalle.filter((d) => d.mes === estado.mes);
+
+    const porClienteVendedor = new Map();
+    bookings.forEach((b) => {
+      const cliente = b.cliente_servicio || "(sin cliente)";
+      const vendedor = b.vendedor || "(sin vendedor)";
+      const clave = cliente + "||" + vendedor;
+      if (!porClienteVendedor.has(clave)) {
+        porClienteVendedor.set(clave, { cliente, vendedor, cantidad: 0, venta: 0, profit: 0 });
+      }
+      const acc = porClienteVendedor.get(clave);
+      acc.cantidad += 1;
+      acc.venta += b.venta;
+      acc.profit += b.profit;
+    });
+    const filas = Array.from(porClienteVendedor.values())
+      .map((f) => ({ ...f, margen: f.venta ? f.profit / f.venta : 0 }))
+      .sort((a, b) => b.profit - a.profit);
+
+    // Los vendedores con "ocultar_detalle" no aparecen en datos.detalle, así
+    // que sus ventas no entran a las filas de arriba — por eso el total no
+    // cuadraba contra la tabla de Plaza (que sí los incluye). Para que
+    // cuadre sin exponer a QUÉ cliente le vendieron (eso es justo lo que
+    // ocultar_detalle debe seguir ocultando), se agrega una sola fila con
+    // la diferencia, sin desglosar por cliente.
+    const filasPlazaDelMes = datos.filas.filter((f) => f.mes === estado.mes);
+    const totalPlazaCant = filasPlazaDelMes.reduce((a, f) => a + f.cant_book, 0);
+    const totalPlazaVenta = filasPlazaDelMes.reduce((a, f) => a + f.venta, 0);
+    const totalPlazaProfit = filasPlazaDelMes.reduce((a, f) => a + f.profit, 0);
+    const visibleCant = filas.reduce((a, f) => a + f.cantidad, 0);
+    const visibleVenta = filas.reduce((a, f) => a + f.venta, 0);
+    const visibleProfit = filas.reduce((a, f) => a + f.profit, 0);
+    const ocultoCant = totalPlazaCant - visibleCant;
+    const ocultoVenta = totalPlazaVenta - visibleVenta;
+    const ocultoProfit = totalPlazaProfit - visibleProfit;
+    if (ocultoCant > 0 || Math.abs(ocultoVenta) > 0.01 || Math.abs(ocultoProfit) > 0.01) {
+      filas.push({
+        cliente: "(Vendedores con detalle oculto)",
+        vendedor: "—",
+        cantidad: ocultoCant,
+        venta: ocultoVenta,
+        profit: ocultoProfit,
+        margen: ocultoVenta ? ocultoProfit / ocultoVenta : 0,
+      });
+    }
+
+    document.getElementById("modal-titulo").textContent = "Resumen por cliente";
+    document.getElementById("modal-subtitulo").textContent = `${filas.length} fila(s) · ${etiquetaMes(estado.mes)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para el mes seleccionado.</caption>';
+    } else {
+      const totalCant = filas.reduce((acc, f) => acc + f.cantidad, 0);
+      const totalVenta = filas.reduce((acc, f) => acc + f.venta, 0);
+      const totalProfit = filas.reduce((acc, f) => acc + f.profit, 0);
+      const margenTotal = totalVenta ? totalProfit / totalVenta : 0;
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th style="text-align:left;">Vendedor</th>
+            <th>Cantidad de Booking</th>
+            <th>Venta</th>
+            <th>Profit</th>
+            <th>Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filas.map((f) => `
+            <tr class="${f.margen < 0.07 ? 'margen-bajo' : ''}">
+              <td style="text-align:left;">${f.cliente}</td>
+              <td style="text-align:left;">${f.vendedor}</td>
+              <td>${fmtEntero(f.cantidad)}</td>
+              <td>${fmtMoneda(f.venta)}</td>
+              <td>${fmtMoneda(f.profit)}</td>
+              <td>${fmtPct(f.margen)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr><td>Total general</td><td></td><td>${fmtEntero(totalCant)}</td><td>${fmtMoneda(totalVenta)}</td><td>${fmtMoneda(totalProfit)}</td><td>${fmtPct(margenTotal)}</td></tr>
+        </tfoot>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
   function renderBookingsDeVendedor(vendedor, bookings, volverCallback, campoComplementario) {
     campoComplementario = campoComplementario || "ejecutivo";
     const etiquetaComplementario = campoComplementario === "vendedor" ? "Vendedor" : "Ejecutivo";
@@ -609,6 +705,7 @@
   document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
   document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
   document.getElementById("btn-ver-booking-cero").addEventListener("click", abrirBookingsEnCero);
+  document.getElementById("btn-ver-resumen-clientes").addEventListener("click", abrirResumenClientesGlobal);
 
   // ---- exportar tabla visible a CSV (lo abre Excel directo) ----
   function celdaATexto(celda) {
@@ -651,13 +748,21 @@
     return `${limpio}_${estado.mes}.csv`;
   }
 
-  document.getElementById("btn-exportar-plaza").addEventListener("click", () => {
-    exportarTablaCSV("tabla-plaza", nombreArchivoCSV("Venta_por_Plaza"));
-  });
-  document.getElementById("btn-exportar-detalle").addEventListener("click", () => {
-    const titulo = document.getElementById("modal-titulo").textContent || "Reporte";
-    exportarTablaCSV("tabla-detalle", nombreArchivoCSV(titulo));
-  });
+  // Los botones de exportar no existen en el DOM si el usuario no tiene
+  // permiso puede_exportar (se omiten del lado del servidor).
+  const btnExportarPlaza = document.getElementById("btn-exportar-plaza");
+  if (btnExportarPlaza) {
+    btnExportarPlaza.addEventListener("click", () => {
+      exportarTablaCSV("tabla-plaza", nombreArchivoCSV("Venta_por_Plaza"));
+    });
+  }
+  const btnExportarDetalle = document.getElementById("btn-exportar-detalle");
+  if (btnExportarDetalle) {
+    btnExportarDetalle.addEventListener("click", () => {
+      const titulo = document.getElementById("modal-titulo").textContent || "Reporte";
+      exportarTablaCSV("tabla-detalle", nombreArchivoCSV(titulo));
+    });
+  }
 
   function cerrarModal() { modal.classList.remove("abierto"); }
   document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);

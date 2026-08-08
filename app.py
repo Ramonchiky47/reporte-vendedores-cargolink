@@ -148,6 +148,15 @@ def init_db():
             unique (usuario_id, plaza)
         );
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS registro_ingresos (
+            id bigint generated always as identity primary key,
+            usuario_id bigint references usuarios(id) on delete set null,
+            usuario text not null,
+            fecha_hora timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_registro_ingresos_fecha ON registro_ingresos (fecha_hora desc);")
     db.commit()
 
     hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
@@ -553,11 +562,34 @@ app = Flask(__name__)
 app.secret_key = get_secret_key()
 
 
+def registrar_ingreso():
+    """Guarda un renglón en registro_ingresos la primera vez que una
+    sesión recién autenticada toca una vista protegida (una fila por
+    login, no por cada página que visite). Se engancha en los decoradores
+    en vez de en /login para que funcione sin importar qué mecanismo de
+    autenticación esté activo. Nunca debe tumbar la vista por un problema
+    de logging."""
+    if session.get("ingreso_registrado"):
+        return
+    session["ingreso_registrado"] = True
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO registro_ingresos (usuario_id, usuario) VALUES (%s, %s)",
+            (session.get("usuario_id"), session.get("usuario") or "?"),
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"Aviso: no se pudo registrar el ingreso ({e}).")
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        registrar_ingreso()
         return view(*args, **kwargs)
 
     return wrapped
@@ -568,6 +600,7 @@ def admin_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        registrar_ingreso()
         if not session.get("es_admin"):
             flash("Esa sección es solo para administradores.")
             return redirect(url_for("dashboard_plazas_vendedores"))
@@ -592,6 +625,29 @@ def plazas_permitidas_usuario():
     if not filas:
         return None
     return {f["plaza"] for f in filas}
+
+
+def usuario_puede_exportar():
+    """True = el usuario en sesión puede usar los botones "Exportar". Los
+    administradores siempre pueden. Se consulta directo a la tabla
+    usuarios (no se cachea en la sesión) para que un cambio del admin
+    aplique de inmediato, igual que plazas_permitidas_usuario()."""
+    if session.get("es_admin"):
+        return True
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return True
+    db = get_db()
+    fila = db.execute("SELECT puede_exportar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return True
+    return bool(fila["puede_exportar"])
+
+
+@app.context_processor
+def inject_permisos_exportar():
+    return {"puede_exportar": usuario_puede_exportar()}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -947,7 +1003,7 @@ def catalogos():
 @admin_required
 def visibilidad_plazas():
     db = get_db()
-    usuarios_filas = db.execute("SELECT id, usuario, es_admin FROM usuarios ORDER BY usuario").fetchall()
+    usuarios_filas = db.execute("SELECT id, usuario, es_admin, puede_exportar FROM usuarios ORDER BY usuario").fetchall()
     plazas_por_usuario = {}
     for r in db.execute("SELECT usuario_id, plaza FROM usuario_plazas ORDER BY plaza"):
         plazas_por_usuario.setdefault(r["usuario_id"], []).append(r["plaza"])
@@ -959,6 +1015,7 @@ def visibilidad_plazas():
             "id": u["id"],
             "usuario": u["usuario"],
             "es_admin": u["es_admin"],
+            "puede_exportar": u["puede_exportar"],
             "plazas": plazas_por_usuario.get(u["id"], []),
         })
     return render_template("visibilidad_plazas.html", filas=filas)
@@ -968,7 +1025,7 @@ def visibilidad_plazas():
 @admin_required
 def visibilidad_plazas_editar(usuario_id):
     db = get_db()
-    usuario = db.execute("SELECT id, usuario FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    usuario = db.execute("SELECT id, usuario, puede_exportar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
     if usuario is None:
         db.close()
         return "No encontrado", 404
@@ -976,6 +1033,7 @@ def visibilidad_plazas_editar(usuario_id):
     if request.method == "POST":
         todas_las_plazas = request.form.get("todas_las_plazas") == "on"
         plazas_seleccionadas = request.form.getlist("plazas")
+        puede_exportar = request.form.get("puede_exportar") == "on"
         if not todas_las_plazas and not plazas_seleccionadas:
             flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
         else:
@@ -986,6 +1044,7 @@ def visibilidad_plazas_editar(usuario_id):
                         "INSERT INTO usuario_plazas (usuario_id, plaza) VALUES (%s, %s)",
                         (usuario_id, plaza),
                     )
+            db.execute("UPDATE usuarios SET puede_exportar = %s WHERE id = %s", (puede_exportar, usuario_id))
             db.commit()
             db.close()
             return redirect(url_for("visibilidad_plazas"))
@@ -999,6 +1058,21 @@ def visibilidad_plazas_editar(usuario_id):
         plazas_actuales=plazas_actuales,
         sin_restriccion=len(plazas_actuales) == 0,
     )
+
+
+@app.route("/catalogos/actividad-usuarios")
+@admin_required
+def actividad_usuarios():
+    db = get_db()
+    filas = db.execute(
+        "SELECT usuario, fecha_hora FROM registro_ingresos ORDER BY fecha_hora DESC LIMIT 500"
+    ).fetchall()
+    db.close()
+    ingresos = [
+        {"usuario": f["usuario"], "fecha_hora": f["fecha_hora"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M")}
+        for f in filas
+    ]
+    return render_template("actividad_usuarios.html", ingresos=ingresos)
 
 
 @app.route("/catalogos/vendedores", methods=["GET", "POST"])

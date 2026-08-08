@@ -62,7 +62,7 @@
         <h2>Clientes asignados por vendedor</h2>
         <p class="sub">Folio y clientes de asignacion_de_clientes.</p>
       </div>
-      <button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>
+      {% if puede_exportar %}<button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>{% endif %}
     </div>
 
     <div class="rp-filtros-cascada">
@@ -194,9 +194,12 @@
   // Estado inicial: todas las plazas, todos los vendedores.
   renderTablaClientes("__todas__", "__todos__");
 
-  document.getElementById("rp-exportar-tabla").addEventListener("click", () => {
-    exportarTablaCSV("rp-tabla-clientes", `Clientes_asignados_${new Date().toISOString().slice(0, 10)}.csv`);
-  });
+  const btnExportar = document.getElementById("rp-exportar-tabla");
+  if (btnExportar) {
+    btnExportar.addEventListener("click", () => {
+      exportarTablaCSV("rp-tabla-clientes", `Clientes_asignados_${new Date().toISOString().slice(0, 10)}.csv`);
+    });
+  }
 })();
 </script>
 {% endif %}

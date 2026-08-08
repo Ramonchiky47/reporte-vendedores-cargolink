@@ -8,7 +8,7 @@
       {% if filas %}
       <table>
         <thead>
-          <tr><th>Usuario</th><th>Plazas visibles</th><th></th></tr>
+          <tr><th>Usuario</th><th>Plazas visibles</th><th>Exportar</th><th></th></tr>
         </thead>
         <tbody>
           {% for fila in filas %}
@@ -23,6 +23,7 @@
                 Todas
               {% endif %}
             </td>
+            <td>{{ "Sí" if (fila.es_admin or fila.puede_exportar) else "No" }}</td>
             <td class="actions">
               <a class="btn small secondary" href="{{ url_for('visibilidad_plazas_editar', usuario_id=fila.id) }}">Editar</a>
             </td>
