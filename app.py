@@ -1075,6 +1075,47 @@ def actividad_usuarios():
     return render_template("actividad_usuarios.html", ingresos=ingresos)
 
 
+SUPABASE_DB_LIMIT_MB = float(os.environ.get("SUPABASE_DB_LIMIT_MB", "500"))
+
+
+@app.route("/catalogos/almacenamiento")
+@admin_required
+def almacenamiento_bd():
+    db = get_db()
+    total = db.execute(
+        "SELECT pg_database_size(current_database()) AS bytes, "
+        "pg_size_pretty(pg_database_size(current_database())) AS legible"
+    ).fetchone()
+    tablas_filas = db.execute("""
+        SELECT relname AS tabla,
+               pg_total_relation_size(relid) AS bytes,
+               pg_size_pretty(pg_total_relation_size(relid)) AS legible
+        FROM pg_catalog.pg_statio_user_tables
+        WHERE schemaname = 'public'
+        ORDER BY bytes DESC
+    """).fetchall()
+    db.close()
+
+    total_bytes = total["bytes"]
+    limite_bytes = SUPABASE_DB_LIMIT_MB * 1024 * 1024
+    porcentaje = round(total_bytes / limite_bytes * 100, 1) if limite_bytes else 0
+    tablas = [
+        {
+            "tabla": t["tabla"],
+            "legible": t["legible"],
+            "porcentaje": round(t["bytes"] / total_bytes * 100, 1) if total_bytes else 0,
+        }
+        for t in tablas_filas
+    ]
+    return render_template(
+        "almacenamiento_bd.html",
+        total_legible=total["legible"],
+        limite_mb=SUPABASE_DB_LIMIT_MB,
+        porcentaje=porcentaje,
+        tablas=tablas,
+    )
+
+
 @app.route("/catalogos/vendedores", methods=["GET", "POST"])
 @admin_required
 def catalogo_vendedores():
