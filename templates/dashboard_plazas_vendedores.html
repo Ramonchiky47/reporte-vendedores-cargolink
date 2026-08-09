@@ -165,8 +165,12 @@
   const estado = { mes: datos.mes_actual || datos.meses[datos.meses.length - 1] };
 
   function etiquetaMes(mes) {
+    if (mes.length === 4) return "Todo " + mes;
     const [anio, m] = mes.split("-");
     return MESES_ES[parseInt(m, 10) - 1] + " " + anio;
+  }
+  function mesCoincide(mesFila) {
+    return estado.mes.length === 4 ? mesFila.startsWith(estado.mes) : mesFila === estado.mes;
   }
   function fmtMoneda(n) {
     const signo = n < 0 ? "-" : "";
@@ -181,7 +185,17 @@
   }
 
   const selMes = document.getElementById("filtro-mes");
+  const aniosAgregados = new Set();
   datos.meses.forEach((mes) => {
+    const anio = mes.slice(0, 4);
+    if (!aniosAgregados.has(anio)) {
+      aniosAgregados.add(anio);
+      const optAnio = document.createElement("option");
+      optAnio.value = anio;
+      optAnio.textContent = etiquetaMes(anio);
+      if (anio === estado.mes) optAnio.selected = true;
+      selMes.appendChild(optAnio);
+    }
     const opt = document.createElement("option");
     opt.value = mes;
     opt.textContent = etiquetaMes(mes);
@@ -195,6 +209,18 @@
       acc.cant_book += f.cant_book; acc.venta += f.venta; acc.profit += f.profit; acc.ppto += f.ppto;
       return acc;
     }, { cant_book: 0, venta: 0, profit: 0, ppto: 0 });
+  }
+  function agregarPorCampo(filas, campo) {
+    // Con "Todo el año" seleccionado, filas trae un registro por mes para
+    // la misma entidad (vendedor/desarrollador) — hay que sumarlos en uno
+    // solo antes de listarlos. Con un solo mes esto es un no-op.
+    const grupos = new Map();
+    filas.forEach((f) => {
+      const clave = f[campo];
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave).push(f);
+    });
+    return Array.from(grupos.entries()).map(([valor, fs]) => ({ [campo]: valor, ...sumar(fs) }));
   }
   function celdaPresupuesto(row) {
     const alc = row.ppto > 0 ? row.profit / row.ppto : null;
@@ -218,7 +244,7 @@
   }
 
   function renderTablaPlaza() {
-    const filas = datos.filas.filter((f) => f.mes === estado.mes);
+    const filas = datos.filas.filter((f) => mesCoincide(f.mes));
     const porPlaza = new Map();
     filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
     const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
@@ -258,7 +284,7 @@
     btnResumenPlaza.classList.remove("visible");
     btnDesglosarAV2.classList.remove("visible");
 
-    const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
+    const ordenadas = agregarPorCampo(filas, "vendedor").sort((a, b) => b.profit - a.profit);
     document.getElementById("modal-titulo").textContent = titulo;
     document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} vendedor(es) · ${etiquetaMes(estado.mes)}`;
 
@@ -283,24 +309,24 @@
   }
 
   function abrirVendedoresDePlaza(plaza) {
-    const filas = datos.filas.filter((f) => f.mes === estado.mes && f.plaza === plaza);
+    const filas = datos.filas.filter((f) => mesCoincide(f.mes) && f.plaza === plaza);
     renderVendedoresEnModal(plaza, filas, null);
   }
 
   function abrirTodosLosVendedores() {
-    const filas = datos.filas.filter((f) => f.mes === estado.mes);
+    const filas = datos.filas.filter((f) => mesCoincide(f.mes));
     renderVendedoresEnModal("Vendedores", filas, null);
   }
 
   function bookingsDe(vendedor) {
     return datos.detalle
-      .filter((d) => d.vendedor === vendedor && d.mes === estado.mes)
+      .filter((d) => d.vendedor === vendedor && mesCoincide(d.mes))
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
   }
 
   function bookingsDeEjecutivo(ejecutivo) {
     return datos.detalle
-      .filter((d) => d.ejecutivo === ejecutivo && d.mes === estado.mes)
+      .filter((d) => d.ejecutivo === ejecutivo && mesCoincide(d.mes))
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
   }
 
@@ -321,7 +347,7 @@
     btnVolver.classList.toggle("visible", !!volverA);
     btnResumenCliente.classList.remove("visible");
 
-    const ordenadas = filas.slice().sort((a, b) => b.profit - a.profit);
+    const ordenadas = agregarPorCampo(filas, "desarrollador").sort((a, b) => b.profit - a.profit);
     document.getElementById("modal-titulo").textContent = titulo;
     document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} desarrollador(es) · ${etiquetaMes(estado.mes)}`;
 
@@ -360,7 +386,10 @@
     btnResumenCliente.classList.remove("visible");
     btnResumenPlaza.classList.remove("visible");
 
-    const sinAV2 = filasOriginal.filter((f) => (f.desarrollador || "").toUpperCase() !== "AV2 CUSTOMER");
+    const sinAV2 = agregarPorCampo(
+      filasOriginal.filter((f) => (f.desarrollador || "").toUpperCase() !== "AV2 CUSTOMER"),
+      "desarrollador"
+    );
 
     const porVendedor = new Map();
     bookingsDeEjecutivo("AV2 Customer")
@@ -453,7 +482,7 @@
   }
 
   function abrirTodosLosDesarrolladores() {
-    const filas = (datos.filas_desarrolladores || []).filter((f) => f.mes === estado.mes);
+    const filas = (datos.filas_desarrolladores || []).filter((f) => mesCoincide(f.mes));
     renderDesarrolladoresEnModal("Customer (Desarrolladores)", filas, null);
   }
 
@@ -465,7 +494,7 @@
     btnDesglosarAV2.classList.remove("visible");
 
     const bookings = datos.detalle
-      .filter((d) => d.mes === estado.mes && d.profit === 0)
+      .filter((d) => mesCoincide(d.mes) && d.profit === 0)
       .sort((a, b) => b.fecha.localeCompare(a.fecha));
 
     document.getElementById("modal-titulo").textContent = "Booking en 0";
@@ -510,7 +539,7 @@
     btnResumenPlaza.classList.remove("visible");
     btnDesglosarAV2.classList.remove("visible");
 
-    const bookings = datos.detalle.filter((d) => d.mes === estado.mes);
+    const bookings = datos.detalle.filter((d) => mesCoincide(d.mes));
 
     const porClienteVendedor = new Map();
     bookings.forEach((b) => {
@@ -535,7 +564,7 @@
     // cuadre sin exponer a QUÉ cliente le vendieron (eso es justo lo que
     // ocultar_detalle debe seguir ocultando), se agrega una sola fila con
     // la diferencia, sin desglosar por cliente.
-    const filasPlazaDelMes = datos.filas.filter((f) => f.mes === estado.mes);
+    const filasPlazaDelMes = datos.filas.filter((f) => mesCoincide(f.mes));
     const totalPlazaCant = filasPlazaDelMes.reduce((a, f) => a + f.cant_book, 0);
     const totalPlazaVenta = filasPlazaDelMes.reduce((a, f) => a + f.venta, 0);
     const totalPlazaProfit = filasPlazaDelMes.reduce((a, f) => a + f.profit, 0);
