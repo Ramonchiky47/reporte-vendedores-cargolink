@@ -450,9 +450,6 @@ def construir_datos_dashboard(plazas_permitidas=None):
         vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
 
         dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
-        cat_d = catalogo_desarrollador.get(dkey) if dkey else None
-        plaza_desarrollador = cat_d["plaza"] if cat_d else "#N/D"
-        desarrollador_permitido = plazas_permitidas is None or plaza_desarrollador in plazas_permitidas
 
         if vendedor_permitido:
             clave = (r["mes"], vkey)
@@ -461,7 +458,7 @@ def construir_datos_dashboard(plazas_permitidas=None):
             agg["venta"] += float(r["venta"])
             agg["profit"] += float(r["profit"])
 
-        if dkey and desarrollador_permitido:
+        if dkey and vendedor_permitido:
             agg_d = agregados_desarrollador.setdefault((r["mes"], dkey), {"cant_book": 0, "venta": 0.0, "profit": 0.0})
             agg_d["cant_book"] += 1
             agg_d["venta"] += float(r["venta"])
@@ -470,11 +467,11 @@ def construir_datos_dashboard(plazas_permitidas=None):
         nombre_canonico = cat["nombre"] if cat else r["vendedor"]
         # Los totales (agregados/filas de arriba) siempre incluyen a todos los
         # vendedores; solo el detalle a nivel booking se omite para quien
-        # tenga marcado "ocultar_detalle" en su catálogo. Un booking entra al
-        # detalle si su vendedor O su desarrollador pertenece a una plaza
-        # permitida (una misma fila puede ser relevante para el reporte de
-        # Vendedores o el de Customer por separado).
-        if (vendedor_permitido or desarrollador_permitido) and not (cat and cat["ocultar_detalle"]):
+        # tenga marcado "ocultar_detalle" en su catálogo. El criterio
+        # mandatorio de plaza es el vendedor: que el desarrollador/customer
+        # esté catalogado en una plaza permitida NO basta para mostrar la
+        # venta si el vendedor que la vendió es de otra plaza.
+        if vendedor_permitido and not (cat and cat["ocultar_detalle"]):
             detalle.append({
                 "mes": r["mes"],
                 "vendedor": nombre_canonico,
