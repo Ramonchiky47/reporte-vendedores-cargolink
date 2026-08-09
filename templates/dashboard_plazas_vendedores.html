@@ -374,11 +374,11 @@
         acc.venta += b.venta;
         acc.profit += b.profit;
       });
-    const combinadas = sinAV2.concat(Array.from(porVendedor.values())).sort((a, b) => b.venta - a.venta);
+    const combinadas = sinAV2.concat(Array.from(porVendedor.values())).sort((a, b) => b.profit - a.profit);
 
     document.getElementById("modal-titulo").textContent = titulo;
     document.getElementById("modal-subtitulo").textContent =
-      `${combinadas.length} fila(s) · AV2 Customer desglosado por Vendedor, ordenado por Venta · ${etiquetaMes(estado.mes)}`;
+      `${combinadas.length} fila(s) · AV2 Customer desglosado por Vendedor, ordenado por Profit · ${etiquetaMes(estado.mes)}`;
 
     btnDesglosarAV2.classList.add("visible");
     btnDesglosarAV2.textContent = "Agrupar AV2 Customer";
