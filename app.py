@@ -642,9 +642,28 @@ def usuario_puede_exportar():
     return bool(fila["puede_exportar"])
 
 
+def usuario_puede_actualizar():
+    """True = el usuario en sesión puede usar el botón "Actualizar" para
+    regenerar el reporte desde CargoLink. Los administradores siempre
+    pueden. A diferencia de puede_exportar, por default es False (es una
+    acción más sensible: reemplaza todos los bookings), solo la tienen los
+    usuarios a los que un administrador se la otorgue explícitamente."""
+    if session.get("es_admin"):
+        return True
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return False
+    db = get_db()
+    fila = db.execute("SELECT puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return False
+    return bool(fila["puede_actualizar"])
+
+
 @app.context_processor
 def inject_permisos_exportar():
-    return {"puede_exportar": usuario_puede_exportar()}
+    return {"puede_exportar": usuario_puede_exportar(), "puede_actualizar": usuario_puede_actualizar()}
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -752,10 +771,18 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
 
 
 @app.route("/generar", methods=["POST"])
-@admin_required
+@login_required
 def generar():
-    fecha_inicio = request.form.get("fecha_inicio", "").strip()
-    fecha_fin = request.form.get("fecha_fin", "").strip()
+    es_admin = bool(session.get("es_admin"))
+    if not es_admin and not usuario_puede_actualizar():
+        flash("No tienes permiso para actualizar el reporte.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    # Las fechas de inicio/fin solo las puede elegir un administrador; para
+    # el resto (botón "Actualizar" en Información de Ventas) siempre se usa
+    # el rango por default, sin importar lo que venga en el formulario.
+    fecha_inicio = request.form.get("fecha_inicio", "").strip() if es_admin else ""
+    fecha_fin = request.form.get("fecha_fin", "").strip() if es_admin else ""
 
     if fecha_inicio and not DATE_RE.match(fecha_inicio):
         session["resultado"] = {"ok": False, "mensaje": "Fecha de inicio inválida."}
@@ -769,8 +796,11 @@ def generar():
     fecha_fin = fecha_fin or now.strftime("%Y-%m-%d")
 
     ok, mensaje, detalle = ejecutar_generacion_reporte(fecha_inicio, fecha_fin)
-    session["resultado"] = {"ok": ok, "mensaje": mensaje, "detalle": detalle}
-    return redirect(url_for("dashboard"))
+    if es_admin:
+        session["resultado"] = {"ok": ok, "mensaje": mensaje, "detalle": detalle}
+        return redirect(url_for("dashboard"))
+    flash(mensaje)
+    return redirect(url_for("dashboard_plazas_vendedores"))
 
 
 @app.route("/cron/generar-reporte", methods=["GET", "POST"])
@@ -1000,7 +1030,9 @@ def catalogos():
 @admin_required
 def visibilidad_plazas():
     db = get_db()
-    usuarios_filas = db.execute("SELECT id, usuario, es_admin, puede_exportar FROM usuarios ORDER BY usuario").fetchall()
+    usuarios_filas = db.execute(
+        "SELECT id, usuario, es_admin, puede_exportar, puede_actualizar FROM usuarios ORDER BY usuario"
+    ).fetchall()
     plazas_por_usuario = {}
     for r in db.execute("SELECT usuario_id, plaza FROM usuario_plazas ORDER BY plaza"):
         plazas_por_usuario.setdefault(r["usuario_id"], []).append(r["plaza"])
@@ -1013,6 +1045,7 @@ def visibilidad_plazas():
             "usuario": u["usuario"],
             "es_admin": u["es_admin"],
             "puede_exportar": u["puede_exportar"],
+            "puede_actualizar": u["puede_actualizar"],
             "plazas": plazas_por_usuario.get(u["id"], []),
         })
     return render_template("visibilidad_plazas.html", filas=filas)
@@ -1022,7 +1055,9 @@ def visibilidad_plazas():
 @admin_required
 def visibilidad_plazas_editar(usuario_id):
     db = get_db()
-    usuario = db.execute("SELECT id, usuario, puede_exportar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    usuario = db.execute(
+        "SELECT id, usuario, puede_exportar, puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)
+    ).fetchone()
     if usuario is None:
         db.close()
         return "No encontrado", 404
@@ -1031,6 +1066,7 @@ def visibilidad_plazas_editar(usuario_id):
         todas_las_plazas = request.form.get("todas_las_plazas") == "on"
         plazas_seleccionadas = request.form.getlist("plazas")
         puede_exportar = request.form.get("puede_exportar") == "on"
+        puede_actualizar = request.form.get("puede_actualizar") == "on"
         if not todas_las_plazas and not plazas_seleccionadas:
             flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
         else:
@@ -1041,7 +1077,10 @@ def visibilidad_plazas_editar(usuario_id):
                         "INSERT INTO usuario_plazas (usuario_id, plaza) VALUES (%s, %s)",
                         (usuario_id, plaza),
                     )
-            db.execute("UPDATE usuarios SET puede_exportar = %s WHERE id = %s", (puede_exportar, usuario_id))
+            db.execute(
+                "UPDATE usuarios SET puede_exportar = %s, puede_actualizar = %s WHERE id = %s",
+                (puede_exportar, puede_actualizar, usuario_id),
+            )
             db.commit()
             db.close()
             return redirect(url_for("visibilidad_plazas"))

@@ -112,6 +112,11 @@
           <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
           <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
           {% if puede_exportar %}<button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>{% endif %}
+          {% if puede_actualizar %}
+          <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
+            <button type="submit" class="btn small">Actualizar</button>
+          </form>
+          {% endif %}
         </div>
       </div>
       <div class="filtro-mes-bloque">

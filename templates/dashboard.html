@@ -3,8 +3,9 @@
 {% set active = "dashboard" %}
 {% block content %}
     <div class="card">
-      <h2>Generar reporte</h2>
+      <h2>Actualización</h2>
       <form method="post" action="{{ url_for('generar') }}">
+        {% if session.get('es_admin') %}
         <div class="row">
           <div class="field">
             <label for="fecha_inicio">Fecha inicio (opcional)</label>
@@ -16,7 +17,8 @@
           </div>
         </div>
         <p class="hint">Si se dejan en blanco, se descarga todo el año en curso a la fecha.</p>
-        <button type="submit">Generar reporte de vendedores</button>
+        {% endif %}
+        <button type="submit" class="btn small">Generar reporte de vendedores</button>
       </form>
 
       {% if resultado %}
