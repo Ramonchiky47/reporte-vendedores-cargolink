@@ -17,6 +17,15 @@
     font-size: .9rem; font-weight: 600;
   }
 
+  .grafica-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  .grafica-leyenda { display: flex; gap: 1.1rem; font-size: .78rem; color: #475569; }
+  .grafica-leyenda span { display: inline-flex; align-items: center; gap: .4rem; }
+  .grafica-leyenda i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .gp-bar-label { font-size: .7rem; fill: #475569; }
+  .gp-bar-value { font-size: .68rem; fill: #0f172a; font-weight: 700; }
+  .gp-grid-line { stroke: #e2e8f0; stroke-width: 1; }
+  .gp-bar-profit:hover, .gp-bar-ppto:hover { filter: brightness(1.08); }
+
   .tabla-scroll { overflow-x: auto; }
   table.reporte { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
   table.reporte thead th {
@@ -123,6 +132,17 @@
         <h3>Fecha de creación</h3>
         <select id="filtro-mes"></select>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="grafica-header">
+        <h2 style="margin:0;">Profit vs Presupuesto por Plaza</h2>
+        <div class="grafica-leyenda">
+          <span><i style="background:#007CC3;"></i> Profit</span>
+          <span><i style="background:#94a3b8;"></i> Presupuesto</span>
+        </div>
+      </div>
+      <div id="grafica-plaza"></div>
     </div>
 
     <div class="card">
@@ -248,12 +268,112 @@
     `;
   }
 
+  function fmtMonedaCompacta(n) {
+    const abs = Math.abs(n);
+    const signo = n < 0 ? "-" : "";
+    if (abs >= 1000000) return signo + "$" + (abs / 1000000).toFixed(1) + "M";
+    if (abs >= 1000) return signo + "$" + (abs / 1000).toFixed(0) + "K";
+    return fmtMoneda(n);
+  }
+
+  function renderGraficaPlaza(filasAgregadas) {
+    const cont = document.getElementById("grafica-plaza");
+    cont.innerHTML = "";
+    if (filasAgregadas.length === 0) {
+      cont.innerHTML = '<p class="empty">Sin datos para este mes.</p>';
+      return;
+    }
+    const ancho = cont.clientWidth || 880;
+    const alto = 280;
+    const margen = { top: 16, right: 12, bottom: 46, left: 60 };
+    const anchoPlot = ancho - margen.left - margen.right;
+    const altoPlot = alto - margen.top - margen.bottom;
+
+    const maxValor = Math.max(...filasAgregadas.map((f) => Math.max(f.profit, f.ppto)), 1);
+    const pasoY = maxValor / 4;
+    const anchoGrupo = anchoPlot / filasAgregadas.length;
+    const anchoBarra = Math.min(anchoGrupo * 0.32, 46);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", alto);
+    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+
+    for (let i = 0; i <= 4; i++) {
+      const valor = pasoY * i;
+      const y = margen.top + altoPlot - (valor / maxValor) * altoPlot;
+      const linea = document.createElementNS(svg.namespaceURI, "line");
+      linea.setAttribute("x1", margen.left);
+      linea.setAttribute("x2", ancho - margen.right);
+      linea.setAttribute("y1", y);
+      linea.setAttribute("y2", y);
+      linea.setAttribute("class", "gp-grid-line");
+      svg.appendChild(linea);
+
+      const etiqueta = document.createElementNS(svg.namespaceURI, "text");
+      etiqueta.setAttribute("x", margen.left - 8);
+      etiqueta.setAttribute("y", y + 3);
+      etiqueta.setAttribute("text-anchor", "end");
+      etiqueta.setAttribute("class", "gp-bar-label");
+      etiqueta.textContent = fmtMonedaCompacta(valor);
+      svg.appendChild(etiqueta);
+    }
+
+    function dibujarBarra(x, valor, color, claseHover, etiquetaTitulo) {
+      const h = Math.max((valor / maxValor) * altoPlot, valor > 0 ? 2 : 0);
+      const y = margen.top + altoPlot - h;
+      const rect = document.createElementNS(svg.namespaceURI, "rect");
+      rect.setAttribute("x", x);
+      rect.setAttribute("y", y);
+      rect.setAttribute("width", anchoBarra);
+      rect.setAttribute("height", h);
+      rect.setAttribute("rx", 3);
+      rect.setAttribute("fill", color);
+      rect.setAttribute("class", claseHover);
+      const title = document.createElementNS(svg.namespaceURI, "title");
+      title.textContent = etiquetaTitulo;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+
+      if (valor > 0) {
+        const val = document.createElementNS(svg.namespaceURI, "text");
+        val.setAttribute("x", x + anchoBarra / 2);
+        val.setAttribute("y", y - 5);
+        val.setAttribute("text-anchor", "middle");
+        val.setAttribute("class", "gp-bar-value");
+        val.textContent = fmtMonedaCompacta(valor);
+        svg.appendChild(val);
+      }
+    }
+
+    filasAgregadas.forEach((f, i) => {
+      const xGrupo = margen.left + i * anchoGrupo;
+      const xProfit = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
+      const xPpto = xGrupo + anchoGrupo / 2 + 2;
+      dibujarBarra(xProfit, f.profit, "#007CC3", "gp-bar-profit", `${f.plaza} · Profit: ${fmtMoneda(f.profit)}`);
+      dibujarBarra(xPpto, f.ppto, "#94a3b8", "gp-bar-ppto", `${f.plaza} · Presupuesto: ${fmtMoneda(f.ppto)}`);
+
+      const etiquetaPlaza = document.createElementNS(svg.namespaceURI, "text");
+      etiquetaPlaza.setAttribute("x", xGrupo + anchoGrupo / 2);
+      etiquetaPlaza.setAttribute("y", alto - margen.bottom + 18);
+      etiquetaPlaza.setAttribute("text-anchor", "middle");
+      etiquetaPlaza.setAttribute("class", "gp-bar-label");
+      const nombre = f.plaza.length > 14 ? f.plaza.slice(0, 13) + "…" : f.plaza;
+      etiquetaPlaza.textContent = nombre;
+      svg.appendChild(etiquetaPlaza);
+    });
+
+    cont.appendChild(svg);
+  }
+
   function renderTablaPlaza() {
     const filas = datos.filas.filter((f) => mesCoincide(f.mes));
     const porPlaza = new Map();
     filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
     const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
     filasAgregadas.sort((a, b) => b.profit - a.profit);
+
+    renderGraficaPlaza(filasAgregadas);
 
     const tabla = document.getElementById("tabla-plaza");
     if (filasAgregadas.length === 0) {
@@ -807,6 +927,7 @@
     renderTablaPlaza();
   }
   render();
+  window.addEventListener("resize", render);
 })();
 </script>
 {% endif %}
