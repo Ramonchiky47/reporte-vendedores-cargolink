@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Almacenamiento de Base de Datos{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<style>
+  .alm-resumen { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: .6rem; }
+  .alm-resumen .valor { font-size: 1.4rem; font-weight: 700; }
+  .alm-resumen .limite { font-size: .85rem; color: #64748b; }
+  .alm-barra-fondo { background: #e2e8f0; border-radius: 999px; height: 14px; overflow: hidden; }
+  .alm-barra-relleno { height: 100%; border-radius: 999px; transition: width .3s ease; }
+  .alm-barra-relleno.ok { background: #16a34a; }
+  .alm-barra-relleno.aviso { background: #d97706; }
+  .alm-barra-relleno.critico { background: #dc2626; }
+  .alm-porcentaje { text-align: right; font-size: .8rem; font-weight: 700; margin-top: .35rem; }
+  .alm-porcentaje.ok { color: #16a34a; }
+  .alm-porcentaje.aviso { color: #d97706; }
+  .alm-porcentaje.critico { color: #dc2626; }
+  .alm-nota { font-size: .8rem; color: #64748b; margin-top: .5rem; }
+  td.alm-num, th.alm-num { text-align: right; }
+  .alm-mini-barra-fondo { background: #e2e8f0; border-radius: 999px; height: 6px; width: 100px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .alm-mini-barra-relleno { height: 100%; background: #007CC3; border-radius: 999px; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>Almacenamiento de Base de Datos</h2>
+      <p class="hint">Tamaño actual de la base de datos en Supabase (proyecto reporte-vendedores-cargolink) contra el límite del plan.</p>
+
+      <div class="alm-resumen">
+        <span class="valor">{{ total_legible }}</span>
+        <span class="limite">límite del plan: {{ limite_mb|int }} MB</span>
+      </div>
+      <div class="alm-barra-fondo">
+        <div class="alm-barra-relleno {{ 'critico' if porcentaje >= 90 else ('aviso' if porcentaje >= 70 else 'ok') }}"
+             style="width: {{ [porcentaje, 100]|min }}%;"></div>
+      </div>
+      <div class="alm-porcentaje {{ 'critico' if porcentaje >= 90 else ('aviso' if porcentaje >= 70 else 'ok') }}">
+        {{ porcentaje }}% usado
+      </div>
+      {% if porcentaje >= 90 %}
+      <p class="alm-nota" style="color:#dc2626;">La base de datos está muy cerca del límite del plan. Considera depurar datos antiguos o subir de plan en Supabase.</p>
+      {% elif porcentaje >= 70 %}
+      <p class="alm-nota" style="color:#d97706;">La base de datos va superando el 70% del límite del plan, conviene monitorear su crecimiento.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Tamaño por tabla</h2>
+      <p class="hint">Tablas del esquema público, de mayor a menor tamaño.</p>
+      {% if tablas %}
+      <table>
+        <thead>
+          <tr><th>Tabla</th><th class="alm-num">Tamaño</th><th>% del total</th></tr>
+        </thead>
+        <tbody>
+          {% for t in tablas %}
+          <tr>
+            <td>{{ t.tabla }}</td>
+            <td class="alm-num">{{ t.legible }}</td>
+            <td>
+              <span class="alm-mini-barra-fondo"><span class="alm-mini-barra-relleno" style="width: {{ [t.porcentaje, 100]|min }}%;"></span></span>
+              <span style="margin-left:.4rem;">{{ t.porcentaje }}%</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No hay tablas en el esquema público.</p>
+      {% endif %}
+    </div>
+{% endblock %}

@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Clientes asignados{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+  }
+  main { max-width: 1120px; }
+
+  .rp-volver { font-size: .82rem; color: var(--rp-ink-2); text-decoration: none; display: inline-block; margin-bottom: .75rem; }
+  .rp-volver:hover { text-decoration: underline; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.25rem 0 0; }
+  .rp-filtros-cascada { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .rp-filtros-cascada .field { min-width: 200px; margin-bottom: 0; }
+  .rp-filtros-cascada select {
+    width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: .9rem; background: #fff;
+  }
+  #rp-tabla-seleccion { margin: 0 0 1rem; font-weight: 600; color: var(--rp-ink-2); }
+
+  /* Ver reportes_por_vendedor.html para el porqué de esta clase en vez de
+     el atributo "hidden": ".btn { display: inline-block }" de base.html le
+     gana a "hidden" en la cascada, así que se necesita !important. */
+  .rp-oculto { display: none !important; }
+
+  .rp-tabla-scroll {
+    max-width: 100%; max-height: 70vh; overflow-x: auto; overflow-y: auto;
+    border: 1px solid var(--rp-grid); border-radius: 8px;
+  }
+  .rp-tabla-scroll table { width: auto; min-width: 100%; font-size: .82rem; }
+  .rp-tabla-scroll thead th { position: sticky; top: 0; z-index: 1; }
+  .rp-tabla-scroll td, .rp-tabla-scroll th { white-space: nowrap; }
+  .rp-tabla-scroll td:nth-child(3), .rp-tabla-scroll th:nth-child(3),
+  .rp-tabla-scroll td:nth-child(4), .rp-tabla-scroll th:nth-child(4),
+  .rp-tabla-scroll td:nth-child(5), .rp-tabla-scroll th:nth-child(5) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+
+  .rp-tabla-scroll::-webkit-scrollbar { height: 12px; width: 12px; }
+  .rp-tabla-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  .rp-tabla-scroll { scrollbar-color: #94a3b8 #f1f5f9; scrollbar-width: auto; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <div class="card">
+    <p class="empty">Todavía no hay clientes asignados. Genera el reporte de vendedores primero (también actualiza asignacion_de_clientes).</p>
+  </div>
+{% else %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Clientes asignados por vendedor</h2>
+        <p class="sub">Folio y clientes de asignacion_de_clientes.</p>
+      </div>
+      {% if puede_exportar %}<button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>{% endif %}
+    </div>
+
+    <div class="rp-filtros-cascada">
+      <div class="field">
+        <label for="rp-filtro-plaza">Plaza</label>
+        <select id="rp-filtro-plaza"></select>
+      </div>
+      <button type="button" class="btn" id="rp-aplicar-plaza">Aplicar</button>
+
+      <div class="field rp-oculto" id="rp-bloque-vendedor">
+        <label for="rp-filtro-vendedor">Vendedor</label>
+        <select id="rp-filtro-vendedor"></select>
+      </div>
+      <button type="button" class="btn rp-oculto" id="rp-aplicar-vendedor">Aplicar</button>
+    </div>
+    <p class="sub" id="rp-tabla-seleccion"></p>
+
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-clientes">
+        <thead>
+          <tr>
+            <th>Folio</th>
+            <th>Cliente</th>
+            <th>Tipo de cliente</th>
+            <th>Cant Booking</th>
+            <th>Último booking</th>
+          </tr>
+        </thead>
+        <tbody id="rp-tabla-clientes-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script id="datos-clientes" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-clientes").textContent);
+
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  const vendedoresPorPlaza = new Map();
+  for (const f of TODOS) {
+    if (!vendedoresPorPlaza.has(f.plaza)) vendedoresPorPlaza.set(f.plaza, new Set());
+    vendedoresPorPlaza.get(f.plaza).add(f.vendedor);
+  }
+  const plazasOrdenadas = Array.from(vendedoresPorPlaza.keys()).sort();
+  const todosLosVendedores = Array.from(new Set(TODOS.map((f) => f.vendedor))).sort();
+
+  function renderTablaClientes(plaza, vendedor) {
+    const filas = TODOS.filter(
+      (f) => (plaza === "__todas__" || f.plaza === plaza) && (vendedor === "__todos__" || f.vendedor === vendedor),
+    );
+
+    const etiquetaPlaza = plaza === "__todas__" ? "Todas las plazas" : plaza;
+    const etiquetaVendedor = vendedor === "__todos__" ? "Todos los vendedores" : vendedor;
+    document.getElementById("rp-tabla-seleccion").textContent =
+      `Plaza: ${etiquetaPlaza} · Vendedor: ${etiquetaVendedor} · ${filas.length} cliente(s)`;
+
+    const tbody = document.getElementById("rp-tabla-clientes-body");
+    if (filas.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin clientes para esta selección.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = filas.map((f) => `
+      <tr>
+        <td>${escaparHtml(String(f.folio))}</td>
+        <td>${escaparHtml(f.razonSocial)}</td>
+        <td>${escaparHtml(f.tipoCliente || "—")}</td>
+        <td>${fmtEntero(f.cantBooking)}</td>
+        <td>${escaparHtml(f.fechaUltimoBooking || "—")}</td>
+      </tr>
+    `).join("");
+  }
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${c.textContent.replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(",");
+    });
+    const csv = "\uFEFF" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const selectPlaza = document.getElementById("rp-filtro-plaza");
+  const selectVendedor = document.getElementById("rp-filtro-vendedor");
+  const bloqueVendedor = document.getElementById("rp-bloque-vendedor");
+  const btnAplicarPlaza = document.getElementById("rp-aplicar-plaza");
+  const btnAplicarVendedor = document.getElementById("rp-aplicar-vendedor");
+
+  selectPlaza.innerHTML = '<option value="__todas__">Todas las plazas</option>' +
+    plazasOrdenadas.map((p) => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("");
+
+  function poblarVendedores(plaza) {
+    const vendedores = plaza === "__todas__" ? todosLosVendedores : Array.from(vendedoresPorPlaza.get(plaza) || []).sort();
+    selectVendedor.innerHTML = '<option value="__todos__">Todos los vendedores</option>' +
+      vendedores.map((v) => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join("");
+  }
+
+  btnAplicarPlaza.addEventListener("click", () => {
+    poblarVendedores(selectPlaza.value);
+    bloqueVendedor.classList.remove("rp-oculto");
+    btnAplicarVendedor.classList.remove("rp-oculto");
+    renderTablaClientes(selectPlaza.value, "__todos__");
+  });
+
+  btnAplicarVendedor.addEventListener("click", () => {
+    renderTablaClientes(selectPlaza.value, selectVendedor.value);
+  });
+
+  // Estado inicial: todas las plazas, todos los vendedores.
+  renderTablaClientes("__todas__", "__todos__");
+
+  const btnExportar = document.getElementById("rp-exportar-tabla");
+  if (btnExportar) {
+    btnExportar.addEventListener("click", () => {
+      exportarTablaCSV("rp-tabla-clientes", `Clientes_asignados_${new Date().toISOString().slice(0, 10)}.csv`);
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

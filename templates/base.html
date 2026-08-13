@@ -5,53 +5,83 @@
 <title>{% block title %}CargoLink{% endblock %}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light;
+    --accent: #007CC3;
+    --accent-dark: #0069a3;
+    --ink: #0f172a;
+    --ink-2: #475569;
+    --ink-3: #64748b;
+    --ink-4: #94a3b8;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --surface: #ffffff;
+    --bg: #f1f5f9;
+    --danger: #dc2626;
+    --danger-dark: #b91c1c;
+    --danger-wash: #fee2e2;
+    --ok: #166534;
+    --ok-wash: #dcfce7;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-    background: #f1f5f9; color: #0f172a;
+    background: var(--bg); color: var(--ink);
   }
   header {
-    background: #007CC3; color: #fff; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
+    background: var(--accent); color: #fff; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
     flex-wrap: wrap; gap: .5rem;
   }
-  header h1 { font-size: .92rem; margin: 0; }
-  header .autor { font-size: .68rem; opacity: .75; margin: .1rem 0 0; }
-  nav { display: flex; gap: 1rem; align-items: center; }
+  header h1 { font-size: 1.05rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  header .autor { font-size: .68rem; opacity: .7; margin: .15rem 0 0; letter-spacing: .01em; }
+  nav { display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
   nav a { color: #fff; opacity: .85; font-size: .85rem; text-decoration: none; }
   nav a:hover, nav a.active { opacity: 1; text-decoration: underline; }
+  .nav-links, .nav-user { display: flex; gap: 1.25rem; align-items: center; }
+  .nav-user { gap: 1rem; padding-left: 1.25rem; border-left: 1px solid rgba(255,255,255,.25); font-size: .85rem; }
   main { max-width: 880px; margin: 2.5rem auto; padding: 0 1.5rem; }
   .card {
-    background: #fff; border-radius: 12px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1.5rem;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 2rem; box-shadow: 0 1px 2px rgba(15,23,42,0.04); margin-bottom: 1.5rem;
   }
   .card h2 { margin-top: 0; font-size: 1.05rem; }
   .row { display: flex; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
   .row .field { flex: 1; min-width: 160px; }
-  label { display: block; font-size: .8rem; color: #475569; margin-bottom: .3rem; font-weight: 600; }
+  label { display: block; font-size: .8rem; color: var(--ink-2); margin-bottom: .3rem; font-weight: 600; }
   input {
-    width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: .9rem;
+    width: 100%; padding: .55rem .7rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: .9rem;
   }
-  .hint { font-size: .8rem; color: #64748b; margin: -.5rem 0 1.25rem; }
+  .hint { font-size: .8rem; color: var(--ink-3); margin: -.5rem 0 1.25rem; }
   button, .btn {
-    padding: .6rem 1.1rem; background: #007CC3; color: #fff; border: none; border-radius: 8px;
+    padding: .6rem 1.1rem; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm);
     font-size: .9rem; font-weight: 600; cursor: pointer; text-decoration: none; display: inline-block;
   }
-  button:hover, .btn:hover { background: #0069a3; }
-  .btn.secondary { background: #64748b; }
-  .btn.secondary:hover { background: #475569; }
-  .btn.danger { background: #dc2626; }
-  .btn.danger:hover { background: #b91c1c; }
+  button:hover, .btn:hover { background: var(--accent-dark); }
+  .btn.secondary { background: var(--ink-3); }
+  .btn.secondary:hover { background: var(--ink-2); }
+  .btn.danger { background: var(--danger); }
+  .btn.danger:hover { background: var(--danger-dark); }
   .btn.small { padding: .35rem .65rem; font-size: .8rem; }
   table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid #e2e8f0; }
-  th { color: #475569; font-weight: 700; background: #f8fafc; }
+  th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-2); font-weight: 700; background: #f8fafc; }
   tbody tr:hover { background: #f8fafc; }
   .actions { display: flex; gap: .4rem; }
-  .empty { color: #64748b; font-size: .85rem; padding: 1rem 0; }
-  .result { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; font-size: .9rem; }
-  .result.ok { background: #dcfce7; color: #166534; }
-  .result.error, .flash { background: #fee2e2; color: #b91c1c; }
-  .flash { padding: .7rem 1rem; border-radius: 8px; font-size: .85rem; margin-bottom: 1.25rem; }
+  .empty {
+    color: var(--ink-3); font-size: .85rem; padding: 2.5rem 1rem; text-align: center;
+  }
+  .empty::before {
+    content: ""; display: block; width: 30px; height: 30px; margin: 0 auto .6rem;
+    background-color: var(--ink-4); opacity: .55;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3Cpath d='M9 13h6M9 17h4'/%3E%3C/svg%3E") no-repeat center / contain;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z'/%3E%3Cpath d='M14 3v5h5'/%3E%3Cpath d='M9 13h6M9 17h4'/%3E%3C/svg%3E") no-repeat center / contain;
+  }
+  .result { margin-top: 1.5rem; padding: 1rem; border-radius: var(--radius-sm); font-size: .9rem; }
+  .result.ok { background: var(--ok-wash); color: var(--ok); }
+  .result.error, .flash { background: var(--danger-wash); color: var(--danger-dark); }
+  .flash { padding: .7rem 1rem; border-radius: var(--radius-sm); font-size: .85rem; margin-bottom: 1.25rem; }
   .result a { color: inherit; font-weight: 700; }
   pre { white-space: pre-wrap; font-size: .75rem; margin-top: .5rem; max-height: 200px; overflow: auto; }
   form.inline { display: inline; }
@@ -65,12 +95,16 @@
       <p class="autor">By Ing Ramón Villanueva</p>
     </div>
     <nav>
-      {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Reporte</a>{% endif %}
-      <a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Dashboard</a>
-      <a href="{{ url_for('reportes_graficas') }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>
-      {% if session.get('es_admin') %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
-      {% if session.get('usuario') %}<span style="opacity:.75;">{{ session['usuario'] }}</span>{% endif %}
-      <a href="{{ url_for('logout') }}">Cerrar sesión</a>
+      <div class="nav-links">
+        {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
+        <a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Información de Ventas</a>
+        <a href="{{ url_for('reportes_graficas') }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>
+        {% if session.get('es_admin') %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
+      </div>
+      <div class="nav-user">
+        {% if session.get('usuario') %}<span style="opacity:.75;">{{ session['usuario'] }}</span>{% endif %}
+        <a href="{{ url_for('logout') }}">Cerrar sesión</a>
+      </div>
     </nav>
   </header>
   <main>

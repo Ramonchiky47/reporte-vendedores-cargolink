@@ -13,13 +13,27 @@
       <a class="btn" href="{{ url_for('catalogo_desarrolladores') }}">Abrir catálogo de Desarrolladores</a>
     </div>
     <div class="card">
-      <h2>Catálogo de Usuarios</h2>
-      <p class="hint">Usuarios y contraseñas que pueden ingresar a esta app.</p>
-      <a class="btn" href="{{ url_for('catalogo_usuarios') }}">Abrir catálogo de Usuarios</a>
+      <h2>Accesos</h2>
+      <p class="hint">Los usuarios que pueden ingresar a esta app se gestionan en el catálogo de Accesos de Seguimiento de Importaciones (Catálogos → Accesos).</p>
     </div>
     <div class="card">
       <h2>Catálogo de Presupuesto</h2>
       <p class="hint">Presupuesto mensual por Vendedor y Desarrollador.</p>
       <a class="btn" href="{{ url_for('catalogo_presupuesto') }}">Abrir catálogo de Presupuesto</a>
+    </div>
+    <div class="card">
+      <h2>Visibilidad de Plazas</h2>
+      <p class="hint">Define si cada usuario ve todas las plazas o solo las que le asignes, en Dashboard y Reportes.</p>
+      <a class="btn" href="{{ url_for('visibilidad_plazas') }}">Abrir Visibilidad de Plazas</a>
+    </div>
+    <div class="card">
+      <h2>Actividad de Usuarios</h2>
+      <p class="hint">Horario de ingreso de cada usuario.</p>
+      <a class="btn" href="{{ url_for('actividad_usuarios') }}">Abrir Actividad de Usuarios</a>
+    </div>
+    <div class="card">
+      <h2>Almacenamiento de Base de Datos</h2>
+      <p class="hint">Tamaño de la base de datos vs el límite del plan de Supabase, y desglose por tabla.</p>
+      <a class="btn" href="{{ url_for('almacenamiento_bd') }}">Abrir Almacenamiento de Base de Datos</a>
     </div>
 {% endblock %}

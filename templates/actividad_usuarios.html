@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Actividad de Usuarios{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Actividad de Usuarios</h2>
+      <p class="hint">Horario de ingreso de cada usuario (un registro por sesión iniciada, no por cada página visitada). Últimos 500.</p>
+      {% if ingresos %}
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Fecha y hora</th></tr>
+        </thead>
+        <tbody>
+          {% for fila in ingresos %}
+          <tr>
+            <td>{{ fila.usuario }}</td>
+            <td>{{ fila.fecha_hora }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay ingresos registrados.</p>
+      {% endif %}
+    </div>
+{% endblock %}

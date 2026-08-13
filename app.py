@@ -24,18 +24,17 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from psycopg.rows import dict_row
-from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 TZ_LOCAL = ZoneInfo(os.environ.get("TZ_LOCAL", "America/Mexico_City"))
-HASH_METHOD = "pbkdf2:sha256"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
 CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
+CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 
 
 def get_secret_key():
@@ -54,20 +53,12 @@ def get_db():
 
 
 def init_db():
-    """Crea las tablas si no existen (primer arranque en una base vacía) y,
-    si se definieron INITIAL_ADMIN_USER / INITIAL_ADMIN_PASSWORD y todavía no
-    hay ningún usuario, da de alta ese primer administrador."""
+    """Crea las tablas si no existen (primer arranque en una base vacía).
+
+    El login usa el catálogo de accesos de Seguimiento de Importaciones
+    (auth.users + public.app_user_permissions, mismo proyecto Supabase) en
+    vez de una tabla de usuarios propia."""
     db = get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id bigint generated always as identity primary key,
-            usuario text not null,
-            password_hash text not null,
-            creado_en timestamptz not null default now(),
-            es_admin boolean not null default false
-        );
-    """)
-    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_usuarios_usuario ON usuarios (lower(usuario));")
     db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
@@ -122,17 +113,41 @@ def init_db():
             generado_en timestamptz not null default now()
         );
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS asignacion_de_clientes (
+            id bigint generated always as identity primary key,
+            folio integer,
+            razon_social text not null,
+            vendedor text,
+            desarrollador text,
+            tipo_cliente text,
+            fecha_creacion timestamptz not null default now(),
+            cant_booking integer not null default 0,
+            fecha_ultimo_booking timestamptz
+        );
+    """)
+    db.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_asignacion_de_clientes_folio
+            ON asignacion_de_clientes (folio);
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS usuario_plazas (
+            id bigint generated always as identity primary key,
+            usuario_id bigint not null references usuarios(id) on delete cascade,
+            plaza text not null,
+            unique (usuario_id, plaza)
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS registro_ingresos (
+            id bigint generated always as identity primary key,
+            usuario_id bigint references usuarios(id) on delete set null,
+            usuario text not null,
+            fecha_hora timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_registro_ingresos_fecha ON registro_ingresos (fecha_hora desc);")
     db.commit()
-
-    hay_usuarios = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
-    admin_inicial = (os.environ.get("INITIAL_ADMIN_USER") or "").strip()
-    clave_inicial = (os.environ.get("INITIAL_ADMIN_PASSWORD") or "").strip()
-    if hay_usuarios == 0 and admin_inicial and clave_inicial:
-        db.execute(
-            "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (%s, %s, true)",
-            (admin_inicial, generate_password_hash(clave_inicial, method=HASH_METHOD)),
-        )
-        db.commit()
     db.close()
 
 
@@ -191,6 +206,26 @@ def leer_filas_xlsx(file_storage):
 
 def normalizar(texto):
     return (texto or "").strip().upper()
+
+
+def get_plazas_catalogo():
+    """Todas las plazas conocidas (unión de catalogo_vendedores y
+    catalogo_desarrolladores), para poblar los checkboxes de visibilidad."""
+    db = get_db()
+    filas_v = db.execute("SELECT DISTINCT plaza FROM catalogo_vendedores").fetchall()
+    filas_d = db.execute("SELECT DISTINCT plaza FROM catalogo_desarrolladores").fetchall()
+    db.close()
+    plazas = {f["plaza"] for f in filas_v if f["plaza"]} | {f["plaza"] for f in filas_d if f["plaza"]}
+    return sorted(plazas)
+
+
+def extraer_tipo_servicio(referencia):
+    """El tipo de servicio (FCLI, LCLI, DA, AI, FTL, ...) es el tercer
+    segmento de la referencia, ej. '2608-3798-FCLI' -> 'FCLI'."""
+    partes = (referencia or "").split("-")
+    if len(partes) >= 3:
+        return "-".join(partes[2:]).strip().upper() or "Sin tipo"
+    return "Sin tipo"
 
 
 def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
@@ -273,7 +308,82 @@ def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
     return bookings
 
 
-def construir_datos_dashboard():
+def descargar_reporte_clientes_cargolink():
+    """Se conecta a CargoLink, descarga el Reporte de Clientes (excel real,
+    no HTML) y regresa una lista de dicts (uno por cliente). No toca el
+    disco. Columnas del excel: FOLIO, RAZÓN SOCIAL, VENDEDOR, DESARROLLADOR,
+    TIPO DE CLIENTE, SUCURSAL, FECHA DE CREACIÓN, CANT BOOKING,
+    F. ÚLT. BOOKING (SUCURSAL no se usa, no está en asignacion_de_clientes)."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    res = sesion.get(
+        CARGOLINK_REPORTE_CLIENTES_URL,
+        params={"cliente": "", "t_cliente": "", "vendedor": "", "sucursal": "", "desarrollador": "", "industria": ""},
+        headers=headers,
+        timeout=120,
+    )
+    if res.status_code != 200 or len(res.content) == 0:
+        raise RuntimeError("Error al descargar el Reporte de Clientes desde CargoLink.")
+
+    wb = openpyxl.load_workbook(io.BytesIO(res.content), data_only=True)
+    ws = wb.active
+
+    def parse_fecha(v):
+        if not v:
+            return None
+        if isinstance(v, datetime):
+            return v
+        texto = str(v).strip()
+        for formato in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(texto, formato)
+            except ValueError:
+                continue
+        return None
+
+    header = None
+    clientes = []
+    for row in ws.iter_rows(values_only=True):
+        if header is None:
+            if row and row[0] == "FOLIO":
+                header = [str(h).strip() if h is not None else "" for h in row]
+            continue
+        if not row or row[0] is None:
+            continue
+
+        dato = dict(zip(header, row))
+        try:
+            folio = int(dato.get("FOLIO"))
+        except (TypeError, ValueError):
+            continue
+
+        clientes.append({
+            "folio": folio,
+            "razon_social": (dato.get("RAZÓN SOCIAL") or "").strip() or "(sin nombre)",
+            "vendedor": (dato.get("VENDEDOR") or "").strip() or None,
+            "desarrollador": (dato.get("DESARROLLADOR") or "").strip() or None,
+            "tipo_cliente": (dato.get("TIPO DE CLIENTE") or "").strip() or None,
+            # fecha_creacion es NOT NULL en la tabla; si CargoLink no trae
+            # una fecha parseable (no debería pasar, pero por seguridad),
+            # se usa el momento de la descarga en vez de mandar NULL.
+            "fecha_creacion": parse_fecha(dato.get("FECHA DE CREACIÓN")) or datetime.now(TZ_LOCAL),
+            "cant_booking": int(dato.get("CANT BOOKING") or 0),
+            "fecha_ultimo_booking": parse_fecha(dato.get("F. ÚLT. BOOKING")),
+        })
+
+    return clientes
+
+
+def construir_datos_dashboard(plazas_permitidas=None):
     db = get_db()
     meta = db.execute(
         "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
@@ -315,25 +425,33 @@ def construir_datos_dashboard():
     detalle = []
     for r in bookings:
         vkey = normalizar(r["vendedor"])
-        clave = (r["mes"], vkey)
-        agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
-        agg["cant_book"] += 1
-        agg["venta"] += float(r["venta"])
-        agg["profit"] += float(r["profit"])
+        cat = catalogo_vendedor.get(vkey)
+        plaza_vendedor = cat["plaza"] if cat else "#N/D"
+        vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
 
-        if r["ejecutivo"]:
-            dkey = normalizar(r["ejecutivo"])
+        dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
+
+        if vendedor_permitido:
+            clave = (r["mes"], vkey)
+            agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+            agg["cant_book"] += 1
+            agg["venta"] += float(r["venta"])
+            agg["profit"] += float(r["profit"])
+
+        if dkey and vendedor_permitido:
             agg_d = agregados_desarrollador.setdefault((r["mes"], dkey), {"cant_book": 0, "venta": 0.0, "profit": 0.0})
             agg_d["cant_book"] += 1
             agg_d["venta"] += float(r["venta"])
             agg_d["profit"] += float(r["profit"])
 
-        cat = catalogo_vendedor.get(vkey)
         nombre_canonico = cat["nombre"] if cat else r["vendedor"]
         # Los totales (agregados/filas de arriba) siempre incluyen a todos los
         # vendedores; solo el detalle a nivel booking se omite para quien
-        # tenga marcado "ocultar_detalle" en su catálogo.
-        if not (cat and cat["ocultar_detalle"]):
+        # tenga marcado "ocultar_detalle" en su catálogo. El criterio
+        # mandatorio de plaza es el vendedor: que el desarrollador/customer
+        # esté catalogado en una plaza permitida NO basta para mostrar la
+        # venta si el vendedor que la vendió es de otra plaza.
+        if vendedor_permitido and not (cat and cat["ocultar_detalle"]):
             detalle.append({
                 "mes": r["mes"],
                 "vendedor": nombre_canonico,
@@ -348,9 +466,17 @@ def construir_datos_dashboard():
             })
 
     for clave in presupuesto_por_mes_vendedor:
-        agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+        _, vkey = clave
+        cat = catalogo_vendedor.get(vkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        if plazas_permitidas is None or plaza in plazas_permitidas:
+            agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
     for clave in presupuesto_por_mes_desarrollador:
-        agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+        _, dkey = clave
+        cat = catalogo_desarrollador.get(dkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        if plazas_permitidas is None or plaza in plazas_permitidas:
+            agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
 
     filas = []
     for (mes, vkey), agg in agregados.items():
@@ -412,12 +538,42 @@ except Exception as e:
 app = Flask(__name__)
 app.secret_key = get_secret_key()
 
+IMPORTACIONES_URL = (os.environ.get("IMPORTACIONES_URL") or "http://localhost:3001").strip()
+
+
+@app.context_processor
+def inject_importaciones_url():
+    return {"importaciones_url": IMPORTACIONES_URL}
+
+
+def registrar_ingreso():
+    """Guarda un renglón en registro_ingresos la primera vez que una
+    sesión recién autenticada toca una vista protegida (una fila por
+    login, no por cada página que visite). Se engancha en los decoradores
+    en vez de en /login para que funcione sin importar qué mecanismo de
+    autenticación esté activo. Nunca debe tumbar la vista por un problema
+    de logging."""
+    if session.get("ingreso_registrado"):
+        return
+    session["ingreso_registrado"] = True
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO registro_ingresos (usuario_id, usuario) VALUES (%s, %s)",
+            (session.get("usuario_id"), session.get("usuario") or "?"),
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"Aviso: no se pudo registrar el ingreso ({e}).")
+
 
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        registrar_ingreso()
         return view(*args, **kwargs)
 
     return wrapped
@@ -428,6 +584,7 @@ def admin_required(view):
     def wrapped(*args, **kwargs):
         if not session.get("logged_in"):
             return redirect(url_for("login"))
+        registrar_ingreso()
         if not session.get("es_admin"):
             flash("Esa sección es solo para administradores.")
             return redirect(url_for("dashboard_plazas_vendedores"))
@@ -436,22 +593,110 @@ def admin_required(view):
     return wrapped
 
 
+def plazas_permitidas_usuario():
+    """None = el usuario en sesión ve todas las plazas (sin restricción).
+    Si no es None, es el set de plazas que puede ver. Los administradores
+    siempre ven todo, sin importar si tienen filas en usuario_plazas —
+    evita que un admin se bloquee a sí mismo por error."""
+    if session.get("es_admin"):
+        return None
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return None
+    db = get_db()
+    filas = db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,)).fetchall()
+    db.close()
+    if not filas:
+        return None
+    return {f["plaza"] for f in filas}
+
+
+def usuario_puede_exportar():
+    """True = el usuario en sesión puede usar los botones "Exportar". Los
+    administradores siempre pueden. Se consulta directo a la tabla
+    usuarios (no se cachea en la sesión) para que un cambio del admin
+    aplique de inmediato, igual que plazas_permitidas_usuario()."""
+    if session.get("es_admin"):
+        return True
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return True
+    db = get_db()
+    fila = db.execute("SELECT puede_exportar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return True
+    return bool(fila["puede_exportar"])
+
+
+def usuario_puede_actualizar():
+    """True = el usuario en sesión puede usar el botón "Actualizar" para
+    regenerar el reporte desde CargoLink. Los administradores siempre
+    pueden. A diferencia de puede_exportar, por default es False (es una
+    acción más sensible: reemplaza todos los bookings), solo la tienen los
+    usuarios a los que un administrador se la otorgue explícitamente."""
+    if session.get("es_admin"):
+        return True
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return False
+    db = get_db()
+    fila = db.execute("SELECT puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return False
+    return bool(fila["puede_actualizar"])
+
+
+@app.context_processor
+def inject_permisos_exportar():
+    return {"puede_exportar": usuario_puede_exportar(), "puede_actualizar": usuario_puede_actualizar()}
+
+
+def autenticar_contra_catalogo_accesos(email, password):
+    """Valida el correo/contraseña contra el catálogo de accesos de
+    Seguimiento de Importaciones (auth.users + app_user_permissions, mismo
+    proyecto Supabase). Regresa la fila del usuario si es válido y la cuenta
+    no está deshabilitada, o None si no."""
+    db = get_db()
+    fila = db.execute(
+        """
+        SELECT
+            u.id, u.email,
+            (u.encrypted_password IS NOT NULL
+                AND extensions.crypt(%(password)s, u.encrypted_password) = u.encrypted_password) AS password_ok,
+            (u.banned_until IS NOT NULL AND u.banned_until > now()) AS baneado,
+            coalesce(p.es_admin, false) AS es_admin,
+            coalesce(p.puede_exportar, false) AS puede_exportar,
+            coalesce(p.puede_borrar, false) AS puede_borrar,
+            coalesce(p.puede_operativos, false) AS puede_operativos,
+            coalesce(p.es_master, false) AS es_master
+        FROM auth.users u
+        LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
+        WHERE lower(u.email) = lower(%(email)s)
+        """,
+        {"email": email, "password": password},
+    ).fetchone()
+    db.close()
+    if not fila or not fila["password_ok"] or fila["baneado"]:
+        return None
+    return fila
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        usuario = request.form.get("usuario", "").strip()
-        clave = request.form.get("clave", "")
-        db = get_db()
-        fila = db.execute("SELECT * FROM usuarios WHERE lower(usuario) = lower(%s)", (usuario,)).fetchone()
-        db.close()
-        if fila and check_password_hash(fila["password_hash"], clave):
+        email = request.form.get("email", "").strip()
+        clave = request.form.get("password", "")
+        fila = autenticar_contra_catalogo_accesos(email, clave)
+        if fila:
             session["logged_in"] = True
-            session["usuario"] = fila["usuario"]
-            session["usuario_id"] = fila["id"]
+            session["usuario"] = fila["email"]
+            session["usuario_id"] = str(fila["id"])
             session["es_admin"] = bool(fila["es_admin"])
             destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
             return redirect(url_for(destino))
-        flash("Usuario o contraseña incorrectos.")
+        flash("Correo o contraseña incorrectos.")
     return render_template("login.html")
 
 
@@ -497,16 +742,62 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
         (fecha_inicio, fecha_fin),
     )
     db.commit()
+
+    # Reporte de Clientes: además de los bookings, se actualiza
+    # asignacion_de_clientes usando folio como llave — los folios que ya
+    # existen se reemplazan con los datos frescos de CargoLink, y los que
+    # no existían se agregan. Es un paso adicional: si falla, no se revierte
+    # el reporte de bookings que ya se guardó arriba, solo se avisa.
+    mensaje_clientes = ""
+    try:
+        clientes = descargar_reporte_clientes_cargolink()
+        columnas_clientes = [
+            "folio", "razon_social", "vendedor", "desarrollador",
+            "tipo_cliente", "fecha_creacion", "cant_booking", "fecha_ultimo_booking",
+        ]
+        for inicio in range(0, len(clientes), TAMANO_LOTE):
+            lote = clientes[inicio:inicio + TAMANO_LOTE]
+            placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas_clientes)) + ")"] * len(lote))
+            valores = [c[col] for c in lote for col in columnas_clientes]
+            cur.execute(
+                f"""
+                INSERT INTO asignacion_de_clientes ({', '.join(columnas_clientes)})
+                VALUES {placeholders}
+                ON CONFLICT (folio) DO UPDATE SET
+                    razon_social = EXCLUDED.razon_social,
+                    vendedor = EXCLUDED.vendedor,
+                    desarrollador = EXCLUDED.desarrollador,
+                    tipo_cliente = EXCLUDED.tipo_cliente,
+                    fecha_creacion = EXCLUDED.fecha_creacion,
+                    cant_booking = EXCLUDED.cant_booking,
+                    fecha_ultimo_booking = EXCLUDED.fecha_ultimo_booking
+                """,
+                valores,
+            )
+        db.commit()
+        mensaje_clientes = f" Reporte de clientes actualizado ({len(clientes)} clientes)."
+    except Exception as e:
+        db.rollback()
+        mensaje_clientes = f" Aviso: el reporte de bookings sí se guardó, pero el reporte de clientes falló ({str(e)[:300]})."
+
     db.close()
 
-    return True, f"Reporte generado correctamente ({len(bookings)} bookings).", None
+    return True, f"Reporte generado correctamente ({len(bookings)} bookings).{mensaje_clientes}", None
 
 
 @app.route("/generar", methods=["POST"])
-@admin_required
+@login_required
 def generar():
-    fecha_inicio = request.form.get("fecha_inicio", "").strip()
-    fecha_fin = request.form.get("fecha_fin", "").strip()
+    es_admin = bool(session.get("es_admin"))
+    if not es_admin and not usuario_puede_actualizar():
+        flash("No tienes permiso para actualizar el reporte.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    # Las fechas de inicio/fin solo las puede elegir un administrador; para
+    # el resto (botón "Actualizar" en Información de Ventas) siempre se usa
+    # el rango por default, sin importar lo que venga en el formulario.
+    fecha_inicio = request.form.get("fecha_inicio", "").strip() if es_admin else ""
+    fecha_fin = request.form.get("fecha_fin", "").strip() if es_admin else ""
 
     if fecha_inicio and not DATE_RE.match(fecha_inicio):
         session["resultado"] = {"ok": False, "mensaje": "Fecha de inicio inválida."}
@@ -520,8 +811,11 @@ def generar():
     fecha_fin = fecha_fin or now.strftime("%Y-%m-%d")
 
     ok, mensaje, detalle = ejecutar_generacion_reporte(fecha_inicio, fecha_fin)
-    session["resultado"] = {"ok": ok, "mensaje": mensaje, "detalle": detalle}
-    return redirect(url_for("dashboard"))
+    if es_admin:
+        session["resultado"] = {"ok": ok, "mensaje": mensaje, "detalle": detalle}
+        return redirect(url_for("dashboard"))
+    flash(mensaje)
+    return redirect(url_for("dashboard_plazas_vendedores"))
 
 
 @app.route("/cron/generar-reporte", methods=["GET", "POST"])
@@ -580,7 +874,7 @@ def descargar():
 @app.route("/dashboard")
 @login_required
 def dashboard_plazas_vendedores():
-    datos = construir_datos_dashboard()
+    datos = construir_datos_dashboard(plazas_permitidas_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -591,9 +885,10 @@ def dashboard_plazas_vendedores():
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
 
 
-@app.route("/reportes")
-@login_required
-def reportes_graficas():
+def construir_filas_reportes(plazas_permitidas=None):
+    """Un registro liviano por booking (usado por /reportes y
+    /reportes/por-vendedor) para que todo el filtrado y las sumas se hagan
+    en el navegador, igual que en /dashboard."""
     db = get_db()
 
     plaza_por_vendedor = {}
@@ -601,38 +896,275 @@ def reportes_graficas():
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
 
     bookings = db.execute(
-        "SELECT fecha, vendedor, venta_por, cliente_servicio, venta, profit FROM reporte_bookings ORDER BY fecha"
+        "SELECT fecha, vendedor, ejecutivo, referencia, venta_por, cliente_servicio, venta, profit FROM reporte_bookings ORDER BY fecha"
     ).fetchall()
     db.close()
 
-    # Un registro liviano por booking (sin referencia ni margen, no se
-    # necesitan para estas gráficas de agregados) para que todo el filtrado
-    # y las sumas se hagan en el navegador, igual que en /dashboard.
     filas = []
     for r in bookings:
         fecha = r["fecha"]
         if fecha is None:
             continue
         vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
         filas.append({
             "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
             "mes": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m"),
-            "plaza": plaza_por_vendedor.get(vkey, "#N/D"),
+            "plaza": plaza,
             "vendedor": r["vendedor"] or "#N/D",
             "cliente": r["cliente_servicio"] or "Sin cliente",
             "tipo": r["venta_por"] or "Sin tipo",
+            "ejecutivo": normalizar(r["ejecutivo"]),
+            "tipoServicio": extraer_tipo_servicio(r["referencia"]),
             "venta": round(float(r["venta"]), 2),
             "profit": round(float(r["profit"]), 2),
         })
+    return filas
 
+
+@app.route("/reportes")
+@login_required
+def reportes_graficas():
+    filas = construir_filas_reportes(plazas_permitidas_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/por-vendedor")
+@login_required
+def reportes_por_vendedor():
+    filas = construir_filas_reportes(plazas_permitidas_usuario())
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/clientes-asignados")
+@login_required
+def reportes_clientes_asignados():
+    db = get_db()
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    filas_clientes = db.execute(
+        "SELECT folio, razon_social, vendedor, tipo_cliente, cant_booking, fecha_ultimo_booking "
+        "FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY vendedor, razon_social"
+    ).fetchall()
+    db.close()
+
+    plazas_permitidas = plazas_permitidas_usuario()
+    filas = []
+    for r in filas_clientes:
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        filas.append({
+            "folio": r["folio"],
+            "razonSocial": r["razon_social"],
+            "vendedor": r["vendedor"],
+            "plaza": plaza,
+            "tipoCliente": r["tipo_cliente"] or "",
+            "cantBooking": r["cant_booking"],
+            "fechaUltimoBooking": r["fecha_ultimo_booking"].strftime("%Y-%m-%d") if r["fecha_ultimo_booking"] else "",
+        })
+
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_clientes_asignados.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
+@app.route("/reportes/clientes-mensual")
+@login_required
+def reportes_clientes_mensual():
+    db = get_db()
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    # El booking pertenece al cliente (cliente_servicio) sin importar quién
+    # de reporte_bookings.vendedor lo vendió — aquí se agrupa por el
+    # vendedor ASIGNADO al cliente en asignacion_de_clientes, que es lo que
+    # pidió el usuario ("clientes asignados por vendedor"). Se guarda
+    # también el set de vendedores reales detrás de cada mes para poder
+    # marcar en rojo cuando alguna venta la generó alguien distinto al
+    # vendedor asignado actualmente.
+    mensual_por_cliente = {}
+    for r in db.execute("SELECT mes, vendedor, cliente_servicio, profit FROM reporte_bookings"):
+        ckey = normalizar(r["cliente_servicio"])
+        if not ckey:
+            continue
+        por_mes = mensual_por_cliente.setdefault(ckey, {})
+        acc = por_mes.setdefault(r["mes"], {"cant": 0, "profit": 0.0, "vendedores": set()})
+        acc["cant"] += 1
+        acc["profit"] += float(r["profit"])
+        acc["vendedores"].add(normalizar(r["vendedor"]))
+
+    filas_clientes = db.execute(
+        "SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY vendedor, razon_social"
+    ).fetchall()
+    db.close()
+
+    plazas_permitidas = plazas_permitidas_usuario()
+    filas = []
+    for r in filas_clientes:
+        vkey = normalizar(r["vendedor"])
+        ckey = normalizar(r["razon_social"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        mensual = {}
+        for mes, acc in mensual_por_cliente.get(ckey, {}).items():
+            mensual[mes] = {
+                "cant": acc["cant"],
+                "profit": acc["profit"],
+                "otroVendedor": bool(acc["vendedores"] - {vkey}),
+            }
+        filas.append({
+            "folio": r["folio"],
+            "razonSocial": r["razon_social"],
+            "vendedor": r["vendedor"],
+            "plaza": plaza,
+            "mensual": mensual,
+        })
+
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_clientes_mensual.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
 @app.route("/catalogos")
 @admin_required
 def catalogos():
     return render_template("catalogos.html")
+
+
+@app.route("/catalogos/visibilidad-plazas")
+@admin_required
+def visibilidad_plazas():
+    db = get_db()
+    usuarios_filas = db.execute(
+        "SELECT id, usuario, es_admin, puede_exportar, puede_actualizar FROM usuarios ORDER BY usuario"
+    ).fetchall()
+    plazas_por_usuario = {}
+    for r in db.execute("SELECT usuario_id, plaza FROM usuario_plazas ORDER BY plaza"):
+        plazas_por_usuario.setdefault(r["usuario_id"], []).append(r["plaza"])
+    db.close()
+
+    filas = []
+    for u in usuarios_filas:
+        filas.append({
+            "id": u["id"],
+            "usuario": u["usuario"],
+            "es_admin": u["es_admin"],
+            "puede_exportar": u["puede_exportar"],
+            "puede_actualizar": u["puede_actualizar"],
+            "plazas": plazas_por_usuario.get(u["id"], []),
+        })
+    return render_template("visibilidad_plazas.html", filas=filas)
+
+
+@app.route("/catalogos/visibilidad-plazas/<int:usuario_id>/editar", methods=["GET", "POST"])
+@admin_required
+def visibilidad_plazas_editar(usuario_id):
+    db = get_db()
+    usuario = db.execute(
+        "SELECT id, usuario, puede_exportar, puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)
+    ).fetchone()
+    if usuario is None:
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        todas_las_plazas = request.form.get("todas_las_plazas") == "on"
+        plazas_seleccionadas = request.form.getlist("plazas")
+        puede_exportar = request.form.get("puede_exportar") == "on"
+        puede_actualizar = request.form.get("puede_actualizar") == "on"
+        if not todas_las_plazas and not plazas_seleccionadas:
+            flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
+        else:
+            db.execute(
+                "UPDATE usuarios SET puede_exportar = %s, puede_actualizar = %s WHERE id = %s",
+                (puede_exportar, puede_actualizar, usuario_id),
+            )
+            db.execute("DELETE FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))
+            if not todas_las_plazas:
+                for plaza in plazas_seleccionadas:
+                    db.execute(
+                        "INSERT INTO usuario_plazas (usuario_id, plaza) VALUES (%s, %s)",
+                        (usuario_id, plaza),
+                    )
+            db.commit()
+            db.close()
+            return redirect(url_for("visibilidad_plazas"))
+
+    plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))}
+    db.close()
+    return render_template(
+        "visibilidad_plazas_editar.html",
+        usuario=usuario,
+        plazas_catalogo=get_plazas_catalogo(),
+        plazas_actuales=plazas_actuales,
+        sin_restriccion=len(plazas_actuales) == 0,
+    )
+
+
+@app.route("/catalogos/actividad-usuarios")
+@admin_required
+def actividad_usuarios():
+    db = get_db()
+    filas = db.execute(
+        "SELECT usuario, fecha_hora FROM registro_ingresos ORDER BY fecha_hora DESC LIMIT 500"
+    ).fetchall()
+    db.close()
+    ingresos = [
+        {"usuario": f["usuario"], "fecha_hora": f["fecha_hora"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M")}
+        for f in filas
+    ]
+    return render_template("actividad_usuarios.html", ingresos=ingresos)
+
+
+SUPABASE_DB_LIMIT_MB = float(os.environ.get("SUPABASE_DB_LIMIT_MB", "500"))
+
+
+@app.route("/catalogos/almacenamiento")
+@admin_required
+def almacenamiento_bd():
+    db = get_db()
+    total = db.execute(
+        "SELECT pg_database_size(current_database()) AS bytes, "
+        "pg_size_pretty(pg_database_size(current_database())) AS legible"
+    ).fetchone()
+    tablas_filas = db.execute("""
+        SELECT relname AS tabla,
+               pg_total_relation_size(relid) AS bytes,
+               pg_size_pretty(pg_total_relation_size(relid)) AS legible
+        FROM pg_catalog.pg_statio_user_tables
+        WHERE schemaname = 'public'
+        ORDER BY bytes DESC
+    """).fetchall()
+    db.close()
+
+    total_bytes = total["bytes"]
+    limite_bytes = SUPABASE_DB_LIMIT_MB * 1024 * 1024
+    porcentaje = round(total_bytes / limite_bytes * 100, 1) if limite_bytes else 0
+    tablas = [
+        {
+            "tabla": t["tabla"],
+            "legible": t["legible"],
+            "porcentaje": round(t["bytes"] / total_bytes * 100, 1) if total_bytes else 0,
+        }
+        for t in tablas_filas
+    ]
+    return render_template(
+        "almacenamiento_bd.html",
+        total_legible=total["legible"],
+        limite_mb=SUPABASE_DB_LIMIT_MB,
+        porcentaje=porcentaje,
+        tablas=tablas,
+    )
 
 
 @app.route("/catalogos/vendedores", methods=["GET", "POST"])
@@ -764,105 +1296,6 @@ def catalogo_desarrolladores_eliminar(fila_id):
     db.commit()
     db.close()
     return redirect(url_for("catalogo_desarrolladores"))
-
-
-@app.route("/catalogos/usuarios", methods=["GET", "POST"])
-@admin_required
-def catalogo_usuarios():
-    db = get_db()
-    if request.method == "POST":
-        usuario = request.form.get("usuario", "").strip()
-        clave = request.form.get("clave", "")
-        clave_confirmar = request.form.get("clave_confirmar", "")
-        es_admin = bool(request.form.get("es_admin"))
-        if not usuario or not clave:
-            flash("Usuario y contraseña son obligatorios.")
-        elif clave != clave_confirmar:
-            flash("Las contraseñas no coinciden.")
-        else:
-            try:
-                db.execute(
-                    "INSERT INTO usuarios (usuario, password_hash, es_admin) VALUES (%s, %s, %s)",
-                    (usuario, generate_password_hash(clave, method=HASH_METHOD), es_admin),
-                )
-                db.commit()
-            except psycopg.errors.UniqueViolation:
-                db.rollback()
-                flash("Ese usuario ya existe.")
-        db.close()
-        return redirect(url_for("catalogo_usuarios"))
-
-    filas = db.execute("SELECT id, usuario, creado_en, es_admin FROM usuarios ORDER BY usuario").fetchall()
-    db.close()
-    for fila in filas:
-        fila["creado_en"] = fila["creado_en"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M")
-    return render_template("catalogo_usuarios.html", filas=filas)
-
-
-@app.route("/catalogos/usuarios/<int:fila_id>/editar", methods=["GET", "POST"])
-@admin_required
-def catalogo_usuarios_editar(fila_id):
-    db = get_db()
-    if request.method == "POST":
-        usuario = request.form.get("usuario", "").strip()
-        clave = request.form.get("clave", "")
-        clave_confirmar = request.form.get("clave_confirmar", "")
-        es_admin = bool(request.form.get("es_admin"))
-        admins_actuales = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = true").fetchone()["c"]
-        fila_actual = db.execute("SELECT es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
-        if not usuario:
-            flash("El usuario es obligatorio.")
-        elif clave != clave_confirmar:
-            flash("Las contraseñas no coinciden.")
-        elif fila_actual and fila_actual["es_admin"] and not es_admin and admins_actuales <= 1:
-            flash("No puedes quitarle el rol de administrador al único administrador que queda.")
-        else:
-            try:
-                if clave:
-                    db.execute(
-                        "UPDATE usuarios SET usuario = %s, password_hash = %s, es_admin = %s WHERE id = %s",
-                        (usuario, generate_password_hash(clave, method=HASH_METHOD), es_admin, fila_id),
-                    )
-                else:
-                    db.execute(
-                        "UPDATE usuarios SET usuario = %s, es_admin = %s WHERE id = %s",
-                        (usuario, es_admin, fila_id),
-                    )
-                db.commit()
-                if fila_id == session.get("usuario_id"):
-                    session["usuario"] = usuario
-                    session["es_admin"] = bool(es_admin)
-            except psycopg.errors.UniqueViolation:
-                db.rollback()
-                flash("Ese usuario ya existe.")
-            db.close()
-            return redirect(url_for("catalogo_usuarios"))
-
-    fila = db.execute("SELECT id, usuario, es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
-    db.close()
-    if fila is None:
-        return "No encontrado", 404
-    return render_template("catalogo_usuarios_editar.html", fila=fila)
-
-
-@app.route("/catalogos/usuarios/<int:fila_id>/eliminar", methods=["POST"])
-@admin_required
-def catalogo_usuarios_eliminar(fila_id):
-    db = get_db()
-    total = db.execute("SELECT COUNT(*) AS c FROM usuarios").fetchone()["c"]
-    admins = db.execute("SELECT COUNT(*) AS c FROM usuarios WHERE es_admin = true").fetchone()["c"]
-    fila = db.execute("SELECT es_admin FROM usuarios WHERE id = %s", (fila_id,)).fetchone()
-    if total <= 1:
-        flash("No puedes eliminar el único usuario que queda.")
-    elif fila_id == session.get("usuario_id"):
-        flash("No puedes eliminar el usuario con el que iniciaste sesión.")
-    elif fila and fila["es_admin"] and admins <= 1:
-        flash("No puedes eliminar al único administrador que queda.")
-    else:
-        db.execute("DELETE FROM usuarios WHERE id = %s", (fila_id,))
-        db.commit()
-    db.close()
-    return redirect(url_for("catalogo_usuarios"))
 
 
 @app.route("/catalogos/presupuesto", methods=["GET", "POST"])

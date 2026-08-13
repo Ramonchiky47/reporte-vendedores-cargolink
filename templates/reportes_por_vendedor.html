@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Reporte por vendedor{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+  }
+  main { max-width: 1120px; }
+
+  .rp-volver { font-size: .82rem; color: var(--rp-ink-2); text-decoration: none; display: inline-block; margin-bottom: .75rem; }
+  .rp-volver:hover { text-decoration: underline; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.25rem 0 0; }
+  .rp-filtros-cascada { display: flex; align-items: flex-end; gap: .75rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .rp-filtros-cascada .field { min-width: 200px; margin-bottom: 0; }
+  .rp-filtros-cascada select {
+    width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: .9rem; background: #fff;
+  }
+  #rp-tabla-seleccion { margin: 0 0 1rem; font-weight: 600; color: var(--rp-ink-2); }
+
+  /* El atributo HTML "hidden" pone display:none vía la hoja de estilos por
+     default del navegador, que tiene la prioridad más baja de la cascada —
+     cualquier regla propia que también toque "display" en ese elemento la
+     gana. ".btn { display: inline-block }" de base.html hacía justo eso,
+     así que el botón "Aplicar" del vendedor se veía aunque tuviera
+     "hidden". Se usa esta clase en su lugar, con !important para que nunca
+     pierda contra ninguna otra regla de display. */
+  .rp-oculto { display: none !important; }
+
+  /* Barra de desplazamiento horizontal: la tabla base.html trae
+     "table { width: 100% }", lo que la obligaba a encogerse dentro del
+     contenedor en vez de desbordar y mostrar scroll. Aquí se anula ese
+     ancho fijo para que la tabla crezca a su ancho natural (todas las
+     columnas de mes con nowrap) y sea .rp-tabla-scroll quien controle el
+     desplazamiento horizontal. La columna "Métrica" queda fija (sticky) a
+     la izquierda, y el scrollbar se dibuja siempre visible (no como la
+     barra flotante de macOS que solo aparece al mover el mouse). */
+  .rp-tabla-scroll {
+    max-width: 100%; max-height: 70vh; overflow-x: auto; overflow-y: auto;
+    border: 1px solid var(--rp-grid); border-radius: 8px;
+  }
+  .rp-tabla-scroll table { width: auto; min-width: 100%; font-size: .75rem; }
+  .rp-tabla-scroll thead th { position: sticky; top: 0; z-index: 1; }
+  .rp-tabla-scroll td, .rp-tabla-scroll th { white-space: nowrap; }
+  .rp-tabla-scroll td:first-child, .rp-tabla-scroll th:first-child {
+    position: sticky; left: 0; z-index: 2; background: #f8fafc; box-shadow: 1px 0 0 var(--rp-grid);
+  }
+  .rp-tabla-scroll thead th:first-child { z-index: 3; }
+  .rp-tabla-scroll td:not(:first-child), .rp-tabla-scroll th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .rp-tabla-scroll::-webkit-scrollbar { height: 12px; width: 12px; }
+  .rp-tabla-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  .rp-tabla-scroll { scrollbar-color: #94a3b8 #f1f5f9; scrollbar-width: auto; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <div class="card">
+    <p class="empty">Todavía no hay datos para este reporte. Genera un reporte primero en "Reporte" o "Dashboard".</p>
+  </div>
+{% else %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Reporte por vendedor</h2>
+        <p class="sub">Venta, profit, margen, bookings y clientes — mensual, de enero a la fecha.</p>
+      </div>
+      {% if puede_exportar %}<button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>{% endif %}
+    </div>
+
+    <div class="rp-filtros-cascada">
+      <div class="field">
+        <label for="rp-filtro-plaza">Plaza</label>
+        <select id="rp-filtro-plaza"></select>
+      </div>
+      <button type="button" class="btn" id="rp-aplicar-plaza">Aplicar</button>
+
+      <div class="field rp-oculto" id="rp-bloque-vendedor">
+        <label for="rp-filtro-vendedor">Vendedor</label>
+        <select id="rp-filtro-vendedor"></select>
+      </div>
+      <button type="button" class="btn rp-oculto" id="rp-aplicar-vendedor">Aplicar</button>
+    </div>
+    <p class="sub" id="rp-tabla-seleccion"></p>
+
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-vendedor">
+        <thead><tr id="rp-tabla-vendedor-head"></tr></thead>
+        <tbody id="rp-tabla-vendedor-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script id="datos-reportes" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-reportes").textContent);
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ---- Reporte por vendedor: mensual, de enero del año en curso a la
+  // fecha. El "año en curso" se toma del dato más reciente cargado, no del
+  // reloj del navegador. Se filtra en cascada (Plaza -> Vendedor) y se
+  // pivotea por mes para verlo de un vistazo. ----
+  const METRICAS = [
+    { key: "venta", label: "Venta", fmt: fmtMoneda },
+    { key: "profit", label: "Profit", fmt: fmtMoneda },
+    { key: "margen", label: "Margen", fmt: (v) => Math.round(v * 100) + "%" },
+    { key: "cant", label: "Cant Booking", fmt: fmtEntero },
+    { key: "cantClientes", label: "Clientes diferentes", fmt: fmtEntero },
+    { key: "cantCustomer", label: "Booking ingresados por Customer", fmt: fmtEntero },
+    { key: "cantAV2Customer", label: "Booking ingresados por AV2 Vendedor", fmt: fmtEntero },
+    { key: "cantPropio", label: "Cliente propio", fmt: fmtEntero },
+    { key: "cantAgente", label: "Agente extranjero", fmt: fmtEntero },
+  ];
+
+  const anioActual = TODOS.reduce((max, f) => (f.mes > max ? f.mes : max), "0000-00").slice(0, 4);
+  const FILAS_ANIO = TODOS.filter((f) => f.mes.startsWith(anioActual));
+  const MESES = Array.from(new Set(FILAS_ANIO.map((f) => f.mes))).sort();
+
+  const vendedoresPorPlaza = new Map();
+  for (const f of FILAS_ANIO) {
+    if (!vendedoresPorPlaza.has(f.plaza)) vendedoresPorPlaza.set(f.plaza, new Set());
+    vendedoresPorPlaza.get(f.plaza).add(f.vendedor);
+  }
+  const plazasOrdenadas = Array.from(vendedoresPorPlaza.keys()).sort();
+  const todosLosVendedores = Array.from(new Set(FILAS_ANIO.map((f) => f.vendedor))).sort();
+
+  function pivotearPorMes(filas) {
+    const porMes = new Map();
+    MESES.forEach((m) => porMes.set(m, {
+      venta: 0, profit: 0, cant: 0, clientes: new Set(),
+      cantPropio: 0, cantAgente: 0, cantCustomer: 0, cantAV2Customer: 0,
+      porTipoServicio: new Map(),
+    }));
+    for (const f of filas) {
+      const acc = porMes.get(f.mes);
+      acc.venta += f.venta;
+      acc.profit += f.profit;
+      acc.cant += 1;
+      acc.clientes.add(f.cliente);
+      if (f.tipo === "CLIENTE PROPIO") acc.cantPropio += 1;
+      else if (f.tipo === "AGENTE EXTRANJERO") acc.cantAgente += 1;
+      if (f.ejecutivo === "AV2 CUSTOMER") acc.cantAV2Customer += 1;
+      else if (f.ejecutivo) acc.cantCustomer += 1;
+      const tServ = f.tipoServicio || "Sin tipo";
+      acc.porTipoServicio.set(tServ, (acc.porTipoServicio.get(tServ) || 0) + 1);
+    }
+    const resultado = {};
+    for (const [mes, acc] of porMes) {
+      resultado[mes] = {
+        venta: acc.venta,
+        profit: acc.profit,
+        margen: acc.venta ? acc.profit / acc.venta : 0,
+        cant: acc.cant,
+        cantClientes: acc.clientes.size,
+        cantPropio: acc.cantPropio,
+        cantAgente: acc.cantAgente,
+        cantCustomer: acc.cantCustomer,
+        cantAV2Customer: acc.cantAV2Customer,
+        porTipoServicio: acc.porTipoServicio,
+      };
+    }
+    return resultado;
+  }
+
+  function renderTablaVendedor(plaza, vendedor) {
+    const filas = FILAS_ANIO.filter(
+      (f) => (plaza === "__todas__" || f.plaza === plaza) && (vendedor === "__todos__" || f.vendedor === vendedor),
+    );
+    const pivote = pivotearPorMes(filas);
+
+    const thead = document.getElementById("rp-tabla-vendedor-head");
+    thead.innerHTML = "<th>Métrica</th>" + MESES.map((m) => `<th>${escaparHtml(m)}</th>`).join("");
+
+    const tbody = document.getElementById("rp-tabla-vendedor-body");
+    const etiquetaPlaza = plaza === "__todas__" ? "Todas las plazas" : plaza;
+    const etiquetaVendedor = vendedor === "__todos__" ? "Todos los vendedores" : vendedor;
+    document.getElementById("rp-tabla-seleccion").textContent = `Plaza: ${etiquetaPlaza} · Vendedor: ${etiquetaVendedor}`;
+
+    if (filas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${MESES.length + 1}" class="empty">Sin datos para esta selección.</td></tr>`;
+      return;
+    }
+
+    // Tipo de servicio (FCLI, LCLI, DA, AI, ...) presente en la selección,
+    // como filas dinámicas ordenadas por volumen total (no todas las
+    // combinaciones de plaza/vendedor tienen los mismos tipos).
+    const totalPorTipoServicio = new Map();
+    for (const mes of MESES) {
+      for (const [tipo, cant] of pivote[mes].porTipoServicio) {
+        totalPorTipoServicio.set(tipo, (totalPorTipoServicio.get(tipo) || 0) + cant);
+      }
+    }
+    const tiposServicioOrdenados = Array.from(totalPorTipoServicio.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([tipo]) => tipo);
+
+    const filasMetricas = METRICAS.map((metrica) => `
+      <tr>
+        <td>${metrica.label}</td>
+        ${MESES.map((m) => `<td>${metrica.fmt(pivote[m][metrica.key])}</td>`).join("")}
+      </tr>
+    `).join("");
+
+    const filasTipoServicio = tiposServicioOrdenados.map((tipo) => `
+      <tr>
+        <td>Tipo de servicio: ${escaparHtml(tipo)}</td>
+        ${MESES.map((m) => `<td>${fmtEntero(pivote[m].porTipoServicio.get(tipo) || 0)}</td>`).join("")}
+      </tr>
+    `).join("");
+
+    tbody.innerHTML = filasMetricas + filasTipoServicio;
+  }
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${c.textContent.replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(",");
+    });
+    const csv = "﻿" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const selectPlaza = document.getElementById("rp-filtro-plaza");
+  const selectVendedor = document.getElementById("rp-filtro-vendedor");
+  const bloqueVendedor = document.getElementById("rp-bloque-vendedor");
+  const btnAplicarPlaza = document.getElementById("rp-aplicar-plaza");
+  const btnAplicarVendedor = document.getElementById("rp-aplicar-vendedor");
+
+  selectPlaza.innerHTML = '<option value="__todas__">Todas las plazas</option>' +
+    plazasOrdenadas.map((p) => `<option value="${escaparHtml(p)}">${escaparHtml(p)}</option>`).join("");
+
+  function poblarVendedores(plaza) {
+    const vendedores = plaza === "__todas__" ? todosLosVendedores : Array.from(vendedoresPorPlaza.get(plaza) || []).sort();
+    selectVendedor.innerHTML = '<option value="__todos__">Todos los vendedores</option>' +
+      vendedores.map((v) => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join("");
+  }
+
+  btnAplicarPlaza.addEventListener("click", () => {
+    poblarVendedores(selectPlaza.value);
+    bloqueVendedor.classList.remove("rp-oculto");
+    btnAplicarVendedor.classList.remove("rp-oculto");
+    renderTablaVendedor(selectPlaza.value, "__todos__");
+  });
+
+  btnAplicarVendedor.addEventListener("click", () => {
+    renderTablaVendedor(selectPlaza.value, selectVendedor.value);
+  });
+
+  // Estado inicial: todas las plazas, todos los vendedores.
+  renderTablaVendedor("__todas__", "__todos__");
+
+  const btnExportar = document.getElementById("rp-exportar-tabla");
+  if (btnExportar) {
+    btnExportar.addEventListener("click", () => {
+      exportarTablaCSV("rp-tabla-vendedor", `Reporte_por_vendedor_${new Date().toISOString().slice(0, 10)}.csv`);
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -54,6 +54,9 @@
   .rp-crosshair { stroke: var(--rp-ink-3); stroke-width: 1; opacity: 0; }
 
   .rp-empty { color: var(--rp-ink-3); font-size: .85rem; padding: 2rem 0; text-align: center; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: .3rem 0 0; }
 </style>
 {% endblock %}
 {% block content %}
@@ -113,6 +116,36 @@
       <h2>Top vendedores por profit</h2>
       <p class="sub">Los 10 con mayor profit en el rango filtrado</p>
       <div id="rp-chart-vendedores"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Reporte por vendedor</h2>
+        <p class="sub">Venta, profit, margen, bookings y clientes — mensual, de enero a la fecha, con filtro por Plaza y Vendedor.</p>
+      </div>
+      <a class="btn secondary" href="{{ url_for('reportes_por_vendedor') }}">Ver reporte por vendedor</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Clientes asignados por vendedor</h2>
+        <p class="sub">Folio y clientes de asignacion_de_clientes, con filtro por Plaza y Vendedor.</p>
+      </div>
+      <a class="btn secondary" href="{{ url_for('reportes_clientes_asignados') }}">Ver clientes asignados</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Cant Booking / Profit mensual por cliente</h2>
+        <p class="sub">Clientes asignados por vendedor, Ene-Dic y Total, ordenado descendente. Alterna entre Cant Booking e Importe de Profit.</p>
+      </div>
+      <a class="btn secondary" href="{{ url_for('reportes_clientes_mensual') }}">Ver reporte mensual por cliente</a>
     </div>
   </div>
 
