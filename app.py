@@ -208,17 +208,6 @@ def normalizar(texto):
     return (texto or "").strip().upper()
 
 
-def get_plazas_catalogo():
-    """Todas las plazas conocidas (unión de catalogo_vendedores y
-    catalogo_desarrolladores), para poblar los checkboxes de visibilidad."""
-    db = get_db()
-    filas_v = db.execute("SELECT DISTINCT plaza FROM catalogo_vendedores").fetchall()
-    filas_d = db.execute("SELECT DISTINCT plaza FROM catalogo_desarrolladores").fetchall()
-    db.close()
-    plazas = {f["plaza"] for f in filas_v if f["plaza"]} | {f["plaza"] for f in filas_d if f["plaza"]}
-    return sorted(plazas)
-
-
 def extraer_tipo_servicio(referencia):
     """El tipo de servicio (FCLI, LCLI, DA, AI, FTL, ...) es el tercer
     segmento de la referencia, ej. '2608-3798-FCLI' -> 'FCLI'."""
@@ -638,12 +627,14 @@ def usuario_puede_exportar():
 
 def usuario_puede_actualizar():
     """True = el usuario en sesión puede usar el botón "Actualizar" para
-    regenerar el reporte desde CargoLink. Los administradores siempre
-    pueden. app_user_permissions todavía no tiene un equivalente de
-    puede_actualizar, así que por ahora es False para el resto (acción
-    sensible: reemplaza todos los bookings) hasta que se agregue esa
-    columna al catálogo de accesos."""
-    return bool(session.get("es_admin"))
+    regenerar el reporte desde CargoLink (acción sensible: reemplaza todos
+    los bookings). Los administradores siempre pueden; para el resto se usa
+    el permiso guardado en sesión al hacer login
+    (app_user_permissions.puede_actualizar), otorgado desde Catálogos →
+    Permiso de Actualizar."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_actualizar"))
 
 
 @app.context_processor
@@ -666,6 +657,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             (u.banned_until IS NOT NULL AND u.banned_until > now()) AS baneado,
             coalesce(p.es_admin, false) AS es_admin,
             coalesce(p.puede_exportar, false) AS puede_exportar,
+            coalesce(p.puede_actualizar, false) AS puede_actualizar,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
             coalesce(p.es_master, false) AS es_master
@@ -693,6 +685,7 @@ def login():
             session["usuario_id"] = str(fila["id"])
             session["es_admin"] = bool(fila["es_admin"])
             session["puede_exportar"] = bool(fila["puede_exportar"])
+            session["puede_actualizar"] = bool(fila["puede_actualizar"])
             destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
@@ -1040,74 +1033,40 @@ def catalogos():
     return render_template("catalogos.html")
 
 
-@app.route("/catalogos/visibilidad-plazas")
+@app.route("/catalogos/permisos-actualizar")
 @admin_required
-def visibilidad_plazas():
+def permisos_actualizar():
     db = get_db()
-    usuarios_filas = db.execute(
-        "SELECT id, usuario, es_admin, puede_exportar, puede_actualizar FROM usuarios ORDER BY usuario"
+    filas = db.execute(
+        """
+        SELECT u.id, u.email,
+            coalesce(p.es_admin, false) AS es_admin,
+            coalesce(p.puede_actualizar, false) AS puede_actualizar
+        FROM auth.users u
+        LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
+        ORDER BY u.email
+        """
     ).fetchall()
-    plazas_por_usuario = {}
-    for r in db.execute("SELECT usuario_id, plaza FROM usuario_plazas ORDER BY plaza"):
-        plazas_por_usuario.setdefault(r["usuario_id"], []).append(r["plaza"])
     db.close()
-
-    filas = []
-    for u in usuarios_filas:
-        filas.append({
-            "id": u["id"],
-            "usuario": u["usuario"],
-            "es_admin": u["es_admin"],
-            "puede_exportar": u["puede_exportar"],
-            "puede_actualizar": u["puede_actualizar"],
-            "plazas": plazas_por_usuario.get(u["id"], []),
-        })
-    return render_template("visibilidad_plazas.html", filas=filas)
+    return render_template("permisos_actualizar.html", filas=filas)
 
 
-@app.route("/catalogos/visibilidad-plazas/<int:usuario_id>/editar", methods=["GET", "POST"])
+@app.route("/catalogos/permisos-actualizar/<uuid:user_id>/toggle", methods=["POST"])
 @admin_required
-def visibilidad_plazas_editar(usuario_id):
+def permisos_actualizar_toggle(user_id):
+    nuevo_valor = request.form.get("puede_actualizar") == "1"
     db = get_db()
-    usuario = db.execute(
-        "SELECT id, usuario, puede_exportar, puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)
-    ).fetchone()
-    if usuario is None:
-        db.close()
-        return "No encontrado", 404
-
-    if request.method == "POST":
-        todas_las_plazas = request.form.get("todas_las_plazas") == "on"
-        plazas_seleccionadas = request.form.getlist("plazas")
-        puede_exportar = request.form.get("puede_exportar") == "on"
-        puede_actualizar = request.form.get("puede_actualizar") == "on"
-        if not todas_las_plazas and not plazas_seleccionadas:
-            flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
-        else:
-            db.execute(
-                "UPDATE usuarios SET puede_exportar = %s, puede_actualizar = %s WHERE id = %s",
-                (puede_exportar, puede_actualizar, usuario_id),
-            )
-            db.execute("DELETE FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))
-            if not todas_las_plazas:
-                for plaza in plazas_seleccionadas:
-                    db.execute(
-                        "INSERT INTO usuario_plazas (usuario_id, plaza) VALUES (%s, %s)",
-                        (usuario_id, plaza),
-                    )
-            db.commit()
-            db.close()
-            return redirect(url_for("visibilidad_plazas"))
-
-    plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,))}
-    db.close()
-    return render_template(
-        "visibilidad_plazas_editar.html",
-        usuario=usuario,
-        plazas_catalogo=get_plazas_catalogo(),
-        plazas_actuales=plazas_actuales,
-        sin_restriccion=len(plazas_actuales) == 0,
+    db.execute(
+        """
+        INSERT INTO app_user_permissions (user_id, puede_actualizar)
+        VALUES (%s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET puede_actualizar = EXCLUDED.puede_actualizar, updated_at = now()
+        """,
+        (str(user_id), nuevo_valor),
     )
+    db.commit()
+    db.close()
+    return redirect(url_for("permisos_actualizar"))
 
 
 @app.route("/catalogos/actividad-usuarios")

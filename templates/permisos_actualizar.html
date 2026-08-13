@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Permiso de Actualizar{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Permiso de Actualizar</h2>
+      <p class="hint">
+        Controla quién puede usar el botón "Actualizar" para regenerar el reporte desde CargoLink
+        (acción sensible: reemplaza todos los bookings). Los administradores siempre pueden.
+        El resto de los accesos (quién puede entrar, quién exporta) se administra en el catálogo
+        de Accesos de Seguimiento de Importaciones.
+      </p>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Puede actualizar</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.email }}{% if fila.es_admin %} <span class="hint">(admin)</span>{% endif %}</td>
+            <td>{{ "Sí (admin)" if fila.es_admin else ("Sí" if fila.puede_actualizar else "No") }}</td>
+            <td class="actions">
+              {% if not fila.es_admin %}
+              <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
+                <input type="hidden" name="puede_actualizar" value="{{ '0' if fila.puede_actualizar else '1' }}">
+                <button class="btn small secondary" type="submit">{{ "Quitar permiso" if fila.puede_actualizar else "Dar permiso" }}</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay usuarios registrados en el catálogo de accesos.</p>
+      {% endif %}
+    </div>
+{% endblock %}
