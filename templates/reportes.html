@@ -85,10 +85,10 @@
 
   <div class="rp-grid">
     <div class="card rp-card wide">
-      <h2>Venta vs Presupuesto mensual</h2>
+      <h2>Profit vs Presupuesto mensual</h2>
       <p class="sub">Histórico completo, no se filtra por fecha</p>
       <div class="rp-legend">
-        <span><i style="background: var(--rp-accent);"></i> Venta</span>
+        <span><i style="background: var(--rp-accent);"></i> Profit</span>
         <span><i style="background: var(--rp-muted-line);"></i> Presupuesto</span>
       </div>
       <div id="rp-chart-mensual"></div>
@@ -298,7 +298,7 @@
     cont.appendChild(svg);
   }
 
-  // ---- Gráfica de barras verticales agrupadas: Venta vs Presupuesto, mensual, histórico completo ----
+  // ---- Gráfica de barras verticales agrupadas: Profit vs Presupuesto, mensual, histórico completo ----
   function renderBarChartMensualComparativo(contenedorId, serie) {
     const cont = document.getElementById(contenedorId);
     cont.innerHTML = "";
@@ -312,7 +312,7 @@
     const anchoPlot = ancho - margen.left - margen.right;
     const altoPlot = alto - margen.top - margen.bottom;
 
-    const maxValor = Math.max(...serie.map((s) => Math.max(s.venta, s.ppto)), 1);
+    const maxValor = Math.max(...serie.map((s) => Math.max(s.profit, s.ppto)), 1);
     const pasoY = maxValor / 4;
     const anchoGrupo = anchoPlot / serie.length;
     const anchoBarra = Math.min(anchoGrupo * 0.32, 40);
@@ -373,16 +373,16 @@
 
     serie.forEach((s, i) => {
       const xGrupo = margen.left + i * anchoGrupo;
-      const xVenta = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
+      const xProfit = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
       const xPpto = xGrupo + anchoGrupo / 2 + 2;
       const hitLabel = {
         mes: s.mes,
         filas: [
-          { label: "Venta", valor: fmtMoneda(s.venta) },
+          { label: "Profit", valor: fmtMoneda(s.profit) },
           { label: "Presupuesto", valor: fmtMoneda(s.ppto) },
         ],
       };
-      dibujarBarra(xVenta, s.venta, "var(--rp-accent)", hitLabel);
+      dibujarBarra(xProfit, s.profit, "var(--rp-accent)", hitLabel);
       dibujarBarra(xPpto, s.ppto, "var(--rp-muted-line)", hitLabel);
 
       const mostrarEtiqueta = serie.length <= 14 || i % Math.ceil(serie.length / 12) === 0;
@@ -400,22 +400,22 @@
     cont.appendChild(svg);
   }
 
-  function agregarVentaPorMes(filas) {
+  function agregarProfitPorMes(filas) {
     const mapa = new Map();
     for (const f of filas) {
       if (!mapa.has(f.mes)) mapa.set(f.mes, 0);
-      mapa.set(f.mes, mapa.get(f.mes) + f.venta);
+      mapa.set(f.mes, mapa.get(f.mes) + f.profit);
     }
     return mapa;
   }
 
-  function combinarVentaYPresupuesto(filas, presupuesto) {
-    const ventaPorMes = agregarVentaPorMes(filas);
+  function combinarProfitYPresupuesto(filas, presupuesto) {
+    const profitPorMes = agregarProfitPorMes(filas);
     const pptoPorMes = new Map(presupuesto.map((p) => [p.mes, p.ppto]));
-    const meses = new Set([...ventaPorMes.keys(), ...pptoPorMes.keys()]);
+    const meses = new Set([...profitPorMes.keys(), ...pptoPorMes.keys()]);
     return Array.from(meses).sort().map((mes) => ({
       mes,
-      venta: ventaPorMes.get(mes) || 0,
+      profit: profitPorMes.get(mes) || 0,
       ppto: pptoPorMes.get(mes) || 0,
     }));
   }
@@ -429,7 +429,7 @@
   }
 
   // La gráfica mensual siempre usa el histórico completo, sin importar el filtro.
-  renderBarChartMensualComparativo("rp-chart-mensual", combinarVentaYPresupuesto(TODOS, PRESUPUESTO));
+  renderBarChartMensualComparativo("rp-chart-mensual", combinarProfitYPresupuesto(TODOS, PRESUPUESTO));
 
   const inputDesde = document.getElementById("rp-desde");
   const inputHasta = document.getElementById("rp-hasta");
