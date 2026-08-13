@@ -923,12 +923,36 @@ def construir_filas_reportes(plazas_permitidas=None):
     return filas
 
 
+def construir_presupuesto_mensual(plazas_permitidas=None):
+    """Suma de presupuesto por mes (mismo criterio que la tabla Venta por
+    Plaza del Dashboard: presupuesto por vendedor, filtrado por plaza),
+    para comparar Venta vs Presupuesto en /reportes."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    totales = {}
+    for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
+        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        totales[r["mes"]] = totales.get(r["mes"], 0.0) + float(r["presupuesto"])
+    db.close()
+    return [{"mes": mes, "ppto": round(v, 2)} for mes, v in sorted(totales.items())]
+
+
 @app.route("/reportes")
 @login_required
 def reportes_graficas():
-    filas = construir_filas_reportes(plazas_permitidas_usuario())
+    plazas_permitidas = plazas_permitidas_usuario()
+    filas = construir_filas_reportes(plazas_permitidas)
+    presupuesto_mensual = construir_presupuesto_mensual(plazas_permitidas)
     datos_json = json.dumps(filas).replace("</", "<\\/")
-    return render_template("reportes.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+    presupuesto_json = json.dumps(presupuesto_mensual).replace("</", "<\\/")
+    return render_template(
+        "reportes.html", datos_json=datos_json, presupuesto_json=presupuesto_json, hay_datos=len(filas) > 0
+    )
 
 
 @app.route("/reportes/por-vendedor")
