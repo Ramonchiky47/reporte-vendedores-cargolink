@@ -568,6 +568,28 @@ def registrar_ingreso():
         print(f"Aviso: no se pudo registrar el ingreso ({e}).")
 
 
+def registrar_ingreso():
+    """Guarda un renglón en registro_ingresos la primera vez que una
+    sesión recién autenticada toca una vista protegida (una fila por
+    login, no por cada página que visite). Se engancha en los decoradores
+    en vez de en /login para que funcione sin importar qué mecanismo de
+    autenticación esté activo. Nunca debe tumbar la vista por un problema
+    de logging."""
+    if session.get("ingreso_registrado"):
+        return
+    session["ingreso_registrado"] = True
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO registro_ingresos (usuario_id, usuario) VALUES (%s, %s)",
+            (session.get("usuario_id"), session.get("usuario") or "?"),
+        )
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"Aviso: no se pudo registrar el ingreso ({e}).")
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -596,56 +618,32 @@ def admin_required(view):
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
-    siempre ven todo, sin importar si tienen filas en usuario_plazas —
-    evita que un admin se bloquee a sí mismo por error."""
+    siempre ven todo. Los usuarios autenticados contra el catálogo de accesos
+    (Seguimiento de Importaciones) todavía no tienen un equivalente de
+    usuario_plazas en app_user_permissions, así que por ahora no ven ninguna
+    plaza hasta que se defina esa migración."""
     if session.get("es_admin"):
         return None
-    usuario_id = session.get("usuario_id")
-    if not usuario_id:
-        return None
-    db = get_db()
-    filas = db.execute("SELECT plaza FROM usuario_plazas WHERE usuario_id = %s", (usuario_id,)).fetchall()
-    db.close()
-    if not filas:
-        return None
-    return {f["plaza"] for f in filas}
+    return set()
 
 
 def usuario_puede_exportar():
     """True = el usuario en sesión puede usar los botones "Exportar". Los
-    administradores siempre pueden. Se consulta directo a la tabla
-    usuarios (no se cachea en la sesión) para que un cambio del admin
-    aplique de inmediato, igual que plazas_permitidas_usuario()."""
+    administradores siempre pueden; para el resto se usa el permiso
+    guardado en sesión al hacer login (app_user_permissions.puede_exportar)."""
     if session.get("es_admin"):
         return True
-    usuario_id = session.get("usuario_id")
-    if not usuario_id:
-        return True
-    db = get_db()
-    fila = db.execute("SELECT puede_exportar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
-    db.close()
-    if fila is None:
-        return True
-    return bool(fila["puede_exportar"])
+    return bool(session.get("puede_exportar"))
 
 
 def usuario_puede_actualizar():
     """True = el usuario en sesión puede usar el botón "Actualizar" para
     regenerar el reporte desde CargoLink. Los administradores siempre
-    pueden. A diferencia de puede_exportar, por default es False (es una
-    acción más sensible: reemplaza todos los bookings), solo la tienen los
-    usuarios a los que un administrador se la otorgue explícitamente."""
-    if session.get("es_admin"):
-        return True
-    usuario_id = session.get("usuario_id")
-    if not usuario_id:
-        return False
-    db = get_db()
-    fila = db.execute("SELECT puede_actualizar FROM usuarios WHERE id = %s", (usuario_id,)).fetchone()
-    db.close()
-    if fila is None:
-        return False
-    return bool(fila["puede_actualizar"])
+    pueden. app_user_permissions todavía no tiene un equivalente de
+    puede_actualizar, así que por ahora es False para el resto (acción
+    sensible: reemplaza todos los bookings) hasta que se agregue esa
+    columna al catálogo de accesos."""
+    return bool(session.get("es_admin"))
 
 
 @app.context_processor
@@ -694,6 +692,7 @@ def login():
             session["usuario"] = fila["email"]
             session["usuario_id"] = str(fila["id"])
             session["es_admin"] = bool(fila["es_admin"])
+            session["puede_exportar"] = bool(fila["puede_exportar"])
             destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
