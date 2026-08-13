@@ -607,13 +607,18 @@ def admin_required(view):
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
-    siempre ven todo. Los usuarios autenticados contra el catálogo de accesos
-    (Seguimiento de Importaciones) todavía no tienen un equivalente de
-    usuario_plazas en app_user_permissions, así que por ahora no ven ninguna
-    plaza hasta que se defina esa migración."""
-    if session.get("es_admin"):
+    siempre ven todo, igual que quien tenga marcado "Todas las plazas" en
+    Catálogos → Visibilidad de Plazas. El resto ve solo las plazas que se le
+    hayan asignado ahí (ninguna hasta que un admin le asigne alguna)."""
+    if session.get("es_admin") or session.get("todas_las_plazas"):
         return None
-    return set()
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return set()
+    db = get_db()
+    filas = db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (usuario_id,)).fetchall()
+    db.close()
+    return {f["plaza"] for f in filas}
 
 
 def usuario_puede_exportar():
@@ -658,6 +663,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.es_admin, false) AS es_admin,
             coalesce(p.puede_exportar, false) AS puede_exportar,
             coalesce(p.puede_actualizar, false) AS puede_actualizar,
+            coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
             coalesce(p.es_master, false) AS es_master
@@ -686,6 +692,7 @@ def login():
             session["es_admin"] = bool(fila["es_admin"])
             session["puede_exportar"] = bool(fila["puede_exportar"])
             session["puede_actualizar"] = bool(fila["puede_actualizar"])
+            session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
@@ -1067,6 +1074,96 @@ def permisos_actualizar_toggle(user_id):
     db.commit()
     db.close()
     return redirect(url_for("permisos_actualizar"))
+
+
+def get_plazas_catalogo():
+    """Todas las plazas conocidas (unión de catalogo_vendedores y
+    catalogo_desarrolladores), para poblar los checkboxes de visibilidad."""
+    db = get_db()
+    filas_v = db.execute("SELECT DISTINCT plaza FROM catalogo_vendedores").fetchall()
+    filas_d = db.execute("SELECT DISTINCT plaza FROM catalogo_desarrolladores").fetchall()
+    db.close()
+    plazas = {f["plaza"] for f in filas_v if f["plaza"]} | {f["plaza"] for f in filas_d if f["plaza"]}
+    return sorted(plazas)
+
+
+@app.route("/catalogos/visibilidad-plazas")
+@admin_required
+def visibilidad_plazas():
+    db = get_db()
+    usuarios_filas = db.execute(
+        """
+        SELECT u.id, u.email,
+            coalesce(p.es_admin, false) AS es_admin,
+            coalesce(p.todas_las_plazas, false) AS todas_las_plazas
+        FROM auth.users u
+        LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
+        ORDER BY u.email
+        """
+    ).fetchall()
+    plazas_por_usuario = {}
+    for r in db.execute("SELECT user_id, plaza FROM app_user_plazas ORDER BY plaza"):
+        plazas_por_usuario.setdefault(str(r["user_id"]), []).append(r["plaza"])
+    db.close()
+
+    filas = []
+    for u in usuarios_filas:
+        filas.append({
+            "id": u["id"],
+            "email": u["email"],
+            "es_admin": u["es_admin"],
+            "todas_las_plazas": u["todas_las_plazas"],
+            "plazas": plazas_por_usuario.get(str(u["id"]), []),
+        })
+    return render_template("visibilidad_plazas.html", filas=filas)
+
+
+@app.route("/catalogos/visibilidad-plazas/<uuid:user_id>/editar", methods=["GET", "POST"])
+@admin_required
+def visibilidad_plazas_editar(user_id):
+    db = get_db()
+    usuario = db.execute("SELECT id, email FROM auth.users WHERE id = %s", (str(user_id),)).fetchone()
+    if usuario is None:
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        todas_las_plazas = request.form.get("todas_las_plazas") == "on"
+        plazas_seleccionadas = request.form.getlist("plazas")
+        if not todas_las_plazas and not plazas_seleccionadas:
+            flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
+        else:
+            db.execute(
+                """
+                INSERT INTO app_user_permissions (user_id, todas_las_plazas)
+                VALUES (%s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET todas_las_plazas = EXCLUDED.todas_las_plazas, updated_at = now()
+                """,
+                (str(user_id), todas_las_plazas),
+            )
+            db.execute("DELETE FROM app_user_plazas WHERE user_id = %s", (str(user_id),))
+            if not todas_las_plazas:
+                for plaza in plazas_seleccionadas:
+                    db.execute(
+                        "INSERT INTO app_user_plazas (user_id, plaza) VALUES (%s, %s)",
+                        (str(user_id), plaza),
+                    )
+            db.commit()
+            db.close()
+            return redirect(url_for("visibilidad_plazas"))
+
+    plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (str(user_id),))}
+    todas_las_plazas_actual = db.execute(
+        "SELECT coalesce(todas_las_plazas, false) AS v FROM app_user_permissions WHERE user_id = %s", (str(user_id),)
+    ).fetchone()
+    db.close()
+    return render_template(
+        "visibilidad_plazas_editar.html",
+        usuario=usuario,
+        plazas_catalogo=get_plazas_catalogo(),
+        plazas_actuales=plazas_actuales,
+        sin_restriccion=bool(todas_las_plazas_actual and todas_las_plazas_actual["v"]),
+    )
 
 
 @app.route("/catalogos/actividad-usuarios")

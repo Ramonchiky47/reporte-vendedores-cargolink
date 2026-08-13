@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Visibilidad de Plazas{% endblock %}
+{% set active = "catalogos" %}
+{% block content %}
+    <div class="card">
+      <h2>Visibilidad de Plazas</h2>
+      <p class="hint">Define qué plazas puede ver cada usuario en Dashboard y Reportes. Los administradores siempre ven todas. Mientras un usuario no tenga nada asignado aquí, no ve ninguna plaza.</p>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Usuario</th><th>Plazas visibles</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.email }}{% if fila.es_admin %} <span class="hint">(admin)</span>{% endif %}</td>
+            <td>
+              {% if fila.es_admin or fila.todas_las_plazas %}
+                Todas
+              {% elif fila.plazas %}
+                {{ fila.plazas | join(", ") }}
+              {% else %}
+                Ninguna
+              {% endif %}
+            </td>
+            <td class="actions">
+              {% if not fila.es_admin %}
+              <a class="btn small secondary" href="{{ url_for('visibilidad_plazas_editar', user_id=fila.id) }}">Editar</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay usuarios registrados en el catálogo de accesos.</p>
+      {% endif %}
+    </div>
+{% endblock %}
