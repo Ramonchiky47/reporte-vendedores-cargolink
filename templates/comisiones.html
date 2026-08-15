@@ -1,9 +1,617 @@
 {% extends "base.html" %}
 {% block title %}CargoLink · Comisiones{% endblock %}
 {% set active = "comisiones" %}
+{% block extra_head %}
+<style>
+  .com-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 1.25rem; }
+  .com-descripcion b { color: var(--ink); }
+  .com-resumen { width: auto; min-width: 100%; font-variant-numeric: tabular-nums; font-size: .73rem; }
+  .com-resumen th, .com-resumen td { text-align: right; white-space: nowrap; padding: .5rem .9rem; }
+  .com-resumen th:first-child, .com-resumen td:first-child { text-align: left; }
+  .com-resumen tfoot td { font-weight: 700; border-top: 2px solid var(--ink); }
+  .com-tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
+  .com-tab {
+    padding: .5rem 1rem; border-radius: 8px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--ink-2); font-size: .9rem; font-weight: 600; cursor: pointer;
+  }
+  .com-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .com-vista { display: none; }
+  .com-vista.activa { display: block; }
+  .com-resumen tbody tr { cursor: pointer; }
+  .com-resumen tbody tr:hover { background: #f8fafc; }
+  .com-resumen tbody tr:hover td:first-child { color: var(--accent); }
+
+  .com-modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
+    align-items: flex-start; justify-content: center; padding: 4vh 1.5rem; z-index: 50; overflow-y: auto;
+  }
+  .com-modal-overlay.abierto { display: flex; }
+  .com-modal-panel {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 1300px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .com-modal-toolbar { position: absolute; top: 1rem; right: 1rem; display: flex; gap: .5rem; align-items: center; }
+  .com-modal-cerrar {
+    background: none; border: none; font-size: 1.4rem;
+    line-height: 1; color: var(--ink-3); cursor: pointer; padding: .2rem .5rem; border-radius: 6px;
+  }
+  .com-modal-cerrar:hover { background: #f1f5f9; color: var(--ink); }
+  .com-modal-body { position: relative; padding: 1.5rem 2rem 2rem; overflow-y: auto; }
+
+  .com-reporte-titulo { text-align: center; font-weight: 700; font-size: 1.05rem; margin: 0 0 1.25rem; color: #0f172a; }
+  .com-reporte-vendedor { display: flex; margin-bottom: 1rem; border: 1px solid #e6c200; }
+  .com-reporte-vendedor .etq { font-weight: 700; padding: .6rem 1rem; white-space: nowrap; }
+  .com-reporte-vendedor .val { flex: 1; background: #fff59d; font-weight: 700; text-align: center; padding: .6rem 1rem; }
+  .com-reporte-stats { display: inline-block; background: #fff59d; border: 1px solid #e6c200; padding: .6rem 1rem; margin-bottom: 1.5rem; }
+  .com-reporte-stats table { border-collapse: collapse; }
+  .com-reporte-stats td { padding: .15rem .6rem; font-weight: 700; font-size: .82rem; white-space: nowrap; }
+  .com-reporte-stats td:first-child { text-align: left; }
+  .com-reporte-stats td:last-child { text-align: right; }
+  .com-reporte-cols { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+  .com-reporte-cols table { flex: 1; min-width: 260px; border-collapse: collapse; font-size: .76rem; font-variant-numeric: tabular-nums; }
+  .com-reporte-cols th { background: #c1502e; color: #fff; text-align: right; padding: .4rem .6rem; white-space: nowrap; }
+  .com-reporte-cols th:first-child { text-align: left; }
+  .com-reporte-cols td { padding: .32rem .6rem; text-align: right; border-bottom: 1px solid #eee; white-space: nowrap; }
+  .com-reporte-cols td:first-child { text-align: left; }
+  .com-reporte-cols tbody tr { cursor: pointer; }
+  .com-reporte-cols tbody tr:hover { background: #fafafa; }
+  .com-reporte-cols tbody tr:hover td:first-child { color: #c1502e; text-decoration: underline; }
+
+  .com-subtabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
+  .com-subtab {
+    padding: .4rem .85rem; border-radius: 8px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--ink-2); font-size: .82rem; font-weight: 600; cursor: pointer;
+  }
+  .com-subtab.active { background: #0f172a; border-color: #0f172a; color: #fff; }
+  .com-subvista { display: none; }
+  .com-subvista.activa { display: block; }
+
+  .com-cliente-item { border-bottom: 1px solid #eee; }
+  .com-cliente-header {
+    display: flex; align-items: center; gap: 1rem; padding: .65rem .3rem;
+    cursor: pointer; font-size: .82rem;
+  }
+  .com-cliente-header:hover { color: #c1502e; }
+  .com-cliente-header .nombre { flex: 1; font-weight: 600; }
+  .com-cliente-header .meta { color: var(--ink-3); font-size: .74rem; white-space: nowrap; }
+  .com-cliente-header .monto { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 90px; text-align: right; }
+  .com-cliente-header .flecha { transition: transform .15s ease; color: var(--ink-3); }
+  .com-cliente-item.abierto .com-cliente-header .flecha { transform: rotate(90deg); }
+  .com-cliente-detalle { display: none; padding: 0 0 .75rem 1.6rem; }
+  .com-cliente-detalle.abierto { display: block; }
+
+  .com-booking-overlay { z-index: 60; }
+  .com-booking-panel { max-width: 720px; }
+  .com-booking-titulo { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: 0; }
+  .com-booking-sub { font-size: .85rem; color: var(--ink-3); margin: .2rem 0 1.25rem; }
+  .com-booking-seccion { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 1.5rem 0 .6rem; }
+
+  .com-resumen tbody tr[data-cobro-idx] { cursor: pointer; }
+  .com-resumen tbody tr[data-cobro-idx]:hover { background: #f8fafc; }
+  .com-resumen tbody tr[data-cobro-idx]:hover td:first-child { color: var(--accent); text-decoration: underline; }
+
+  .com-cobro-overlay { z-index: 70; }
+  .com-cobro-panel { max-width: 560px; }
+  .com-cobro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem 1.5rem; font-size: .85rem; }
+  .com-cobro-grid .fila { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid #eee; }
+  .com-cobro-grid .fila .label { color: var(--ink-3); }
+  .com-cobro-grid .fila .valor { font-weight: 600; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+  .com-booking-seccion:first-of-type { margin-top: 0; }
+
+  .com-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+  .com-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+  .com-kpi .label { font-size: .72rem; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .com-kpi .value { font-size: 1.4rem; font-weight: 700; color: var(--ink); margin-top: .25rem; font-variant-numeric: tabular-nums; }
+
+  .com-comisiones { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+  .com-comision-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.25rem 1.5rem; position: relative; overflow: hidden;
+  }
+  .com-comision-card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
+  .com-comision-card.total::before { background: var(--ink); }
+  .com-comision-card .etiqueta { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+  .com-comision-card .monto { font-size: 1.7rem; font-weight: 800; color: var(--accent); margin-top: .35rem; font-variant-numeric: tabular-nums; }
+  .com-comision-card.total .monto { color: var(--ink); }
+  .com-comision-card .caption { font-size: .75rem; color: var(--ink-3); margin-top: .2rem; }
+
+  .com-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .com-header-row h2 { margin: 0 0 .3rem; }
+  .com-header-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .com-header-actions select {
+    padding: .5rem .7rem; border-radius: 8px; border: 1px solid var(--border-strong); font-weight: 600;
+  }
+  .com-cargar-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+</style>
+{% endblock %}
 {% block content %}
     <div class="card">
-      <h2>Comisiones</h2>
-      <p class="empty">Esta sección está en construcción.</p>
+      <div class="com-header-row">
+        <div>
+          <h2>Comisiones</h2>
+          {% if folio_actual %}
+          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b></p>
+          {% else %}
+          <p class="empty" style="padding:0;">Todavía no hay ningún folio cargado.</p>
+          {% endif %}
+        </div>
+        <div class="com-header-actions">
+          {% if folios_disponibles|length > 1 %}
+          <form method="get" action="{{ url_for('comisiones') }}">
+            <select name="folio" onchange="this.form.submit()">
+              {% for f in folios_disponibles %}
+              <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% endif %}
+          {% if session.get('es_admin') %}
+          <button type="button" class="btn small secondary" id="com-toggle-cargar">+ Cargar folio</button>
+          {% if folio_actual %}
+          <button type="button" class="btn small secondary" id="com-toggle-cobros">+ Traer cobros</button>
+          {% endif %}
+          {% endif %}
+        </div>
+      </div>
+
+      {% if session.get('es_admin') %}
+      <div class="com-cargar-form" id="com-cargar-form" style="display:none;">
+        <p class="hint">Trae el detalle de un folio de Egresos → Liquidación de vendedores y lo guarda en esta app.</p>
+        <form method="post" action="{{ url_for('comisiones_cargar') }}" class="row">
+          <div class="field" style="max-width:340px;">
+            <label for="folio">Folio</label>
+            {% if folios_cargolink %}
+            <select id="folio" name="folio" required>
+              {% for f in folios_cargolink %}
+              <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
+            <input type="number" id="folio" name="folio" required>
+            <p class="hint" style="margin:.35rem 0 0;">No se pudo traer la lista de CargoLink; escribe el número de folio.</p>
+            {% endif %}
+          </div>
+          <div class="field" style="flex:0; align-self:flex-end;">
+            <button type="submit">Cargar</button>
+          </div>
+        </form>
+      </div>
+
+      {% if folio_actual %}
+      <div class="com-cargar-form" id="com-cobros-form" style="display:none;">
+        <p class="hint">
+          Trae el concentrado de Ingresos → Reporte de Cobros para el rango de fechas indicado y lo vincula a este folio
+          ("{{ folio_actual }} {{ descripcion }}").
+          {% if cobros_cargados %}<b>{{ cobros_cargados }}</b> cobro(s) ya vinculado(s) a este folio — al traer de nuevo se reemplazan.{% endif %}
+        </p>
+        <form method="post" action="{{ url_for('comisiones_cobros_cargar') }}" class="row">
+          <input type="hidden" name="folio" value="{{ folio_actual }}">
+          <input type="hidden" name="descripcion" value="{{ descripcion }}">
+          <div class="field" style="max-width:200px;">
+            <label for="cobros-fecha-ini">Fecha inicial</label>
+            <input type="date" id="cobros-fecha-ini" name="fecha_ini" required>
+          </div>
+          <div class="field" style="max-width:200px;">
+            <label for="cobros-fecha-fin">Fecha final</label>
+            <input type="date" id="cobros-fecha-fin" name="fecha_fin" required>
+          </div>
+          <div class="field" style="flex:0; align-self:flex-end;">
+            <button type="submit">Traer cobros</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+      {% endif %}
     </div>
+
+    {% if folio_actual %}
+    <div class="com-kpis">
+      <div class="com-kpi"><div class="label">Bookings</div><div class="value">{{ filas|length }}</div></div>
+      <div class="com-kpi"><div class="label">Venta Total</div><div class="value">${{ "{:,.2f}".format(total_venta) }}</div></div>
+      <div class="com-kpi"><div class="label">Profit</div><div class="value">${{ "{:,.2f}".format(total_profit) }}</div></div>
+      <div class="com-kpi"><div class="label">Margen</div><div class="value">{{ "{:,.2f}".format(margen_total * 100) }}%</div></div>
+    </div>
+
+    <div class="com-comisiones">
+      <div class="com-comision-card">
+        <div class="etiqueta">Comisión Vendedor</div>
+        <div class="monto">${{ "{:,.2f}".format(total_vendedor) }}</div>
+        <div class="caption">{{ por_vendedor|length }} vendedor(es)</div>
+      </div>
+      <div class="com-comision-card">
+        <div class="etiqueta">Comisión Desarrollador</div>
+        <div class="monto">${{ "{:,.2f}".format(total_desarrollador) }}</div>
+        <div class="caption">{{ por_desarrollador|length }} desarrollador(es)</div>
+      </div>
+      <div class="com-comision-card total">
+        <div class="etiqueta">Total a Liquidar</div>
+        <div class="monto">${{ "{:,.2f}".format(total_liquidar) }}</div>
+        <div class="caption">Vendedor + Desarrollador</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if folio_actual %}
+    <div class="com-tabs">
+      <button type="button" class="com-tab active" data-vista="vendedor">Vendedor</button>
+      <button type="button" class="com-tab" data-vista="desarrollador">Desarrollador</button>
+    </div>
+
+    <div class="com-vista activa" id="com-vista-vendedor">
+      <div class="card">
+        <h2>Por Vendedor</h2>
+        <div class="tabla-scroll" style="overflow-x:auto;">
+          <table class="com-resumen">
+            <thead><tr><th>Vendedor</th><th>Cant book</th><th>Total Vendedor</th></tr></thead>
+            <tbody>
+              {% for g in por_vendedor %}
+              <tr class="com-fila-clicable" data-campo="vendedor" data-nombre="{{ g.nombre }}"><td>{{ g.nombre }}</td><td>{{ g.cant_book }}</td><td>${{ "{:,.2f}".format(g.total) }}</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr><td>Total</td><td>{{ filas|length }}</td><td>${{ "{:,.2f}".format(total_vendedor) }}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-vista" id="com-vista-desarrollador">
+      <div class="card">
+        <h2>Por Desarrollador</h2>
+        <div class="tabla-scroll" style="overflow-x:auto;">
+          <table class="com-resumen">
+            <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Total Desarrollador</th></tr></thead>
+            <tbody>
+              {% for g in por_desarrollador %}
+              <tr class="com-fila-clicable" data-campo="desarrollador" data-nombre="{{ g.nombre }}"><td>{{ g.nombre }}</td><td>{{ g.cant_book }}</td><td>${{ "{:,.2f}".format(g.total) }}</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr><td>Total</td><td>{{ filas|length }}</td><td>${{ "{:,.2f}".format(total_desarrollador) }}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay" id="com-modal-detalle">
+      <div class="com-modal-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <a class="btn small secondary" id="com-modal-exportar" target="_blank" rel="noopener">Exportar a Excel</a>
+            <button type="button" class="com-modal-cerrar" id="com-modal-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-contenido"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay com-booking-overlay" id="com-modal-booking">
+      <div class="com-modal-panel com-booking-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-booking-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-booking-contenido"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay com-cobro-overlay" id="com-modal-cobro">
+      <div class="com-modal-panel com-cobro-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-cobro-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-cobro-contenido"></div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+<script id="datos-comisiones" type="application/json">{{ filas_json | safe }}</script>
+<script>
+(function () {
+  function conectarToggle(idBoton, idForm, etiqueta) {
+    const boton = document.getElementById(idBoton);
+    const form = document.getElementById(idForm);
+    if (!boton || !form) return;
+    boton.addEventListener("click", () => {
+      const visible = form.style.display !== "none";
+      form.style.display = visible ? "none" : "block";
+      boton.textContent = (visible ? "+ " : "− ") + etiqueta;
+    });
+  }
+  conectarToggle("com-toggle-cargar", "com-cargar-form", "Cargar folio");
+  conectarToggle("com-toggle-cobros", "com-cobros-form", "Traer cobros");
+
+  const tabs = document.querySelectorAll(".com-tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      document.querySelectorAll(".com-vista").forEach((v) => v.classList.remove("activa"));
+      document.getElementById("com-vista-" + tab.dataset.vista).classList.add("activa");
+    });
+  });
+
+  const modal = document.getElementById("com-modal-detalle");
+  if (!modal) return; // no hay folio cargado: no existen ni el modal ni las filas clicables
+
+  const datosEl = document.getElementById("datos-comisiones");
+  const FILAS = JSON.parse(datosEl.textContent);
+  const DESCRIPCION = {{ descripcion | tojson }};
+  const FOLIO_ACTUAL = {{ folio_actual | tojson }};
+  const URL_EXPORTAR = "{{ url_for('comisiones_exportar') }}";
+  const contenido = document.getElementById("com-modal-contenido");
+  const linkExportar = document.getElementById("com-modal-exportar");
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPct(n) { return n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%"; }
+
+  function tablaBookings(filas, campoTotal, etiqueta) {
+    return `
+      <table>
+        <thead><tr><th>Booking</th><th>Profit</th><th>${etiqueta}</th></tr></thead>
+        <tbody>
+          ${filas.map((b) => `
+            <tr data-booking="${b.booking}"><td>${b.booking}</td><td>${fmtMoneda(b.profit)}</td><td>${fmtMoneda(b[campoTotal])}</td></tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  let reporteActual = null;
+
+  function abrirDetalle(campo, nombre) {
+    const campoTotal = campo === "vendedor" ? "total_vendedor" : "total_desarrollador";
+    const etiqueta = campo === "vendedor" ? "Vendedor" : "Desarrollador";
+
+    const bookings = FILAS.filter((f) => (f[campo] || "(sin nombre)") === nombre);
+
+    const comision = bookings.reduce((acc, b) => acc + b[campoTotal], 0);
+    const profitTotal = bookings.reduce((acc, b) => acc + b.profit, 0);
+    const ventaTotal = bookings.reduce((acc, b) => acc + (b.venta || 0), 0);
+    const margen = ventaTotal ? (profitTotal / ventaTotal) * 100 : 0;
+
+    reporteActual = { nombre, etiqueta, campoTotal, bookings, stats: { cantidad: bookings.length, ventaTotal, profitTotal, margen, comision } };
+    linkExportar.href = URL_EXPORTAR + "?" + new URLSearchParams({ folio: FOLIO_ACTUAL, campo, nombre }).toString();
+
+    const mitad = Math.ceil(bookings.length / 2);
+    const columnaIzq = bookings.slice(0, mitad);
+    const columnaDer = bookings.slice(mitad);
+    const vistaBookingHtml = `
+      <div class="com-reporte-cols">
+        ${tablaBookings(columnaIzq, campoTotal, "Comisión")}
+        ${tablaBookings(columnaDer, campoTotal, "Comisión")}
+      </div>
+    `;
+
+    // ---- agrupado por cliente, para el desglose "Por Cliente" dentro de este vendedor/desarrollador ----
+    const porCliente = new Map();
+    bookings.forEach((b) => {
+      const cliente = b.cliente || "(sin cliente)";
+      if (!porCliente.has(cliente)) porCliente.set(cliente, { cliente, cantBook: 0, profit: 0, comision: 0, bookings: [] });
+      const g = porCliente.get(cliente);
+      g.cantBook += 1;
+      g.profit += b.profit;
+      g.comision += b[campoTotal];
+      g.bookings.push(b);
+    });
+    const clientesOrdenados = Array.from(porCliente.values()).sort((a, b) => b.comision - a.comision);
+
+    const clienteListaHtml = clientesOrdenados.map((g, i) => `
+      <div class="com-cliente-item" data-cliente-idx="${i}">
+        <div class="com-cliente-header" data-cliente-toggle="${i}">
+          <span class="flecha">▸</span>
+          <span class="nombre">${g.cliente}</span>
+          <span class="meta">${g.cantBook} booking(s) · Profit ${fmtMoneda(g.profit)}</span>
+          <span class="monto">${fmtMoneda(g.comision)}</span>
+        </div>
+        <div class="com-cliente-detalle" id="com-cliente-detalle-${i}">
+          ${tablaBookings(g.bookings, campoTotal, "Comisión")}
+        </div>
+      </div>
+    `).join("");
+
+    const subvistasHtml = `
+      <div class="com-subtabs">
+        <button type="button" class="com-subtab active" data-subvista="booking">Por Booking</button>
+        <button type="button" class="com-subtab" data-subvista="cliente">Por Cliente (${clientesOrdenados.length})</button>
+      </div>
+      <div class="com-subvista activa" data-subvista-panel="booking">${vistaBookingHtml}</div>
+      <div class="com-subvista" data-subvista-panel="cliente">${clienteListaHtml}</div>
+    `;
+
+    contenido.innerHTML = `
+      <p class="com-reporte-titulo">Comisiones ${DESCRIPCION ? DESCRIPCION : ""}</p>
+      <div class="com-reporte-vendedor">
+        <div class="etq">${etiqueta}</div>
+        <div class="val">${nombre}</div>
+      </div>
+      <div class="com-reporte-stats">
+        <table>
+          <tr><td>Cantidad de Booking</td><td>${bookings.length}</td></tr>
+          <tr><td>Venta Total USD</td><td>${fmtMoneda(ventaTotal)}</td></tr>
+          <tr><td>Profit USD</td><td>${fmtMoneda(profitTotal)}</td></tr>
+          <tr><td>Margen</td><td>${fmtPct(margen)}</td></tr>
+          <tr><td>Comisión</td><td>${fmtMoneda(comision)}</td></tr>
+        </table>
+      </div>
+
+      ${subvistasHtml}
+    `;
+    modal.classList.add("abierto");
+  }
+
+  document.querySelectorAll(".com-fila-clicable").forEach((tr) => {
+    tr.addEventListener("click", () => abrirDetalle(tr.dataset.campo, tr.dataset.nombre));
+  });
+
+  // ---- detalle de un booking individual (comisión + reporte de vendedores + cobros) ----
+  const modalBooking = document.getElementById("com-modal-booking");
+  const contenidoBooking = document.getElementById("com-modal-booking-contenido");
+  let cobrosActuales = [];
+  let bookingActual = null;
+
+  function fmtFecha(f) {
+    if (!f) return "—";
+    const [anio, mes, dia] = f.split("-");
+    return `${dia}/${mes}/${anio}`;
+  }
+
+  function abrirBooking(booking) {
+    const b = FILAS.find((f) => f.booking === booking);
+    if (!b) return;
+
+    const cobros = b.cobros || [];
+    cobrosActuales = cobros;
+    bookingActual = b.booking;
+    const totalesPorMoneda = {};
+    cobros.forEach((c) => {
+      const moneda = c.moneda || "—";
+      totalesPorMoneda[moneda] = (totalesPorMoneda[moneda] || 0) + c.total;
+    });
+    const filasTotal = Object.entries(totalesPorMoneda)
+      .map(([moneda, total]) => `<tr><td colspan="5">Total cobrado ${moneda}</td><td>${fmtMoneda(total)}</td></tr>`)
+      .join("");
+    const cobrosHtml = cobros.length
+      ? `<table class="com-resumen">
+          <thead><tr><th>Fecha factura</th><th>Fecha cobro</th><th>Banco</th><th>Folio factura</th><th>Días</th><th>Total</th></tr></thead>
+          <tbody>
+            ${cobros.map((c, i) => `
+              <tr data-cobro-idx="${i}">
+                <td>${fmtFecha(c.fecha_factura)}</td>
+                <td>${fmtFecha(c.fecha_cobro)}</td>
+                <td>${c.banco || "—"}</td>
+                <td>${c.folio_factura || "—"}</td>
+                <td>${c.dias_diferencia != null ? c.dias_diferencia : "—"}</td>
+                <td>${fmtMoneda(c.total)} ${c.moneda || ""}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+          <tfoot>${filasTotal}</tfoot>
+        </table>
+        <p class="hint" style="margin-top:.6rem;">Clic en un cobro para ver el desglose completo de la factura.</p>`
+      : `<p class="empty">Sin cobros vinculados a este booking. Usa "+ Traer cobros" con el rango de fechas correspondiente.</p>`;
+
+    contenidoBooking.innerHTML = `
+      <p class="com-booking-titulo">${b.booking}</p>
+      <p class="com-booking-sub">${b.cliente || "Sin cliente"}${b.fecha ? " · " + fmtFecha(b.fecha) : ""}${b.ejecutivo ? " · Ejecutivo: " + b.ejecutivo : ""}</p>
+
+      <p class="com-booking-seccion">Reporte de vendedores</p>
+      <div class="com-kpis" style="margin-bottom:0;">
+        <div class="com-kpi"><div class="label">Venta</div><div class="value">${b.venta != null ? fmtMoneda(b.venta) : "—"}</div></div>
+        <div class="com-kpi"><div class="label">Profit</div><div class="value">${fmtMoneda(b.profit)}</div></div>
+        <div class="com-kpi"><div class="label">Margen</div><div class="value">${b.margen != null ? fmtPct(b.margen * 100) : "—"}</div></div>
+      </div>
+
+      <p class="com-booking-seccion">Comisiones</p>
+      <div class="com-comisiones" style="margin-bottom:0;">
+        <div class="com-comision-card">
+          <div class="etiqueta">Comisión Vendedor</div>
+          <div class="monto">${fmtMoneda(b.total_vendedor)}</div>
+          <div class="caption">${b.vendedor || "—"}${b.pct_vendedor != null ? " · " + b.pct_vendedor + "%" : ""}</div>
+        </div>
+        <div class="com-comision-card">
+          <div class="etiqueta">Comisión Desarrollador</div>
+          <div class="monto">${fmtMoneda(b.total_desarrollador)}</div>
+          <div class="caption">${b.desarrollador || "—"}${b.pct_desarrollador != null ? " · " + b.pct_desarrollador + "%" : ""}</div>
+        </div>
+      </div>
+
+      <p class="com-booking-seccion">Reporte de cobros</p>
+      ${cobrosHtml}
+    `;
+    modalBooking.classList.add("abierto");
+  }
+
+  contenido.addEventListener("click", (e) => {
+    const subtab = e.target.closest("[data-subvista]");
+    if (subtab) {
+      contenido.querySelectorAll("[data-subvista]").forEach((el) => el.classList.remove("active"));
+      subtab.classList.add("active");
+      contenido.querySelectorAll("[data-subvista-panel]").forEach((el) => el.classList.remove("activa"));
+      contenido.querySelector(`[data-subvista-panel="${subtab.dataset.subvista}"]`).classList.add("activa");
+      return;
+    }
+
+    const clienteHeader = e.target.closest("[data-cliente-toggle]");
+    if (clienteHeader) {
+      const detalle = document.getElementById("com-cliente-detalle-" + clienteHeader.dataset.clienteToggle);
+      const item = clienteHeader.closest(".com-cliente-item");
+      const abierto = detalle.classList.toggle("abierto");
+      item.classList.toggle("abierto", abierto);
+      return;
+    }
+
+    const tr = e.target.closest("tr[data-booking]");
+    if (tr) abrirBooking(tr.dataset.booking);
+  });
+
+  function cerrarModalBooking() { modalBooking.classList.remove("abierto"); }
+  document.getElementById("com-modal-booking-cerrar").addEventListener("click", cerrarModalBooking);
+  modalBooking.addEventListener("click", (e) => { if (e.target === modalBooking) cerrarModalBooking(); });
+
+  // ---- desglose completo de un cobro/factura (folio factura, UUID, subtotal, IVA, etc.) ----
+  const modalCobro = document.getElementById("com-modal-cobro");
+  const contenidoCobro = document.getElementById("com-modal-cobro-contenido");
+
+  function abrirCobro(c) {
+    const campos = [
+      ["Folio Factura", c.folio_factura],
+      ["Referencia", bookingActual],
+      ["UUID", c.uuid],
+      ["Tipo Docto", c.tipo_docto],
+      ["Tipo / Referencia", c.tipo_referencia],
+      ["Cliente", c.cliente],
+      ["Fecha Factura", fmtFecha(c.fecha_factura)],
+      ["Fecha Cobro", fmtFecha(c.fecha_cobro)],
+      ["Días diferencia", c.dias_diferencia],
+      ["Fecha Timbre", c.fecha_timbre],
+      ["Banco", c.banco],
+      ["Moneda", c.moneda],
+      ["Subtotal", fmtMoneda(c.subtotal)],
+      ["IVA", fmtMoneda(c.iva)],
+      ["Descuento", fmtMoneda(c.descuento)],
+      ["Retención", fmtMoneda(c.retencion)],
+      ["Total", fmtMoneda(c.total)],
+    ];
+    contenidoCobro.innerHTML = `
+      <p class="com-booking-titulo">Factura ${c.folio_factura || "—"}</p>
+      <p class="com-booking-sub">${c.cliente || "Sin cliente"}</p>
+      <div class="com-cobro-grid">
+        ${campos.map(([label, valor]) => `
+          <div class="fila"><span class="label">${label}</span><span class="valor">${valor != null && valor !== "" ? valor : "—"}</span></div>
+        `).join("")}
+      </div>
+    `;
+    modalCobro.classList.add("abierto");
+  }
+
+  contenidoBooking.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-cobro-idx]");
+    if (tr) abrirCobro(cobrosActuales[Number(tr.dataset.cobroIdx)]);
+  });
+
+  function cerrarModalCobro() { modalCobro.classList.remove("abierto"); }
+  document.getElementById("com-modal-cobro-cerrar").addEventListener("click", cerrarModalCobro);
+  modalCobro.addEventListener("click", (e) => { if (e.target === modalCobro) cerrarModalCobro(); });
+
+  function cerrarModal() { modal.classList.remove("abierto"); }
+  document.getElementById("com-modal-cerrar").addEventListener("click", cerrarModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (modalCobro.classList.contains("abierto")) cerrarModalCobro();
+    else if (modalBooking.classList.contains("abierto")) cerrarModalBooking();
+    else cerrarModal();
+  });
+})();
+</script>
 {% endblock %}

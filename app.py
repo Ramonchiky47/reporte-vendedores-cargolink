@@ -18,6 +18,7 @@ from functools import wraps
 from zoneinfo import ZoneInfo
 
 import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import psycopg
 import requests
 from bs4 import BeautifulSoup
@@ -35,6 +36,7 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
 CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
 CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
+CARGOLINK_LIQ_VENDEDOR_URL = "https://fwd.cargolink.mx/templates/egresos_liq_vendedor/"
 
 
 def get_secret_key():
@@ -147,6 +149,52 @@ def init_db():
         );
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_registro_ingresos_fecha ON registro_ingresos (fecha_hora desc);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS comisiones_liquidacion_detalle (
+            id bigint generated always as identity primary key,
+            folio integer not null,
+            descripcion text not null,
+            booking text not null,
+            folio_cobro text,
+            profit numeric not null default 0,
+            vendedor text,
+            pct_vendedor numeric,
+            total_vendedor numeric not null default 0,
+            desarrollador text,
+            pct_desarrollador numeric,
+            total_desarrollador numeric not null default 0,
+            cargado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_liq_folio ON comisiones_liquidacion_detalle (folio);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS comisiones_cobros_detalle (
+            id bigint generated always as identity primary key,
+            folio integer not null,
+            etiqueta text not null,
+            folio_cobro text,
+            folio_factura text,
+            referencia text not null,
+            uuid text,
+            tipo_docto text,
+            tipo_referencia text,
+            cliente text,
+            fecha_factura date,
+            fecha_cobro date,
+            dias_diferencia integer,
+            fecha_timbre text,
+            banco text,
+            moneda text,
+            subtotal numeric not null default 0,
+            iva numeric not null default 0,
+            descuento numeric not null default 0,
+            retencion numeric not null default 0,
+            total numeric not null default 0,
+            cargado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_cobros_folio ON comisiones_cobros_detalle (folio);")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_cobros_referencia ON comisiones_cobros_detalle (referencia);")
     db.commit()
     db.close()
 
@@ -370,6 +418,214 @@ def descargar_reporte_clientes_cargolink():
         })
 
     return clientes
+
+
+def _conectar_liq_vendedor_cargolink():
+    """Login a CargoLink + token de sesión del módulo Liquidación de
+    vendedores (m=150). Compartido por listar_folios_liquidacion_cargolink
+    y descargar_liquidacion_vendedor_cargolink."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(f"{CARGOLINK_LIQ_VENDEDOR_URL}?m=150", headers=headers, timeout=60)
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión de Liquidación de Vendedores.")
+    return sesion, headers, match_token.group(1)
+
+
+def listar_folios_liquidacion_cargolink():
+    """Lista los folios (folio, descripción) disponibles en Egresos →
+    Liquidación de vendedores, para el selector de carga."""
+    sesion, headers, token = _conectar_liq_vendedor_cargolink()
+    r_lista = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=apiLiquidacion&fn=consultaLiqVendedor",
+        json={},
+        headers={"Content-Type": "application/json"},
+        timeout=60,
+    )
+    if r_lista.status_code != 200:
+        raise RuntimeError("Error al consultar la lista de liquidaciones en CargoLink.")
+    folios = [
+        {"folio": int(f["folio_int"]), "descripcion": f.get("nombre") or ""}
+        for f in r_lista.json().get("values", [])
+        if int(f["folio_int"]) >= 51
+    ]
+    folios.sort(key=lambda f: f["folio"], reverse=True)
+    return folios
+
+
+def descargar_liquidacion_vendedor_cargolink(folio):
+    """Se conecta a CargoLink, ubica el folio dado en Egresos → Liquidación
+    de vendedores (m=150) y descarga su detalle línea por línea (uno por
+    booking). No toca el disco. Regresa {folio, descripcion, detalle}."""
+    sesion, headers, token = _conectar_liq_vendedor_cargolink()
+
+    r_lista = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=apiLiquidacion&fn=consultaLiqVendedor",
+        json={},
+        headers={"Content-Type": "application/json"},
+        timeout=60,
+    )
+    if r_lista.status_code != 200:
+        raise RuntimeError("Error al consultar la lista de liquidaciones en CargoLink.")
+    fila_folio = next(
+        (f for f in r_lista.json().get("values", []) if str(f.get("folio_int")) == str(folio)), None
+    )
+    if fila_folio is None:
+        raise RuntimeError(f"No se encontró el folio {folio} en Liquidación de vendedores.")
+
+    id_liq = fila_folio["id_liq_vendedor"]
+    descripcion = fila_folio.get("nombre") or ""
+
+    r_excel = sesion.get(
+        f"{CARGOLINK_LIQ_VENDEDOR_URL}excel_detalle.php?token={token}&id_liq={id_liq}",
+        headers=headers,
+        timeout=60,
+    )
+    if r_excel.status_code != 200 or len(r_excel.content) == 0:
+        raise RuntimeError("Error al descargar el detalle de la liquidación desde CargoLink.")
+
+    def num(v):
+        v = (v or "0").replace(",", "").replace("$", "").strip()
+        try:
+            return float(v)
+        except ValueError:
+            return 0.0
+
+    soup = BeautifulSoup(r_excel.content.decode("utf-8-sig", errors="replace"), "html.parser")
+    tabla = soup.find("table")
+    filas_html = tabla.find_all("tr") if tabla else []
+
+    detalle = []
+    header_visto = False
+    for tr in filas_html:
+        celdas = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+        if not celdas:
+            continue
+        if celdas[0] == "Booking":
+            header_visto = True
+            continue
+        if not header_visto or celdas[0] == "" or len(celdas) < 9:
+            continue  # fila de totales al final, o de encabezado/folio arriba de la tabla
+        detalle.append({
+            "booking": celdas[0],
+            "folio_cobro": celdas[1],
+            "profit": num(celdas[2]),
+            "vendedor": celdas[3],
+            "pct_vendedor": num(celdas[4]),
+            "total_vendedor": num(celdas[5]),
+            "desarrollador": celdas[6],
+            "pct_desarrollador": num(celdas[7]),
+            "total_desarrollador": num(celdas[8]),
+        })
+
+    return {"folio": int(folio), "descripcion": descripcion, "detalle": detalle}
+
+
+def descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin):
+    """Se conecta a CargoLink, consulta Ingresos → Reporte de Cobros (m=48)
+    para el rango de fechas dado y descarga el Excel Concentrado. No toca
+    el disco. Regresa una lista de dicts (uno por cobro)."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(
+        "https://fwd.cargolink.mx/templates/reporteCobros/index20.php?m=48", headers=headers, timeout=60
+    )
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión de Reporte de Cobros.")
+    token = match_token.group(1)
+
+    r_consulta = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api&fn=consultaCobrosClientes&limit=0",
+        json={"filtros": {}, "filtros2": {"fechaini": fecha_ini, "fechafin": fecha_fin}},
+        headers={"Content-Type": "application/json"},
+        timeout=60,
+    )
+    if r_consulta.status_code != 200:
+        raise RuntimeError("Error al consultar Reporte de Cobros en CargoLink.")
+    where = r_consulta.json().get("where")
+    if where is None:
+        raise RuntimeError("CargoLink no regresó resultados para ese rango de fechas.")
+
+    r_excel = sesion.get(
+        "https://fwd.cargolink.mx/templates/reporteCobros/excelConcentrado.php",
+        params={"filtros": where, "token": token},
+        headers=headers,
+        timeout=120,
+    )
+    if r_excel.status_code != 200 or len(r_excel.content) == 0:
+        raise RuntimeError("Error al descargar el concentrado de cobros desde CargoLink.")
+
+    def num(v):
+        v = (v or "0").replace(",", "").replace("$", "").strip()
+        try:
+            return float(v)
+        except ValueError:
+            return 0.0
+
+    def fecha(v):
+        v = (v or "").strip()
+        try:
+            return datetime.strptime(v, "%d-%m-%Y").date()
+        except ValueError:
+            return None
+
+    soup = BeautifulSoup(r_excel.content.decode("utf-8-sig", errors="replace"), "html.parser")
+    tabla = soup.find("table")
+    filas_html = tabla.find_all("tr") if tabla else []
+
+    cobros = []
+    header_visto = False
+    for tr in filas_html:
+        celdas = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+        if not celdas:
+            continue
+        if celdas[0] == "Folio cobro":
+            header_visto = True
+            continue
+        if not header_visto or len(celdas) < 18 or not celdas[2]:
+            continue  # fila de título arriba de la tabla, o sin Referencia (nota/anotación, no un cobro real)
+        cobros.append({
+            "folio_cobro": celdas[0],
+            "folio_factura": celdas[1],
+            "referencia": celdas[2],
+            "uuid": celdas[3],
+            "tipo_docto": celdas[4],
+            "tipo_referencia": celdas[5],
+            "cliente": celdas[6],
+            "fecha_factura": fecha(celdas[7]),
+            "fecha_cobro": fecha(celdas[8]),
+            "dias_diferencia": int(celdas[9]) if celdas[9].isdigit() else None,
+            "fecha_timbre": celdas[10],
+            "banco": celdas[11],
+            "moneda": celdas[12],
+            "subtotal": num(celdas[13]),
+            "iva": num(celdas[14]),
+            "descuento": num(celdas[15]),
+            "retencion": num(celdas[16]),
+            "total": num(celdas[17]),
+        })
+
+    return cobros
 
 
 def construir_datos_dashboard(plazas_permitidas=None):
@@ -642,9 +898,24 @@ def usuario_puede_actualizar():
     return bool(session.get("puede_actualizar"))
 
 
+def usuario_puede_comisiones():
+    """True = el usuario en sesión puede ver la pestaña y la pantalla de
+    Comisiones. Los administradores siempre pueden; para el resto se usa
+    el permiso guardado en sesión al hacer login
+    (app_user_permissions.puede_comisiones), otorgado desde Catálogos →
+    Permiso de Comisiones."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_comisiones"))
+
+
 @app.context_processor
 def inject_permisos_exportar():
-    return {"puede_exportar": usuario_puede_exportar(), "puede_actualizar": usuario_puede_actualizar()}
+    return {
+        "puede_exportar": usuario_puede_exportar(),
+        "puede_actualizar": usuario_puede_actualizar(),
+        "puede_comisiones": usuario_puede_comisiones(),
+    }
 
 
 def autenticar_contra_catalogo_accesos(email, password):
@@ -663,6 +934,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.es_admin, false) AS es_admin,
             coalesce(p.puede_exportar, false) AS puede_exportar,
             coalesce(p.puede_actualizar, false) AS puede_actualizar,
+            coalesce(p.puede_comisiones, false) AS puede_comisiones,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
@@ -692,6 +964,7 @@ def login():
             session["es_admin"] = bool(fila["es_admin"])
             session["puede_exportar"] = bool(fila["puede_exportar"])
             session["puede_actualizar"] = bool(fila["puede_actualizar"])
+            session["puede_comisiones"] = bool(fila["puede_comisiones"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
             return redirect(url_for(destino))
@@ -712,7 +985,9 @@ def dashboard():
 
 
 def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
-    """Descarga bookings de CargoLink y reemplaza reporte_bookings.
+    """Descarga bookings de CargoLink y reemplaza reporte_bookings solo para
+    el rango [fecha_inicio, fecha_fin] — lo que ya existe fuera de ese rango
+    (ej. años anteriores cargados una sola vez) no se toca.
     Regresa (ok: bool, mensaje: str, detalle: str|None)."""
     try:
         bookings = descargar_bookings_cargolink(fecha_inicio, fecha_fin)
@@ -727,7 +1002,10 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
 
     db = get_db()
     cur = db.cursor()
-    cur.execute("DELETE FROM reporte_bookings")
+    cur.execute(
+        "DELETE FROM reporte_bookings WHERE fecha >= %s AND fecha < (%s::date + interval '1 day')",
+        (fecha_inicio, fecha_fin),
+    )
     for inicio in range(0, len(bookings), TAMANO_LOTE):
         lote = bookings[inicio:inicio + TAMANO_LOTE]
         placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas)) + ")"] * len(lote))
@@ -958,7 +1236,348 @@ def reportes_graficas():
 @app.route("/comisiones")
 @login_required
 def comisiones():
-    return render_template("comisiones.html")
+    if not usuario_puede_comisiones():
+        flash("No tienes permiso para ver Comisiones.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    db = get_db()
+    folios_disponibles = db.execute(
+        "SELECT DISTINCT folio, descripcion FROM comisiones_liquidacion_detalle WHERE folio >= 51 ORDER BY folio DESC"
+    ).fetchall()
+
+    folio_solicitado = request.args.get("folio", type=int)
+    folio_actual = folio_solicitado or (folios_disponibles[0]["folio"] if folios_disponibles else None)
+
+    filas = []
+    descripcion = None
+    reporte_por_booking = {}
+    cobros_por_booking = {}
+    if folio_actual is not None:
+        filas = db.execute(
+            "SELECT * FROM comisiones_liquidacion_detalle WHERE folio = %s ORDER BY booking", (folio_actual,)
+        ).fetchall()
+        if filas:
+            descripcion = filas[0]["descripcion"]
+            bookings = [f["booking"] for f in filas]
+            for r in db.execute(
+                "SELECT referencia, venta, margen, cliente_servicio, fecha, ejecutivo, venta_por "
+                "FROM reporte_bookings WHERE referencia = ANY(%s)",
+                (bookings,),
+            ):
+                reporte_por_booking[r["referencia"]] = {
+                    "venta": float(r["venta"]),
+                    "margen": float(r["margen"]),
+                    "cliente": r["cliente_servicio"],
+                    "fecha": r["fecha"].strftime("%Y-%m-%d") if r["fecha"] else None,
+                    "ejecutivo": r["ejecutivo"],
+                    "venta_por": r["venta_por"],
+                }
+            for r in db.execute(
+                "SELECT referencia, folio_cobro, folio_factura, uuid, tipo_docto, tipo_referencia, cliente, "
+                "fecha_factura, fecha_cobro, dias_diferencia, fecha_timbre, banco, moneda, subtotal, iva, "
+                "descuento, retencion, total "
+                "FROM comisiones_cobros_detalle WHERE referencia = ANY(%s) ORDER BY fecha_cobro",
+                (bookings,),
+            ):
+                cobros_por_booking.setdefault(r["referencia"], []).append({
+                    "folio_cobro": r["folio_cobro"],
+                    "folio_factura": r["folio_factura"],
+                    "uuid": r["uuid"],
+                    "tipo_docto": r["tipo_docto"],
+                    "tipo_referencia": r["tipo_referencia"],
+                    "cliente": r["cliente"],
+                    "fecha_factura": r["fecha_factura"].strftime("%Y-%m-%d") if r["fecha_factura"] else None,
+                    "fecha_cobro": r["fecha_cobro"].strftime("%Y-%m-%d") if r["fecha_cobro"] else None,
+                    "dias_diferencia": r["dias_diferencia"],
+                    "fecha_timbre": r["fecha_timbre"],
+                    "banco": r["banco"],
+                    "moneda": r["moneda"],
+                    "subtotal": float(r["subtotal"]),
+                    "iva": float(r["iva"]),
+                    "descuento": float(r["descuento"]),
+                    "retencion": float(r["retencion"]),
+                    "total": float(r["total"]),
+                })
+
+    cobros_cargados = 0
+    if folio_actual is not None:
+        cobros_cargados = db.execute(
+            "SELECT count(*) AS n FROM comisiones_cobros_detalle WHERE folio = %s", (folio_actual,)
+        ).fetchone()["n"]
+    db.close()
+
+    total_profit = sum(float(f["profit"]) for f in filas)
+    total_vendedor = sum(float(f["total_vendedor"]) for f in filas)
+    total_desarrollador = sum(float(f["total_desarrollador"]) for f in filas)
+    total_venta = sum(reporte_por_booking.get(f["booking"], {}).get("venta") or 0.0 for f in filas)
+    margen_total = (total_profit / total_venta) if total_venta else 0.0
+
+    def agrupar(filas, campo_nombre, campo_total):
+        grupos = {}
+        for f in filas:
+            nombre = f[campo_nombre] or "(sin nombre)"
+            g = grupos.setdefault(nombre, {"nombre": nombre, "total": 0.0, "cant_book": 0})
+            g["total"] += float(f[campo_total])
+            g["cant_book"] += 1
+        return sorted(grupos.values(), key=lambda g: g["total"], reverse=True)
+
+    por_vendedor = agrupar(filas, "vendedor", "total_vendedor")
+    por_desarrollador = agrupar(filas, "desarrollador", "total_desarrollador")
+
+    filas_json = json.dumps([
+        {
+            "booking": f["booking"],
+            "folio_cobro": f["folio_cobro"],
+            "profit": float(f["profit"]),
+            "venta": reporte_por_booking.get(f["booking"], {}).get("venta"),
+            "margen": reporte_por_booking.get(f["booking"], {}).get("margen"),
+            "cliente": reporte_por_booking.get(f["booking"], {}).get("cliente"),
+            "fecha": reporte_por_booking.get(f["booking"], {}).get("fecha"),
+            "ejecutivo": reporte_por_booking.get(f["booking"], {}).get("ejecutivo"),
+            "venta_por": reporte_por_booking.get(f["booking"], {}).get("venta_por"),
+            "cobros": cobros_por_booking.get(f["booking"], []),
+            "vendedor": f["vendedor"],
+            "pct_vendedor": float(f["pct_vendedor"]) if f["pct_vendedor"] is not None else None,
+            "total_vendedor": float(f["total_vendedor"]),
+            "desarrollador": f["desarrollador"],
+            "pct_desarrollador": float(f["pct_desarrollador"]) if f["pct_desarrollador"] is not None else None,
+            "total_desarrollador": float(f["total_desarrollador"]),
+        }
+        for f in filas
+    ]).replace("</", "<\\/")
+
+    folios_cargolink = []
+    if session.get("es_admin"):
+        try:
+            folios_cargolink = listar_folios_liquidacion_cargolink()
+        except RuntimeError as e:
+            flash(f"No se pudo consultar la lista de folios en CargoLink: {e}")
+
+    return render_template(
+        "comisiones.html",
+        folios_disponibles=folios_disponibles,
+        folios_cargolink=folios_cargolink,
+        folio_actual=folio_actual,
+        descripcion=descripcion,
+        filas=filas,
+        filas_json=filas_json,
+        total_profit=total_profit,
+        total_vendedor=total_vendedor,
+        total_desarrollador=total_desarrollador,
+        total_venta=total_venta,
+        margen_total=margen_total,
+        total_liquidar=total_vendedor + total_desarrollador,
+        por_vendedor=por_vendedor,
+        por_desarrollador=por_desarrollador,
+        cobros_cargados=cobros_cargados,
+    )
+
+
+@app.route("/comisiones/exportar")
+@login_required
+def comisiones_exportar():
+    if not usuario_puede_comisiones():
+        flash("No tienes permiso para ver Comisiones.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    folio = request.args.get("folio", type=int)
+    campo = request.args.get("campo")
+    nombre = request.args.get("nombre", "")
+    if folio is None or campo not in ("vendedor", "desarrollador") or not nombre:
+        flash("Parámetros inválidos para exportar.")
+        return redirect(url_for("comisiones"))
+
+    db = get_db()
+    filas = db.execute(
+        f"SELECT * FROM comisiones_liquidacion_detalle WHERE folio = %s AND {campo} = %s ORDER BY booking",
+        (folio, nombre),
+    ).fetchall()
+    descripcion = filas[0]["descripcion"] if filas else ""
+
+    venta_por_booking = {}
+    if filas:
+        bookings = [f["booking"] for f in filas]
+        for r in db.execute("SELECT referencia, venta FROM reporte_bookings WHERE referencia = ANY(%s)", (bookings,)):
+            venta_por_booking[r["referencia"]] = float(r["venta"])
+    db.close()
+
+    campo_total = "total_vendedor" if campo == "vendedor" else "total_desarrollador"
+    etiqueta = "Vendedor" if campo == "vendedor" else "Desarrollador"
+
+    profit_total = sum(float(f["profit"]) for f in filas)
+    comision_total = sum(float(f[campo_total]) for f in filas)
+    venta_total = sum(venta_por_booking.get(f["booking"], 0.0) for f in filas)
+    margen = (profit_total / venta_total) if venta_total else 0.0
+
+    amarillo = PatternFill(fill_type="solid", fgColor="FFF59D")
+    naranja = PatternFill(fill_type="solid", fgColor="C1502E")
+    lado = Side(style="thin", color="E6C200")
+    borde = Border(left=lado, right=lado, top=lado, bottom=lado)
+    centrado = Alignment(horizontal="center", vertical="center")
+    izquierda = Alignment(horizontal="left", vertical="center")
+    derecha = Alignment(horizontal="right", vertical="center")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Comisiones"
+
+    ws.merge_cells("A1:C1")
+    titulo = ws["A1"]
+    titulo.value = f"Comisiones {descripcion}"
+    titulo.font = Font(bold=True, size=13)
+    titulo.alignment = centrado
+    ws.row_dimensions[1].height = 22
+
+    ws["A3"] = etiqueta
+    ws["A3"].font = Font(bold=True)
+    ws.merge_cells("B3:C3")
+    ws["B3"] = nombre
+    ws["B3"].font = Font(bold=True)
+    ws["B3"].alignment = centrado
+    for coord in ("A3", "B3", "C3"):
+        ws[coord].fill = amarillo
+        ws[coord].border = borde
+
+    stats = [
+        ("Cantidad de Booking", len(filas), None),
+        ("Venta Total USD", venta_total, "#,##0.00"),
+        ("Profit USD", profit_total, "#,##0.00"),
+        ("Margen", margen, "0.00%"),
+        ("Comisión", comision_total, "#,##0.00"),
+    ]
+    fila = 5
+    for etq, valor, formato in stats:
+        celda_etq = ws.cell(row=fila, column=1, value=etq)
+        celda_etq.font = Font(bold=True)
+        celda_etq.fill = amarillo
+        celda_etq.border = borde
+        celda_valor = ws.cell(row=fila, column=2, value=valor)
+        celda_valor.font = Font(bold=True)
+        celda_valor.alignment = derecha
+        celda_valor.fill = amarillo
+        celda_valor.border = borde
+        if formato:
+            celda_valor.number_format = formato
+        fila += 1
+
+    fila_tabla = fila + 1
+    encabezados = ["Booking", "Profit", f"Comisión {etiqueta}"]
+    for col, encabezado in enumerate(encabezados, start=1):
+        celda = ws.cell(row=fila_tabla, column=col, value=encabezado)
+        celda.fill = naranja
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.alignment = centrado if col == 1 else derecha
+
+    for i, f in enumerate(filas, start=fila_tabla + 1):
+        ws.cell(row=i, column=1, value=f["booking"]).alignment = izquierda
+        celda_profit = ws.cell(row=i, column=2, value=float(f["profit"]))
+        celda_profit.number_format = "#,##0.00"
+        celda_profit.alignment = derecha
+        celda_com = ws.cell(row=i, column=3, value=float(f[campo_total]))
+        celda_com.number_format = "#,##0.00"
+        celda_com.alignment = derecha
+
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 20
+    ws.freeze_panes = ws.cell(row=fila_tabla + 1, column=1).coordinate
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    nombre_archivo = re.sub(r"[^a-zA-Z0-9]+", "_", f"Comisiones_{nombre}_{descripcion}").strip("_") + ".xlsx"
+    return send_file(
+        buffer, as_attachment=True, download_name=nombre_archivo,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/comisiones/cargar", methods=["POST"])
+@admin_required
+def comisiones_cargar():
+    folio_raw = (request.form.get("folio") or "").strip()
+    try:
+        folio = int(folio_raw)
+    except ValueError:
+        flash("Folio inválido.")
+        return redirect(url_for("comisiones"))
+
+    try:
+        resultado = descargar_liquidacion_vendedor_cargolink(folio)
+    except RuntimeError as e:
+        flash(str(e))
+        return redirect(url_for("comisiones"))
+
+    db = get_db()
+    db.execute("DELETE FROM comisiones_liquidacion_detalle WHERE folio = %s", (folio,))
+    for d in resultado["detalle"]:
+        db.execute(
+            """
+            INSERT INTO comisiones_liquidacion_detalle
+                (folio, descripcion, booking, folio_cobro, profit, vendedor, pct_vendedor,
+                 total_vendedor, desarrollador, pct_desarrollador, total_desarrollador)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                resultado["folio"], resultado["descripcion"], d["booking"], d["folio_cobro"], d["profit"],
+                d["vendedor"], d["pct_vendedor"], d["total_vendedor"], d["desarrollador"],
+                d["pct_desarrollador"], d["total_desarrollador"],
+            ),
+        )
+    db.commit()
+    db.close()
+
+    flash(f"Folio {folio} cargado: {len(resultado['detalle'])} booking(s).")
+    return redirect(url_for("comisiones", folio=folio))
+
+
+@app.route("/comisiones/cobros/cargar", methods=["POST"])
+@admin_required
+def comisiones_cobros_cargar():
+    folio_raw = (request.form.get("folio") or "").strip()
+    descripcion = (request.form.get("descripcion") or "").strip()
+    fecha_ini = (request.form.get("fecha_ini") or "").strip()
+    fecha_fin = (request.form.get("fecha_fin") or "").strip()
+    try:
+        folio = int(folio_raw)
+    except ValueError:
+        flash("Folio inválido.")
+        return redirect(url_for("comisiones"))
+    if not DATE_RE.match(fecha_ini) or not DATE_RE.match(fecha_fin):
+        flash("Selecciona una fecha inicial y una fecha final válidas.")
+        return redirect(url_for("comisiones", folio=folio))
+
+    etiqueta = f"{folio} {descripcion}".strip()
+
+    try:
+        cobros = descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin)
+    except RuntimeError as e:
+        flash(str(e))
+        return redirect(url_for("comisiones", folio=folio))
+
+    db = get_db()
+    db.execute("DELETE FROM comisiones_cobros_detalle WHERE folio = %s", (folio,))
+    for c in cobros:
+        db.execute(
+            """
+            INSERT INTO comisiones_cobros_detalle
+                (folio, etiqueta, folio_cobro, folio_factura, referencia, uuid, tipo_docto, tipo_referencia,
+                 cliente, fecha_factura, fecha_cobro, dias_diferencia, fecha_timbre, banco, moneda,
+                 subtotal, iva, descuento, retencion, total)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                folio, etiqueta, c["folio_cobro"], c["folio_factura"], c["referencia"], c["uuid"],
+                c["tipo_docto"], c["tipo_referencia"], c["cliente"], c["fecha_factura"], c["fecha_cobro"],
+                c["dias_diferencia"], c["fecha_timbre"], c["banco"], c["moneda"], c["subtotal"], c["iva"],
+                c["descuento"], c["retencion"], c["total"],
+            ),
+        )
+    db.commit()
+    db.close()
+
+    flash(f'Cobros cargados para "{etiqueta}": {len(cobros)} registro(s).')
+    return redirect(url_for("comisiones", folio=folio))
 
 
 @app.route("/reportes/por-vendedor")
@@ -1078,7 +1697,8 @@ def permisos_actualizar():
         """
         SELECT u.id, u.email,
             coalesce(p.es_admin, false) AS es_admin,
-            coalesce(p.puede_actualizar, false) AS puede_actualizar
+            coalesce(p.puede_actualizar, false) AS puede_actualizar,
+            coalesce(p.puede_comisiones, false) AS puede_comisiones
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
@@ -1088,16 +1708,24 @@ def permisos_actualizar():
     return render_template("permisos_actualizar.html", filas=filas)
 
 
+PERMISOS_TOGGLEABLES = {"puede_actualizar", "puede_comisiones"}
+
+
 @app.route("/catalogos/permisos-actualizar/<uuid:user_id>/toggle", methods=["POST"])
 @admin_required
 def permisos_actualizar_toggle(user_id):
-    nuevo_valor = request.form.get("puede_actualizar") == "1"
+    campo = request.form.get("campo") or "puede_actualizar"
+    if campo not in PERMISOS_TOGGLEABLES:
+        flash("Permiso inválido.")
+        return redirect(url_for("permisos_actualizar"))
+
+    nuevo_valor = request.form.get("valor") == "1"
     db = get_db()
     db.execute(
-        """
-        INSERT INTO app_user_permissions (user_id, puede_actualizar)
+        f"""
+        INSERT INTO app_user_permissions (user_id, {campo})
         VALUES (%s, %s)
-        ON CONFLICT (user_id) DO UPDATE SET puede_actualizar = EXCLUDED.puede_actualizar, updated_at = now()
+        ON CONFLICT (user_id) DO UPDATE SET {campo} = EXCLUDED.{campo}, updated_at = now()
         """,
         (str(user_id), nuevo_valor),
     )

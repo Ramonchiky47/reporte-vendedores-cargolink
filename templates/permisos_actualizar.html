@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}CargoLink · Permiso de Actualizar{% endblock %}
+{% block title %}CargoLink · Permisos de Usuario{% endblock %}
 {% set active = "catalogos" %}
 {% block content %}
     <div class="card">
-      <h2>Permiso de Actualizar</h2>
+      <h2>Permisos de Usuario</h2>
       <p class="hint">
-        Controla quién puede usar el botón "Actualizar" para regenerar el reporte desde CargoLink
-        (acción sensible: reemplaza todos los bookings). Los administradores siempre pueden.
-        El resto de los accesos (quién puede entrar, quién exporta) se administra en el catálogo
-        de Accesos de Seguimiento de Importaciones.
+        Controla quién puede usar el botón "Actualizar" (regenera el reporte desde CargoLink, reemplaza
+        todos los bookings) y quién puede ver la pestaña de Comisiones. Los administradores siempre
+        pueden ambas. El resto de los accesos (quién puede entrar, quién exporta) se administra en el
+        catálogo de Accesos de Seguimiento de Importaciones.
       </p>
       {% if filas %}
       <table>
         <thead>
-          <tr><th>Usuario</th><th>Puede actualizar</th><th></th></tr>
+          <tr><th>Usuario</th><th>Puede actualizar</th><th></th><th>Puede ver Comisiones</th><th></th></tr>
         </thead>
         <tbody>
           {% for fila in filas %}
@@ -23,8 +23,19 @@
             <td class="actions">
               {% if not fila.es_admin %}
               <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
-                <input type="hidden" name="puede_actualizar" value="{{ '0' if fila.puede_actualizar else '1' }}">
-                <button class="btn small secondary" type="submit">{{ "Quitar permiso" if fila.puede_actualizar else "Dar permiso" }}</button>
+                <input type="hidden" name="campo" value="puede_actualizar">
+                <input type="hidden" name="valor" value="{{ '0' if fila.puede_actualizar else '1' }}">
+                <button class="btn small secondary" type="submit">{{ "Quitar" if fila.puede_actualizar else "Dar" }}</button>
+              </form>
+              {% endif %}
+            </td>
+            <td>{{ "Sí (admin)" if fila.es_admin else ("Sí" if fila.puede_comisiones else "No") }}</td>
+            <td class="actions">
+              {% if not fila.es_admin %}
+              <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
+                <input type="hidden" name="campo" value="puede_comisiones">
+                <input type="hidden" name="valor" value="{{ '0' if fila.puede_comisiones else '1' }}">
+                <button class="btn small secondary" type="submit">{{ "Quitar" if fila.puede_comisiones else "Dar" }}</button>
               </form>
               {% endif %}
             </td>
