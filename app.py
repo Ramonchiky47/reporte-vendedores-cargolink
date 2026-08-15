@@ -955,6 +955,12 @@ def reportes_graficas():
     )
 
 
+@app.route("/comisiones")
+@login_required
+def comisiones():
+    return render_template("comisiones.html")
+
+
 @app.route("/reportes/por-vendedor")
 @login_required
 def reportes_por_vendedor():
