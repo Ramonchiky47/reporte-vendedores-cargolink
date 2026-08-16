@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <div class="dashboard-grid" hidden>
+      <a href="seguimiento-ordenes.html" class="dashboard-tile tarjeta-enlace">
+        <h2>Seguimiento de Órdenes de Venta</h2>
+        <p>Información, Información a detalle y Reportes</p>
+      </a>
+
+      <a href="seguimiento-cotizaciones.html" class="dashboard-tile tarjeta-enlace">
+        <h2>Seguimiento de Cotizaciones</h2>
+        <p>Negocios, cotizador y calendario de seguimiento</p>
+      </a>
+
+      <a href="catalogos.html" class="dashboard-tile tarjeta-enlace">
+        <h2>Catálogos</h2>
+        <p>Hoteles/Locales, Contactos, Estatus, Estado de la República y Usuarios</p>
+      </a>
+
+      <a href="configuracion.html" class="dashboard-tile tarjeta-enlace">
+        <h2>Configuración</h2>
+        <p>Próximamente</p>
+      </a>
+    </div>
+
+    <div class="tabs-catalogo" id="inicio-subnav">
+      <button type="button" class="tab-catalogo activo" data-subtab="tareas">Tareas</button>
+      <button type="button" class="tab-catalogo" data-subtab="calendario">Calendario</button>
+    </div>
+
+    <section id="seccion-tareas" data-subpanel="tareas">
+      <h2>Tareas</h2>
+      <p class="pista">Base de datos de pendientes: cada uno tiene un ID único, un nombre, una fecha de compromiso y una o varias actividades asociadas.</p>
+
+      <div class="acciones-form">
+        <button type="button" id="btn-mostrar-form-pendiente" class="btn-agregar" hidden>+ Agregar tarea</button>
+        <button type="button" id="btn-sincronizar-google-tasks" hidden>Sincronizar con Google</button>
+      </div>
+
+      <form id="form-pendiente" class="form-catalogo form-catalogo-vertical" hidden>
+        <input type="hidden" id="pendiente-id" />
+        <input type="text" id="pendiente-nombre" placeholder="Nombre del pendiente" required />
+        <label>
+          Fecha de compromiso
+          <input type="date" id="pendiente-fecha-compromiso" />
+        </label>
+        <div class="multi-select" id="pendiente-actividades-wrap">
+          <button type="button" id="pendiente-actividades-btn" class="multi-select-btn">Sin actividades</button>
+          <div id="pendiente-actividades-panel" class="multi-select-panel" hidden></div>
+        </div>
+        <p class="pista">Para Llamada, Correo Electrónico o Mensaje de Texto, elige un Contacto o un Hotel/Local: la tarea queda en su historial.</p>
+        <div class="fila">
+          <label>
+            Contacto
+            <select id="pendiente-contacto" class="select-contacto-ancho"><option value="">-- Selecciona --</option></select>
+          </label>
+          <label>
+            Hotel / Local
+            <select id="pendiente-destino"><option value="">-- Selecciona --</option></select>
+          </label>
+        </div>
+        <div class="acciones-form">
+          <button type="submit" id="btn-guardar-pendiente">Agregar</button>
+          <button type="button" id="btn-cancelar-pendiente" hidden>Cancelar</button>
+        </div>
+      </form>
+
+      <div class="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th data-campo="id_pendiente">ID</th><th data-campo="nombre">Nombre</th><th data-campo="creado_en">Fecha de creación</th><th data-campo="fecha_compromiso">Fecha de compromiso</th><th>Actividades</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-pendientes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-subpanel="calendario" hidden>
+      <h2>Calendario</h2>
+      <p class="pista">Muestra las cotizaciones según su Fecha de seguimiento y las tareas de Seguimiento según su Fecha de compromiso. Haz clic en una cotización para abrir su detalle.</p>
+
+      <div class="fila-filtros calendario-controles">
+        <div class="tabs-catalogo">
+          <button type="button" class="tab-catalogo" id="btn-vista-mes" data-vista="mes">Mensual</button>
+          <button type="button" class="tab-catalogo activo" id="btn-vista-semana" data-vista="semana">Semanal</button>
+          <button type="button" class="tab-catalogo" id="btn-vista-dia" data-vista="dia">Diaria</button>
+        </div>
+        <div class="calendario-nav">
+          <button type="button" id="btn-calendario-anterior" class="btn-mini" title="Anterior">‹</button>
+          <button type="button" id="btn-calendario-hoy">Hoy</button>
+          <button type="button" id="btn-calendario-siguiente" class="btn-mini" title="Siguiente">›</button>
+        </div>
+        <strong id="calendario-titulo"></strong>
+      </div>
+
+      <div id="calendario-contenido"></div>
+    </section>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="pendientes.js"></script>
+</body>
+</html>

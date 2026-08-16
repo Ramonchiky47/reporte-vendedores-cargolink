@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hotel / Local · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1 id="titulo-destino">Hotel / Local</h1>
+
+    <nav class="nav-principal">
+      <a href="catalogos.html?tab=destinos">← Hoteles / Locales</a>
+    </nav>
+
+    <div class="detalle-layout">
+      <div class="detalle-panel-info">
+        <div id="destino-ficha" class="ficha-detalle"></div>
+        <button type="button" id="btn-editar-destino">Editar</button>
+
+        <form id="form-editar-destino" class="form-catalogo form-catalogo-vertical" hidden>
+          <input type="text" id="editar-destino-nombre" placeholder="Nombre del hotel/local" required />
+          <label>
+            Plaza
+            <span class="campo-con-boton">
+              <div class="multi-select" id="editar-destino-plaza-wrap">
+                <button type="button" id="editar-destino-plaza-btn" class="multi-select-btn">Sin plazas</button>
+                <div id="editar-destino-plaza-panel" class="multi-select-panel" hidden></div>
+              </div>
+              <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="plaza" title="Agregar plaza nueva">+</button>
+            </span>
+          </label>
+          <label>
+            Grupo
+            <span class="campo-con-boton">
+              <div class="multi-select" id="editar-destino-grupo-wrap">
+                <button type="button" id="editar-destino-grupo-btn" class="multi-select-btn">Sin grupos</button>
+                <div id="editar-destino-grupo-panel" class="multi-select-panel" hidden></div>
+              </div>
+              <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="grupo" title="Agregar grupo nuevo">+</button>
+            </span>
+          </label>
+          <label>
+            Cadena
+            <span class="campo-con-boton">
+              <div class="multi-select" id="editar-destino-cadena-wrap">
+                <button type="button" id="editar-destino-cadena-btn" class="multi-select-btn">Sin cadenas</button>
+                <div id="editar-destino-cadena-panel" class="multi-select-panel" hidden></div>
+              </div>
+              <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="cadena" title="Agregar cadena nueva">+</button>
+            </span>
+          </label>
+          <textarea id="editar-destino-ubicacion" placeholder="Ubicación (dirección, referencias...)" rows="2"></textarea>
+          <div class="acciones-form">
+            <button type="submit">Guardar</button>
+            <button type="button" id="btn-cancelar-editar-destino">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="detalle-panel-asociaciones">
+        <div class="tarjeta-asociacion">
+          <h3>Contactos <span id="contador-contactos"></span></h3>
+          <div id="lista-contactos-destino"></div>
+          <div class="tarjeta-buscador-wrap">
+            <input type="text" autocomplete="off" id="buscar-contacto-agregar" placeholder="+ Agregar contacto..." />
+            <div id="opciones-contacto-agregar" class="tarjeta-buscador-opciones" hidden></div>
+          </div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Cotizaciones <span id="contador-cotizaciones"></span></h3>
+          <div id="lista-cotizaciones"></div>
+          <a id="link-agregar-cotizacion" href="#">+ Agregar cotización</a>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Órdenes <span id="contador-ordenes"></span></h3>
+          <div id="lista-ordenes"></div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Tareas <span id="contador-tareas"></span></h3>
+          <div id="lista-tareas"></div>
+          <button type="button" id="btn-mostrar-form-tarea">+ Agregar tarea</button>
+          <form id="form-nueva-tarea" class="form-catalogo form-catalogo-vertical" hidden>
+            <input type="text" id="nueva-tarea-nombre" placeholder="Nombre de la tarea" required />
+            <label>
+              Fecha de compromiso
+              <input type="date" id="nueva-tarea-fecha" />
+            </label>
+            <label>
+              Orden (requerida para poder asociarla)
+              <select id="nueva-tarea-orden" required></select>
+            </label>
+            <div id="nueva-tarea-actividades" class="fila-filtros"></div>
+            <div class="acciones-form">
+              <button type="submit">Crear</button>
+              <button type="button" id="btn-cancelar-nueva-tarea">Cancelar</button>
+            </div>
+          </form>
+          <p id="pista-tarea-sin-orden" class="pista" hidden>Necesitas al menos una orden asociada a este hotel/local para poder agregar tareas.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-rapido-catalogo-destino-overlay" class="modal-overlay" hidden>
+      <div class="modal-caja modal-caja-chica" role="dialog" aria-modal="true">
+        <button type="button" id="modal-rapido-catalogo-destino-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+        <h3 id="modal-rapido-catalogo-destino-titulo">Agregar</h3>
+        <form id="form-rapido-catalogo-destino">
+          <input type="text" id="modal-rapido-catalogo-destino-nombre" required autofocus />
+          <div class="acciones-form">
+            <button type="submit">Agregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="destino-detalle.js"></script>
+</body>
+</html>

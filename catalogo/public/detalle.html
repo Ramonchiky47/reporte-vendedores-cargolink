@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Detalle de compra · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Detalle de compra</h1>
+
+    <button type="button" id="btn-mostrar-form" class="btn-agregar">+ Agregar artículo</button>
+
+    <form id="form-detalle" hidden>
+      <input type="hidden" id="detalle-id-original" />
+      <div class="fila">
+        <label>
+          ID (orden)
+          <input type="text" id="id" required />
+        </label>
+        <label>
+          Artículo
+          <input type="text" id="articulo" />
+        </label>
+        <label>
+          Tipo
+          <input type="text" id="tipo" />
+        </label>
+        <label>
+          Fecha
+          <input type="date" id="fecha" />
+        </label>
+      </div>
+      <div class="fila">
+        <label>
+          Número de serie
+          <input type="text" id="numero_serie" />
+        </label>
+        <label>
+          Cantidad vendida
+          <input type="number" id="cantidad_vendida" step="0.01" />
+        </label>
+        <label>
+          Importe
+          <input type="number" id="importe" step="0.01" />
+        </label>
+      </div>
+
+      <div class="acciones-form">
+        <button type="submit" id="btn-guardar">Agregar artículo</button>
+        <button type="button" id="btn-cancelar">Cancelar</button>
+      </div>
+    </form>
+
+    <div class="busqueda">
+      <input type="text" autocomplete="off" id="buscar" placeholder="Buscar por ID de orden, artículo o número de serie..." />
+    </div>
+
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-campo="id">ID</th>
+            <th data-campo="articulo">Artículo</th>
+            <th data-campo="tipo">Tipo</th>
+            <th data-campo="fecha">Fecha</th>
+            <th data-campo="numero_serie">Serie</th>
+            <th data-campo="cantidad_vendida">Cantidad</th>
+            <th data-campo="importe">Importe</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-detalle"></tbody>
+      </table>
+    </div>
+
+    <p id="estado-vacio" hidden>No hay artículos para mostrar.</p>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="detalle.js"></script>
+</body>
+</html>

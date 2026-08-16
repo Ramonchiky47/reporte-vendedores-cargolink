@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Iniciar sesión · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor contenedor-login">
+    <h1>Iniciar sesión</h1>
+
+    <form id="form-login">
+      <label>
+        Usuario
+        <input type="text" id="usuario" required autofocus />
+      </label>
+      <label>
+        Contraseña
+        <input type="password" id="password" required />
+      </label>
+      <p id="error-login" class="pista" hidden></p>
+      <div class="acciones-form">
+        <button type="submit">Entrar</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html>

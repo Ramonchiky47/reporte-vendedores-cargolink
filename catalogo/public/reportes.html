@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reportes · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Reportes</h1>
+
+    <h2>Cantidades por hotel y artículo</h2>
+    <p class="pista">Por defecto muestra las órdenes con estatus "Pendiente". Ajusta el estatus o escribe un artículo para filtrar.</p>
+
+    <div class="busqueda fila-filtros">
+      <input type="text" autocomplete="off" id="filtro-articulo" placeholder="Filtrar por artículo..." />
+      <input type="text" autocomplete="off" id="filtro-hotel" placeholder="Filtrar por hotel..." />
+      <div class="multi-select" id="filtro-estatus-wrap">
+        <button type="button" id="filtro-estatus-btn" class="multi-select-btn">Pendiente</button>
+        <div id="filtro-estatus-panel" class="multi-select-panel" hidden></div>
+      </div>
+    </div>
+
+    <p id="resumen-reporte" class="pista"></p>
+
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th data-campo="hotel">Hotel</th>
+            <th data-campo="articulo">Artículo</th>
+            <th data-campo="cantidad_total">Cantidad</th>
+            <th data-campo="importe_total">Importe</th>
+            <th data-campo="num_ordenes">Órdenes</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-reporte"></tbody>
+        <tfoot>
+          <tr>
+            <td colspan="2"><strong>Total</strong></td>
+            <td id="total-cantidad"></td>
+            <td id="total-importe"></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <p id="estado-vacio" hidden>No hay resultados para este filtro.</p>
+  </div>
+
+  <div id="modal-ordenes-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-ordenes-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-ordenes-contenido"></div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="reportes.js"></script>
+</body>
+</html>

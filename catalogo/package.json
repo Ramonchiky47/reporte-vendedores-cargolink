@@ -1,0 +1,19 @@
+{
+  "name": "seguimiento-ordenes-venta",
+  "version": "1.0.0",
+  "description": "Seguimiento de Ordenes de Venta - alta, baja y cambios de ordenes, destinos y responsables",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "connect-pg-simple": "^10.0.0",
+    "express": "^4.19.2",
+    "express-session": "^1.19.0",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}

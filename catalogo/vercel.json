@@ -1,0 +1,9 @@
+{
+  "regions": ["pdx1"],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
+  ],
+  "crons": [
+    { "path": "/api/cron/seguimiento", "schedule": "0 14 * * *" }
+  ]
+}

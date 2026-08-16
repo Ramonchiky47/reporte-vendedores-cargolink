@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Datos · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Datos</h1>
+
+    <p class="pista">Vista de solo lectura de las tablas. Para editar, usa Órdenes, Detalle de compra o Catálogos.</p>
+
+    <section>
+      <h2>Órdenes (<span id="conteo-ordenes">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Fecha</th><th>Imprimir</th><th>Nombre</th><th>Número OC</th>
+              <th>Estatus sistema</th><th>Núm. seguimiento</th><th>Nota</th><th>Moneda</th>
+              <th>Importe (m. ext.)</th><th>Importe</th><th>Estatus</th><th>Observaciones</th>
+              <th>Hotel / Local</th><th>Contacto</th><th>Entrega</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-ordenes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Detalle de compra (<span id="conteo-detalle">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Artículo</th><th>Tipo</th><th>Fecha</th>
+              <th>Número de serie</th><th>Cantidad vendida</th><th>Importe</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-detalle"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Hoteles / Locales (<span id="conteo-destinos">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Hotel_Local</th><th>Hotel / Local</th><th>Plaza</th><th>Grupo</th><th>Cadena</th></tr></thead>
+          <tbody id="tabla-destinos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Contactos (<span id="conteo-contactos">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Contacto</th><th>Contacto</th></tr></thead>
+          <tbody id="tabla-contactos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Plaza (<span id="conteo-empresas">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Plaza</th><th>Plaza</th><th>Hoteles/Locales asociados</th></tr></thead>
+          <tbody id="tabla-empresas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Grupo (<span id="conteo-grupos">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Grupo</th><th>Grupo</th><th>Hoteles/Locales asociados</th></tr></thead>
+          <tbody id="tabla-grupos"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Cadena (<span id="conteo-cadenas">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Cadena</th><th>Cadena</th><th>Hoteles/Locales asociados</th></tr></thead>
+          <tbody id="tabla-cadenas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Estatus (<span id="conteo-estatus">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Estatus</th><th>Estatus</th></tr></thead>
+          <tbody id="tabla-estatus"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Estado de la República (<span id="conteo-estado-entrega">0</span>)</h2>
+      <div class="tabla-scroll">
+        <table>
+          <thead><tr><th>Id_Estado_entrega</th><th>Estado de la República</th></tr></thead>
+          <tbody id="tabla-estado-entrega"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="datos.js"></script>
+</body>
+</html>

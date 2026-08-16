@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contacto · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1 id="titulo-contacto">Contacto</h1>
+
+    <nav class="nav-principal">
+      <a href="catalogos.html?tab=contactos">← Contactos</a>
+    </nav>
+
+    <div class="detalle-layout">
+      <div class="detalle-panel-info">
+        <div id="contacto-ficha" class="ficha-detalle"></div>
+        <button type="button" id="btn-editar-contacto">Editar</button>
+
+        <form id="form-editar-contacto" class="form-catalogo form-catalogo-vertical" hidden>
+          <input type="text" id="editar-contacto-nombre" placeholder="Nombre" required />
+          <input type="text" id="editar-contacto-apellido" placeholder="Apellido" />
+          <input type="email" id="editar-contacto-correo" placeholder="Correo electrónico" />
+          <input type="tel" id="editar-contacto-telefono-local" placeholder="Teléfono local" />
+          <input type="tel" id="editar-contacto-telefono-celular" placeholder="Teléfono celular" />
+          <div class="acciones-form">
+            <button type="submit">Guardar</button>
+            <button type="button" id="btn-cancelar-editar-contacto">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="detalle-panel-asociaciones">
+        <div class="tarjeta-asociacion">
+          <h3>Hoteles / Locales <span id="contador-destinos"></span></h3>
+          <div id="lista-destinos-contacto"></div>
+          <div class="tarjeta-buscador-wrap">
+            <input type="text" autocomplete="off" id="buscar-destino-agregar" placeholder="+ Agregar hotel/local..." />
+            <div id="opciones-destino-agregar" class="tarjeta-buscador-opciones" hidden></div>
+          </div>
+          <div class="acciones-form" id="agregar-grupo-wrap">
+            <select id="agregar-grupo-select"><option value="">Agregar todos los hoteles de un grupo...</option></select>
+            <button type="button" id="btn-agregar-grupo" class="btn-mini">Agregar</button>
+          </div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Negocios <span id="contador-negocios"></span></h3>
+          <div id="lista-negocios"></div>
+          <button type="button" id="btn-mostrar-form-negocio">+ Agregar negocio</button>
+          <form id="form-nuevo-negocio" class="form-catalogo" hidden>
+            <input type="text" id="nuevo-negocio-nombre" placeholder="Nombre del negocio" required />
+            <select id="nuevo-negocio-etapa"><option value="">Etapa (opcional)</option></select>
+            <button type="submit">Crear</button>
+            <button type="button" id="btn-cancelar-nuevo-negocio">Cancelar</button>
+          </form>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Cotizaciones <span id="contador-cotizaciones"></span></h3>
+          <div id="lista-cotizaciones"></div>
+          <a id="link-agregar-cotizacion" href="#">+ Agregar cotización</a>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Órdenes <span id="contador-ordenes"></span></h3>
+          <div id="lista-ordenes"></div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Tareas <span id="contador-tareas"></span></h3>
+          <div id="lista-tareas"></div>
+          <button type="button" id="btn-mostrar-form-tarea">+ Agregar tarea</button>
+          <form id="form-nueva-tarea" class="form-catalogo form-catalogo-vertical" hidden>
+            <input type="text" id="nueva-tarea-nombre" placeholder="Nombre de la tarea" required />
+            <label>
+              Fecha de compromiso
+              <input type="date" id="nueva-tarea-fecha" />
+            </label>
+            <label>
+              Negocio (requerido para poder asociarla)
+              <select id="nueva-tarea-negocio" required></select>
+            </label>
+            <div id="nueva-tarea-actividades" class="fila-filtros"></div>
+            <div class="acciones-form">
+              <button type="submit">Crear</button>
+              <button type="button" id="btn-cancelar-nueva-tarea">Cancelar</button>
+            </div>
+          </form>
+          <p id="pista-tarea-sin-negocio" class="pista" hidden>Crea primero un negocio para poder agregar tareas asociadas a este contacto.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="contacto-detalle.js"></script>
+</body>
+</html>

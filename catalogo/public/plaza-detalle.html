@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plaza · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1 id="titulo-plaza">Plaza</h1>
+
+    <nav class="nav-principal">
+      <a href="catalogos.html?tab=destinos">← Hoteles / Locales</a>
+    </nav>
+
+    <div class="detalle-layout">
+      <div class="detalle-panel-info">
+        <div id="plaza-ficha" class="ficha-detalle"></div>
+        <button type="button" id="btn-editar-plaza">Editar</button>
+
+        <form id="form-editar-plaza" class="form-catalogo form-catalogo-vertical" hidden>
+          <input type="text" id="editar-plaza-nombre" placeholder="Nombre de la plaza" required />
+          <div class="acciones-form">
+            <button type="submit">Guardar</button>
+            <button type="button" id="btn-cancelar-editar-plaza">Cancelar</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="detalle-panel-asociaciones">
+        <div class="tarjeta-asociacion">
+          <h3>Hoteles / Locales <span id="contador-destinos"></span></h3>
+          <div id="lista-destinos-plaza"></div>
+          <div class="tarjeta-buscador-wrap">
+            <input type="text" autocomplete="off" id="buscar-destino-agregar" placeholder="+ Agregar hotel/local..." />
+            <div id="opciones-destino-agregar" class="tarjeta-buscador-opciones" hidden></div>
+          </div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Cotizaciones <span id="contador-cotizaciones"></span></h3>
+          <div id="lista-cotizaciones"></div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Órdenes <span id="contador-ordenes"></span></h3>
+          <div id="lista-ordenes"></div>
+        </div>
+
+        <div class="tarjeta-asociacion">
+          <h3>Tareas <span id="contador-tareas"></span></h3>
+          <div id="lista-tareas"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="plaza-detalle.js"></script>
+</body>
+</html>

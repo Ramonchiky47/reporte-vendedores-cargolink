@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buscador global · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Buscador global</h1>
+
+    <p class="pista">Busca por nombre de contacto, correo, hotel/local, o ID/nombre de orden. Se muestran todos los registros asociados (órdenes, cotizaciones, negocios).</p>
+
+    <div id="resultados-buscador"></div>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="buscar-global.js"></script>
+</body>
+</html>

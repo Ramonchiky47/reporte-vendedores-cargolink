@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Catálogos · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1 hidden>Catálogos</h1>
+
+    <div class="tabs-catalogo" id="tabs-catalogo" hidden>
+      <button type="button" class="tab-catalogo activo" data-tab="destinos">Hoteles / Locales</button>
+      <button type="button" class="tab-catalogo" data-tab="contactos">Contactos</button>
+      <button type="button" class="tab-catalogo" data-tab="estatus">Estatus</button>
+      <button type="button" class="tab-catalogo" data-tab="estado-entrega">Estado de la República</button>
+      <button type="button" class="tab-catalogo" data-tab="usuarios" id="tab-usuarios">Usuarios</button>
+      <button type="button" class="tab-catalogo" data-tab="productos">Productos</button>
+      <button type="button" class="tab-catalogo" data-tab="etapa-negocio">Etapa del Negocio</button>
+      <button type="button" class="tab-catalogo" data-tab="actividades">Actividades</button>
+      <button type="button" class="tab-catalogo" data-tab="almacenamiento" id="tab-almacenamiento">Almacenamiento</button>
+    </div>
+
+    <section data-panel="destinos">
+      <h2 hidden>Hoteles / Locales</h2>
+
+      <div class="tarjetas-subcatalogo" id="destinos-subnav" hidden>
+        <button type="button" class="tarjeta-subcatalogo activo" data-subtab="lista">
+          <h3>Hoteles / Locales</h3>
+          <p>Nombre, plaza, grupo y cadena asociados</p>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="plaza">
+          <h3>Plaza</h3>
+          <p>Catálogo de plazas</p>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="grupo">
+          <h3>Grupo</h3>
+          <p>Catálogo de grupos</p>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="cadena">
+          <h3>Cadena</h3>
+          <p>Catálogo de cadenas</p>
+        </button>
+      </div>
+
+      <div data-subpanel="lista">
+        <button type="button" id="btn-mostrar-form-destino" class="btn-agregar" hidden>+ Agregar Hotel/Local</button>
+
+        <form id="form-destino" class="form-catalogo form-catalogo-vertical" hidden>
+          <input type="hidden" id="destino-id" />
+          <input type="text" id="destino-nombre" placeholder="Nombre del hotel/local" required />
+          <div class="fila">
+            <label>
+              Plaza
+              <span class="campo-con-boton">
+                <div class="multi-select" id="destino-plaza-wrap">
+                  <button type="button" id="destino-plaza-btn" class="multi-select-btn">Sin plazas</button>
+                  <div id="destino-plaza-panel" class="multi-select-panel" hidden></div>
+                </div>
+                <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="plaza" title="Agregar plaza nueva">+</button>
+              </span>
+            </label>
+            <label>
+              Grupo
+              <span class="campo-con-boton">
+                <div class="multi-select" id="destino-grupo-wrap">
+                  <button type="button" id="destino-grupo-btn" class="multi-select-btn">Sin grupos</button>
+                  <div id="destino-grupo-panel" class="multi-select-panel" hidden></div>
+                </div>
+                <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="grupo" title="Agregar grupo nuevo">+</button>
+              </span>
+            </label>
+            <label>
+              Cadena
+              <span class="campo-con-boton">
+                <div class="multi-select" id="destino-cadena-wrap">
+                  <button type="button" id="destino-cadena-btn" class="multi-select-btn">Sin cadenas</button>
+                  <div id="destino-cadena-panel" class="multi-select-panel" hidden></div>
+                </div>
+                <button type="button" class="btn-mini btn-agregar-catalogo" data-catalogo="cadena" title="Agregar cadena nueva">+</button>
+              </span>
+            </label>
+          </div>
+          <textarea id="destino-ubicacion" placeholder="Ubicación (dirección, referencias...)" rows="2"></textarea>
+          <div class="acciones-form">
+            <button type="submit">Agregar</button>
+            <button type="button" id="btn-cancelar-destino" hidden>Cancelar</button>
+          </div>
+        </form>
+
+        <div class="acciones-form">
+          <button type="button" id="btn-unificar-destinos" hidden>Unificar duplicados</button>
+          <button type="button" id="btn-confirmar-unificar-destinos" hidden disabled>Confirmar unificación</button>
+          <button type="button" id="btn-cancelar-unificar-destinos" hidden>Cancelar</button>
+        </div>
+        <p class="pista" id="pista-unificar-destinos" hidden>Marca la casilla del hotel/local que se queda (se pondrá en negro) y luego las de los que se combinan en él (se pondrán en azul).</p>
+        <div id="reporte-unificar-destinos" hidden></div>
+
+        <input type="text" autocomplete="off" id="destinos-buscador" class="busqueda" placeholder="Buscar por hotel/local o plaza..." />
+
+        <div class="tabla-scroll tabla-alto-fijo">
+          <table id="tabla-destinos-tabla" class="tabla-ordenable">
+            <thead><tr><th id="th-check-destinos" hidden></th><th data-campo="destino">Hotel / Local</th><th data-campo="empresas">Plaza</th><th data-campo="grupos">Grupo</th><th data-campo="cadenas">Cadena</th><th data-campo="cotizaciones_count">Cotizaciones</th><th data-campo="ordenes_count">Órdenes</th><th data-campo="tareas_count">Tareas</th><th>Acciones</th></tr></thead>
+            <tbody id="tabla-destinos"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-subpanel="plaza" hidden>
+        <form id="form-plaza" class="form-catalogo">
+          <input type="hidden" id="plaza-id" />
+          <input type="text" id="plaza-nombre" placeholder="Nombre de la plaza" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-plaza" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Plaza</th><th>Hoteles/Locales asociados</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-plazas"></tbody>
+        </table>
+      </div>
+
+      <div data-subpanel="grupo" hidden>
+        <form id="form-grupo" class="form-catalogo">
+          <input type="hidden" id="grupo-id" />
+          <input type="text" id="grupo-nombre" placeholder="Nombre del grupo" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-grupo" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Grupo</th><th>Hoteles/Locales asociados</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-grupos"></tbody>
+        </table>
+      </div>
+
+      <div data-subpanel="cadena" hidden>
+        <form id="form-cadena" class="form-catalogo">
+          <input type="hidden" id="cadena-id" />
+          <input type="text" id="cadena-nombre" placeholder="Nombre de la cadena" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-cadena" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Cadena</th><th>Hoteles/Locales asociados</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-cadenas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-panel="contactos" hidden>
+      <h2 hidden>Contactos</h2>
+      <button type="button" id="btn-mostrar-form-contacto" class="btn-agregar">+ Agregar Contacto</button>
+
+      <form id="form-contacto" class="form-catalogo form-catalogo-vertical" hidden>
+        <input type="hidden" id="contacto-id" />
+        <input type="text" id="contacto-nombre" placeholder="Nombre" required />
+        <input type="text" id="contacto-apellido" placeholder="Apellido" />
+        <input type="email" id="contacto-correo" placeholder="Correo electrónico" />
+        <input type="tel" id="contacto-telefono-local" placeholder="Teléfono local" />
+        <input type="tel" id="contacto-telefono-celular" placeholder="Teléfono celular" />
+        <div class="multi-select" id="contacto-destinos-wrap">
+          <button type="button" id="contacto-destinos-btn" class="multi-select-btn">Sin hoteles/locales</button>
+          <div id="contacto-destinos-panel" class="multi-select-panel" hidden></div>
+        </div>
+        <div class="acciones-form">
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-contacto" hidden>Cancelar</button>
+        </div>
+      </form>
+
+      <div class="acciones-form">
+        <button type="button" id="btn-unificar-contactos">Unificar duplicados</button>
+        <button type="button" id="btn-confirmar-unificar-contactos" hidden disabled>Confirmar unificación</button>
+        <button type="button" id="btn-cancelar-unificar-contactos" hidden>Cancelar</button>
+      </div>
+      <p class="pista" id="pista-unificar-contactos" hidden>Marca la casilla del contacto que se queda (se pondrá en negro) y luego las de los que se combinan en él (se pondrán en azul).</p>
+      <div id="reporte-unificar-contactos" hidden></div>
+
+      <div class="fila-filtros">
+        <input type="text" id="filtro-cont-nombre" placeholder="Buscar por nombre..." />
+        <input type="text" id="filtro-cont-correo" placeholder="Buscar por correo..." />
+        <button type="button" id="btn-limpiar-filtros-cont" class="btn-mini" title="Limpiar filtros">✕</button>
+      </div>
+
+      <div class="tabla-scroll tabla-alto-fijo">
+        <table class="tabla-contactos-fija tabla-ordenable">
+          <thead>
+            <tr>
+              <th id="th-check-contactos" hidden></th>
+              <th data-campo="id_publico">ID</th><th data-campo="nombre">Nombre</th><th data-campo="apellido">Apellido</th><th data-campo="correo_electronico">Correo</th><th data-campo="telefono_local">Tel. local</th><th data-campo="telefono_celular">Tel. celular</th><th data-campo="destinos_texto">Hoteles/Locales</th>
+              <th data-campo="creado_en">Fecha de creación</th><th data-campo="fecha_ultima_actividad">Última actividad</th><th data-campo="cotizaciones_count">Cotizaciones</th><th data-campo="ordenes_count">Órdenes</th><th data-campo="tareas_count">Tareas</th><th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-contactos"></tbody>
+        </table>
+      </div>
+
+      <h3>Carga masiva de contactos (CSV)</h3>
+      <p class="pista">
+        Sube un archivo CSV para dar de alta o actualizar contactos en lote. Se compara por
+        <strong>Nombre + Apellido</strong> (sin distinguir mayúsculas ni acentos): si ya existe un contacto con ese
+        nombre completo se actualizan sus datos y se agregan los hoteles/locales nuevos (sin borrar los que ya tenía); si no
+        existe, se crea. Los <strong>Hoteles/Locales</strong> que no existan todavía se autocrean.
+      </p>
+      <p>
+        Columnas esperadas en el encabezado (no distingue mayúsculas/minúsculas):<br />
+        <code>nombre, apellido, correo_electronico, telefono_local, telefono_celular, destinos</code>
+      </p>
+      <p class="pista">Si un contacto tiene más de un hotel/local, sepáralos con punto y coma dentro de la misma celda, ej. <code>CDMX;Monterrey</code>.</p>
+      <div class="acciones-form">
+        <button type="button" id="btn-plantilla-contactos">Descargar plantilla CSV</button>
+      </div>
+      <form id="form-carga-contactos">
+        <label>
+          Archivo CSV
+          <input type="file" id="archivo-csv-contactos" accept=".csv,text/csv" required />
+        </label>
+        <div class="acciones-form">
+          <button type="submit" id="btn-cargar-contactos">Cargar archivo</button>
+        </div>
+      </form>
+      <div id="reporte-carga-contactos" hidden>
+        <h4>Resultado de la carga</h4>
+        <ul class="resumen-carga">
+          <li>Filas procesadas: <strong id="cc-total"></strong></li>
+          <li>Contactos nuevos: <strong id="cc-insertadas"></strong></li>
+          <li>Contactos actualizados: <strong id="cc-actualizadas"></strong></li>
+          <li>Filas con error: <strong id="cc-errores-total"></strong></li>
+          <li>Hoteles/Locales creados: <strong id="cc-destinos"></strong></li>
+        </ul>
+        <div id="cc-lista-errores"></div>
+      </div>
+    </section>
+
+    <section data-panel="estatus" hidden>
+      <h2 hidden>Estatus</h2>
+      <form id="form-estatus" class="form-catalogo">
+        <input type="hidden" id="estatus-id" />
+        <input type="text" id="estatus-nombre" placeholder="Nombre del estatus" required />
+        <button type="submit">Agregar</button>
+        <button type="button" id="btn-cancelar-estatus" hidden>Cancelar</button>
+      </form>
+      <table>
+        <thead><tr><th>Estatus</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-estatus"></tbody>
+      </table>
+    </section>
+
+    <section data-panel="estado-entrega" hidden>
+      <h2 hidden>Estado de la República</h2>
+      <form id="form-estado-entrega" class="form-catalogo">
+        <input type="hidden" id="estado-entrega-id" />
+        <input type="text" id="estado-entrega-nombre" placeholder="Nombre del estado de la república" required />
+        <button type="submit">Agregar</button>
+        <button type="button" id="btn-cancelar-estado-entrega" hidden>Cancelar</button>
+      </form>
+      <table>
+        <thead><tr><th>Estado de la República</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-estado-entrega"></tbody>
+      </table>
+    </section>
+
+    <section data-panel="usuarios" hidden>
+      <h2>Usuarios</h2>
+
+      <div class="tarjetas-subcatalogo" id="usuarios-subnav">
+        <button type="button" class="tarjeta-subcatalogo activo" data-subtab="usuarios-lista">
+          <h3>Usuarios</h3>
+          <p>Cuentas de acceso y permisos por módulo</p>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="representantes">
+          <h3>Representante</h3>
+          <p>Representante de cotizaciones</p>
+        </button>
+      </div>
+
+      <div data-subpanel="usuarios-lista">
+        <button type="button" id="btn-mostrar-form-usuario" class="btn-agregar">+ Agregar usuario</button>
+
+        <form id="form-usuario" hidden>
+          <input type="hidden" id="usuario-id" />
+          <div class="fila">
+            <label>
+              Usuario
+              <input type="text" id="usuario-nombre" required />
+            </label>
+            <label>
+              Contraseña <span id="etiqueta-password-opcional"></span>
+              <input type="password" id="usuario-password" placeholder="Dejar en blanco para no cambiar" />
+            </label>
+            <label>
+              <span>&nbsp;</span>
+              <span><input type="checkbox" id="usuario-es-admin" /> Es administrador</span>
+            </label>
+          </div>
+
+          <div class="tabla-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Módulo</th><th>Ver</th><th>Editar</th><th>Borrar</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-permisos-form"></tbody>
+            </table>
+          </div>
+
+          <div class="acciones-form">
+            <button type="submit" id="btn-guardar-usuario">Agregar usuario</button>
+            <button type="button" id="btn-cancelar-usuario">Cancelar</button>
+          </div>
+        </form>
+
+        <div class="tabla-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Usuario</th><th>Admin</th><th>Órdenes</th><th>Detalle de compra</th><th>Catálogos</th><th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-usuarios"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-subpanel="representantes" hidden>
+        <form id="form-representante" class="form-catalogo form-catalogo-vertical">
+          <input type="hidden" id="representante-id" />
+          <input type="text" id="representante-nombre" placeholder="Nombre del representante" required />
+          <input type="email" id="representante-correo" placeholder="Correo electrónico" />
+          <input type="tel" id="representante-celular" placeholder="Celular" />
+          <textarea id="representante-firma" placeholder="Firma para cotizaciones (una línea por renglón, ej. Nombre / Puesto / Correo / Teléfono / Empresa / Dirección)" rows="6"></textarea>
+          <div class="acciones-form">
+            <button type="submit">Agregar</button>
+            <button type="button" id="btn-cancelar-representante" hidden>Cancelar</button>
+          </div>
+        </form>
+
+        <table>
+          <thead><tr><th>Representante</th><th>Correo</th><th>Celular</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-representantes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-panel="productos" hidden>
+      <h2 hidden>Productos</h2>
+
+      <div class="tarjetas-subcatalogo pestanas-compactas" id="productos-subnav">
+        <button type="button" class="tarjeta-subcatalogo activo" data-subtab="items">
+          <h3>Productos <span class="contador" id="productos-contador"></span></h3>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="categorias">
+          <h3>Categoría</h3>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="lineas">
+          <h3>Línea</h3>
+        </button>
+        <button type="button" class="tarjeta-subcatalogo" data-subtab="marcas">
+          <h3>Marca</h3>
+        </button>
+      </div>
+
+      <div data-subpanel="items">
+        <div class="barra-accion">
+          <input type="text" autocomplete="off" id="productos-buscador" class="busqueda" placeholder="Buscar por Item o descripción..." />
+          <button type="button" id="btn-mostrar-form-producto" class="btn-agregar">+ Agregar producto</button>
+          <button type="button" id="btn-abrir-csv-productos" class="btn-secundario">Importar CSV</button>
+        </div>
+        <p class="pista">Busca antes de dar de alta un producto nuevo, para evitar duplicados.</p>
+
+        <div class="fila-filtros">
+          <div class="multi-select" id="filtro-prod-categoria-wrap">
+            <button type="button" id="filtro-prod-categoria-btn" class="multi-select-btn">Todas las categorías</button>
+            <div id="filtro-prod-categoria-panel" class="multi-select-panel" hidden>
+              <div id="filtro-prod-categoria-opciones"></div>
+              <div class="acciones-form">
+                <button type="button" id="btn-aplicar-filtro-prod-categoria" class="btn-mini">Aplicar</button>
+                <button type="button" id="btn-cancelar-filtro-prod-categoria" class="btn-mini">Cancelar</button>
+              </div>
+            </div>
+          </div>
+          <div class="multi-select" id="filtro-prod-linea-wrap">
+            <button type="button" id="filtro-prod-linea-btn" class="multi-select-btn">Todas las líneas</button>
+            <div id="filtro-prod-linea-panel" class="multi-select-panel" hidden>
+              <div id="filtro-prod-linea-opciones"></div>
+              <div class="acciones-form">
+                <button type="button" id="btn-aplicar-filtro-prod-linea" class="btn-mini">Aplicar</button>
+                <button type="button" id="btn-cancelar-filtro-prod-linea" class="btn-mini">Cancelar</button>
+              </div>
+            </div>
+          </div>
+          <div class="multi-select" id="filtro-prod-marca-wrap">
+            <button type="button" id="filtro-prod-marca-btn" class="multi-select-btn">Todas las marcas</button>
+            <div id="filtro-prod-marca-panel" class="multi-select-panel" hidden>
+              <div id="filtro-prod-marca-opciones"></div>
+              <div class="acciones-form">
+                <button type="button" id="btn-aplicar-filtro-prod-marca" class="btn-mini">Aplicar</button>
+                <button type="button" id="btn-cancelar-filtro-prod-marca" class="btn-mini">Cancelar</button>
+              </div>
+            </div>
+          </div>
+          <button type="button" id="btn-limpiar-filtros-prod" class="btn-mini" title="Limpiar filtros">✕</button>
+        </div>
+
+        <form id="form-producto" class="form-catalogo form-catalogo-vertical panel-form" hidden>
+          <input type="hidden" id="producto-item-original" />
+          <input type="text" id="producto-item" placeholder="Item (código único)" required />
+          <input type="text" id="producto-descripcion" placeholder="Descripción" />
+          <div class="fila">
+            <label>
+              Categoría
+              <span class="campo-con-boton">
+                <select id="producto-categoria"><option value="">-- Selecciona --</option></select>
+                <button type="button" class="btn-mini btn-agregar-catalogo-producto" data-catalogo="categoria" title="Agregar categoría nueva">+</button>
+              </span>
+            </label>
+            <label>
+              Línea
+              <span class="campo-con-boton">
+                <select id="producto-linea"><option value="">-- Selecciona --</option></select>
+                <button type="button" class="btn-mini btn-agregar-catalogo-producto" data-catalogo="linea" title="Agregar línea nueva">+</button>
+              </span>
+            </label>
+            <label>
+              Marca
+              <span class="campo-con-boton">
+                <select id="producto-marca"><option value="">-- Selecciona --</option></select>
+                <button type="button" class="btn-mini btn-agregar-catalogo-producto" data-catalogo="marca" title="Agregar marca nueva">+</button>
+              </span>
+            </label>
+          </div>
+          <div class="fila">
+            <label>
+              Precio en USD
+              <input type="number" id="producto-precio-usd" step="0.01" required />
+            </label>
+            <label>
+              Precio en MXN
+              <input type="number" id="producto-precio-mxn" step="0.01" />
+            </label>
+          </div>
+          <div class="acciones-form">
+            <button type="submit" id="btn-guardar-producto">Agregar</button>
+            <button type="button" id="btn-cancelar-producto" hidden>Cancelar</button>
+          </div>
+        </form>
+
+        <div class="tabla-scroll tabla-alto-fijo">
+          <table id="tabla-productos-tabla" class="tabla-ordenable">
+            <thead>
+              <tr>
+                <th data-campo="item">Item</th>
+                <th data-campo="descripcion">Descripción</th>
+                <th data-campo="categoria_nombre">Categoría</th>
+                <th data-campo="linea_nombre">Línea</th>
+                <th data-campo="marca_nombre">Marca</th>
+                <th data-campo="precio_usd" class="num">USD</th>
+                <th data-campo="precio_mxn" class="num">MXN</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-productos"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div data-subpanel="categorias" hidden>
+        <form id="form-categoria" class="form-catalogo">
+          <input type="hidden" id="categoria-id" />
+          <input type="text" id="categoria-nombre" placeholder="Nombre de la categoría" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-categoria" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Categoría</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-categorias"></tbody>
+        </table>
+      </div>
+
+      <div data-subpanel="lineas" hidden>
+        <form id="form-linea" class="form-catalogo">
+          <input type="hidden" id="linea-id" />
+          <input type="text" id="linea-nombre" placeholder="Nombre de la línea" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-linea" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Línea</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-lineas"></tbody>
+        </table>
+      </div>
+
+      <div data-subpanel="marcas" hidden>
+        <form id="form-marca" class="form-catalogo">
+          <input type="hidden" id="marca-id" />
+          <input type="text" id="marca-nombre" placeholder="Nombre de la marca" required />
+          <button type="submit">Agregar</button>
+          <button type="button" id="btn-cancelar-marca" hidden>Cancelar</button>
+        </form>
+        <table>
+          <thead><tr><th>ID</th><th>Marca</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-marcas"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section data-panel="etapa-negocio" hidden>
+      <h2>Etapa del Negocio</h2>
+      <form id="form-etapa-negocio" class="form-catalogo">
+        <input type="hidden" id="etapa-negocio-id" />
+        <input type="text" id="etapa-negocio-nombre" placeholder="Nombre de la etapa" required />
+        <button type="submit">Agregar</button>
+        <button type="button" id="btn-cancelar-etapa-negocio" hidden>Cancelar</button>
+      </form>
+      <table>
+        <thead><tr><th>ID</th><th>Etapa</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-etapa-negocio"></tbody>
+      </table>
+    </section>
+
+    <section data-panel="actividades" hidden>
+      <h2>Actividades</h2>
+      <p class="pista">Catálogo de actividades que se pueden asignar a los Pendientes (Tareas).</p>
+      <form id="form-actividad" class="form-catalogo">
+        <input type="hidden" id="actividad-id" />
+        <input type="text" id="actividad-nombre" placeholder="Nombre de la actividad" required />
+        <button type="submit">Agregar</button>
+        <button type="button" id="btn-cancelar-actividad" hidden>Cancelar</button>
+      </form>
+      <table>
+        <thead><tr><th>Actividad</th><th>Acciones</th></tr></thead>
+        <tbody id="tabla-actividades"></tbody>
+      </table>
+    </section>
+
+    <section data-panel="almacenamiento" hidden>
+      <h2>Almacenamiento de la base de datos</h2>
+      <p class="pista">Tamaño actual de la base de datos (Supabase) contra el límite del plan, para evitar que el proyecto entre en modo de solo lectura.</p>
+      <div id="reporte-almacenamiento" class="reporte-almacenamiento"></div>
+      <div class="acciones-form">
+        <button type="button" id="btn-actualizar-almacenamiento">Actualizar</button>
+      </div>
+    </section>
+
+    <div id="modal-rapido-catalogo-destino-overlay" class="modal-overlay" hidden>
+      <div class="modal-caja modal-caja-chica" role="dialog" aria-modal="true">
+        <button type="button" id="modal-rapido-catalogo-destino-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+        <h3 id="modal-rapido-catalogo-destino-titulo">Agregar</h3>
+        <form id="form-rapido-catalogo-destino">
+          <input type="text" id="modal-rapido-catalogo-destino-nombre" required autofocus />
+          <div class="acciones-form">
+            <button type="submit">Agregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="modal-rapido-catalogo-producto-overlay" class="modal-overlay" hidden>
+      <div class="modal-caja modal-caja-chica" role="dialog" aria-modal="true">
+        <button type="button" id="modal-rapido-catalogo-producto-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+        <h3 id="modal-rapido-catalogo-producto-titulo">Agregar</h3>
+        <form id="form-rapido-catalogo-producto">
+          <input type="text" id="modal-rapido-catalogo-producto-nombre" required autofocus />
+          <div class="acciones-form">
+            <button type="submit">Agregar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="modal-producto-incompleto-overlay" class="modal-overlay" hidden>
+      <div class="modal-caja modal-caja-chica" role="dialog" aria-modal="true">
+        <h3>Falta información</h3>
+        <p class="pista">No se guardará el registro hasta completar Categoría, Línea y Marca.</p>
+        <div class="acciones-form">
+          <button type="button" id="btn-producto-incompleto-continuar">Continuar</button>
+          <button type="button" id="btn-producto-incompleto-cancelar">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-csv-productos-overlay" class="modal-overlay" hidden>
+      <div class="modal-caja" role="dialog" aria-modal="true">
+        <button type="button" id="modal-csv-productos-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+        <h2>Importar productos por CSV</h2>
+        <p class="pista">
+          Sube un archivo CSV para dar de alta o actualizar productos en lote. Si el <strong>Item</strong> ya existe
+          se actualiza; si no, se crea. <strong>Categoría</strong>, <strong>Línea</strong> y <strong>Marca</strong>
+          se autocrean por nombre si todavía no existen en su catálogo.
+        </p>
+        <p>
+          Columnas esperadas en el encabezado (no distingue mayúsculas/minúsculas):<br />
+          <code>item, descripcion, categoria, linea, marca, precio_usd, precio_mxn</code>
+        </p>
+        <div class="acciones-form">
+          <button type="button" id="btn-plantilla-productos">Descargar plantilla CSV</button>
+        </div>
+        <form id="form-carga-productos">
+          <label>
+            Archivo CSV
+            <input type="file" id="archivo-csv-productos" accept=".csv,text/csv" required />
+          </label>
+          <div class="acciones-form">
+            <button type="submit" id="btn-cargar-productos">Cargar archivo</button>
+          </div>
+        </form>
+        <div id="reporte-carga-productos" hidden>
+          <h4>Resultado de la carga</h4>
+          <ul class="resumen-carga">
+            <li>Filas procesadas: <strong id="cp-total"></strong></li>
+            <li>Productos nuevos: <strong id="cp-insertadas"></strong></li>
+            <li>Productos actualizados: <strong id="cp-actualizadas"></strong></li>
+            <li>Filas con error: <strong id="cp-errores-total"></strong></li>
+            <li>Categorías creadas: <strong id="cp-categorias"></strong></li>
+            <li>Líneas creadas: <strong id="cp-lineas"></strong></li>
+            <li>Marcas creadas: <strong id="cp-marcas"></strong></li>
+          </ul>
+          <div id="cp-lista-errores"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="catalogos.js"></script>
+</body>
+</html>

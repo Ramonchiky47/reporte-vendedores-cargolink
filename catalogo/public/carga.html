@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Carga inicial · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Carga inicial</h1>
+
+    <section id="seccion-carga-ordenes">
+      <h2>Órdenes</h2>
+      <p>
+        Sube un archivo CSV (separado por comas) con tus Órdenes. Si el <strong>Hotel / Local</strong> o el
+        <strong>Contacto</strong> que traiga el archivo no existen todavía, se crean automáticamente
+        en su catálogo; si el Hotel / Local trae una <strong>Empresa</strong>, se agrega a las empresas asociadas de ese
+        hotel/local (sin duplicar).
+      </p>
+      <p class="pista">
+        <strong>Observaciones, Hotel / Local, Contacto, Empresa y Estado de la República</strong> solo se cargan la primera
+        vez que se crea una orden. Si vuelves a subir el archivo para una orden que ya existe, esos campos no se
+        modifican (se protegen los cambios hechos a mano en la app); el resto de las columnas sí se actualiza.
+      </p>
+
+      <p>
+        Columnas esperadas en el encabezado (no distingue mayúsculas/minúsculas):<br />
+        <code>id, fecha, imprimir, nombre, numero_oc, estatus_sistema, numero_seguimiento, nota, moneda, importe_moneda_extranjera, importe, estatus, observaciones, destino, contacto, empresa, estado_entrega</code>
+      </p>
+      <p class="pista"><code>moneda</code> es texto de máximo 5 caracteres (ej. "USD"); <code>importe_moneda_extranjera</code> es numérico con dos decimales.</p>
+
+      <div class="acciones-form">
+        <button type="button" id="btn-plantilla">Descargar plantilla CSV</button>
+      </div>
+
+      <form id="form-carga">
+        <label>
+          Archivo CSV
+          <input type="file" id="archivo-csv" accept=".csv,text/csv" required />
+        </label>
+        <div class="acciones-form">
+          <button type="submit" id="btn-cargar">Cargar archivo</button>
+        </div>
+      </form>
+
+      <div id="reporte" hidden>
+        <h3>Resultado de la carga</h3>
+        <ul class="resumen-carga">
+          <li>Filas procesadas: <strong id="r-total"></strong></li>
+          <li>Órdenes nuevas: <strong id="r-insertadas"></strong></li>
+          <li>Órdenes actualizadas: <strong id="r-actualizadas"></strong></li>
+          <li>Filas con error: <strong id="r-errores-total"></strong></li>
+          <li>Hoteles/Locales creados: <strong id="r-destinos"></strong></li>
+          <li>Contactos creados: <strong id="r-contactos"></strong></li>
+          <li>Empresas agregadas: <strong id="r-empresas"></strong></li>
+        </ul>
+        <div id="lista-errores"></div>
+      </div>
+    </section>
+
+    <section id="seccion-carga-detalle">
+      <h2>Detalle de compra</h2>
+      <p>
+        Sube un archivo CSV con los artículos de cada orden. El <strong>ID</strong> aquí enlaza con el ID de una
+        Orden pero <strong>no es único</strong>: repite el mismo ID en varias filas si esa orden tiene varios
+        artículos. Cada fila del archivo se agrega como un artículo nuevo (volver a cargar el mismo archivo
+        duplicará los artículos, no los reemplaza).
+      </p>
+
+      <p>
+        Columnas esperadas en el encabezado (no distingue mayúsculas/minúsculas):<br />
+        <code>id, articulo, tipo, fecha, numero_serie, cantidad_vendida, importe</code>
+      </p>
+
+      <div class="acciones-form">
+        <button type="button" id="btn-plantilla-detalle">Descargar plantilla CSV</button>
+      </div>
+
+      <form id="form-carga-detalle">
+        <label>
+          Archivo CSV
+          <input type="file" id="archivo-csv-detalle" accept=".csv,text/csv" required />
+        </label>
+        <div class="acciones-form">
+          <button type="submit" id="btn-cargar-detalle">Cargar archivo</button>
+        </div>
+      </form>
+
+      <div id="reporte-detalle" hidden>
+        <h3>Resultado de la carga</h3>
+        <ul class="resumen-carga">
+          <li>Filas procesadas: <strong id="rd-total"></strong></li>
+          <li>Artículos insertados: <strong id="rd-insertadas"></strong></li>
+          <li>Filas con error: <strong id="rd-errores-total"></strong></li>
+        </ul>
+        <div id="lista-errores-detalle"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="carga.js"></script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Órdenes · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1 hidden>Órdenes</h1>
+
+    <nav class="nav-principal" hidden>
+      <a href="catalogos.html?tab=contactos">Contactos</a>
+      <a href="catalogos.html?tab=destinos">Hotel / Local</a>
+    </nav>
+
+    <button type="button" id="btn-mostrar-form" class="btn-agregar">+ Agregar orden</button>
+
+    <form id="form-orden" hidden>
+      <input type="hidden" id="orden-id-original" />
+      <div class="fila">
+        <label>
+          ID (único)
+          <input type="text" id="id" required />
+        </label>
+        <label>
+          Fecha
+          <input type="date" id="fecha" required />
+        </label>
+        <label>
+          Imprimir
+          <input type="text" id="imprimir" />
+        </label>
+        <label>
+          Nombre
+          <input type="text" id="nombre" />
+        </label>
+      </div>
+
+      <div class="fila">
+        <label>
+          Número de OC/cheque
+          <input type="text" id="numero_oc" />
+        </label>
+        <label>
+          Estatus del sistema
+          <input type="text" id="estatus_sistema" />
+        </label>
+        <label>
+          Número de seguimiento
+          <input type="text" id="numero_seguimiento" />
+        </label>
+        <label>
+          Estatus
+          <select id="estatus_id">
+            <option value="">-- Selecciona --</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="fila">
+        <label>
+          Moneda
+          <input type="text" id="moneda" maxlength="5" />
+        </label>
+        <label>
+          Importe (moneda extranjera)
+          <input type="number" id="importe_moneda_extranjera" step="0.01" />
+        </label>
+        <label>
+          Importe
+          <input type="number" id="importe" step="0.01" />
+        </label>
+        <label>
+          Estado de la República
+          <select id="estado_entrega_id">
+            <option value="">-- Selecciona --</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="fila">
+        <label>
+          Hotel / Local
+          <span class="campo-con-boton">
+            <select id="destino_id">
+              <option value="">-- Selecciona --</option>
+            </select>
+            <button type="button" id="btn-nuevo-destino" class="btn-mini" title="Agregar hotel/local nuevo">+</button>
+          </span>
+        </label>
+        <label>
+          Contacto
+          <span class="campo-con-boton">
+            <select id="contacto_id">
+              <option value="">-- Selecciona --</option>
+            </select>
+            <button type="button" id="btn-nuevo-contacto" class="btn-mini" title="Agregar contacto nuevo">+</button>
+          </span>
+        </label>
+      </div>
+
+      <label>
+        Nota
+        <textarea id="nota" rows="2"></textarea>
+      </label>
+      <label>
+        Observaciones
+        <textarea id="observaciones" rows="2"></textarea>
+      </label>
+
+      <div class="acciones-form">
+        <button type="submit" id="btn-guardar">Agregar orden</button>
+        <button type="button" id="btn-cancelar">Cancelar</button>
+      </div>
+    </form>
+
+    <div class="busqueda fila-filtros">
+      <input type="text" autocomplete="off" id="buscar" placeholder="Buscar por ID, nombre, número de OC, hotel/local o artículo..." />
+      <div class="multi-select" id="filtro-estatus-wrap">
+        <button type="button" id="filtro-estatus-btn" class="multi-select-btn">Todos los estatus</button>
+        <div id="filtro-estatus-panel" class="multi-select-panel" hidden></div>
+      </div>
+    </div>
+
+    <div class="acciones-form">
+      <button type="button" id="btn-enviar-tareas-ordenes" class="btn-mini" disabled>Enviar a tareas (0)</button>
+    </div>
+
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="check-todos-ordenes" title="Seleccionar todos" /></th>
+            <th data-campo="id">ID</th>
+            <th data-campo="fecha">Fecha</th>
+            <th data-campo="estatus_nombre">Estatus</th>
+            <th data-campo="importe">Importe</th>
+            <th data-campo="destino_nombre">Hotel / Local</th>
+            <th data-campo="contacto_nombre">Contacto</th>
+            <th data-campo="estado_entrega_nombre">Entrega</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-ordenes"></tbody>
+      </table>
+    </div>
+
+    <p id="estado-vacio" hidden>No hay órdenes para mostrar.</p>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <div id="modal-rapido-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja modal-caja-chica" role="dialog" aria-modal="true">
+      <button type="button" id="modal-rapido-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <h3 id="modal-rapido-titulo"></h3>
+      <form id="form-rapido">
+        <label>
+          <span id="modal-rapido-etiqueta"></span>
+          <input type="text" id="modal-rapido-nombre" required autofocus />
+        </label>
+        <div class="acciones-form">
+          <button type="submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Buscar Órdenes · CRM-ON</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="contenedor">
+    <h1>Buscar Órdenes</h1>
+
+    <div class="busqueda fila-filtros">
+      <input type="text" autocomplete="off" id="buscar-ordenes" placeholder="Escribe al menos 3 letras (ID, nombre, número de OC, hotel/local o artículo)..." autofocus />
+      <div class="multi-select" id="filtro-estatus-wrap">
+        <button type="button" id="filtro-estatus-btn" class="multi-select-btn">Todos los estatus</button>
+        <div id="filtro-estatus-panel" class="multi-select-panel" hidden></div>
+      </div>
+    </div>
+    <p id="pista-busqueda" class="pista">Escribe al menos 3 letras para buscar.</p>
+
+    <div id="resultados" class="resultados"></div>
+    <p id="estado-vacio" hidden>No se encontraron órdenes.</p>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal-caja" role="dialog" aria-modal="true">
+      <button type="button" id="modal-cerrar" class="modal-cerrar" aria-label="Cerrar">✕</button>
+      <div id="modal-contenido"></div>
+    </div>
+  </div>
+
+  <script src="auth.js"></script>
+  <script src="buscar.js"></script>
+</body>
+</html>
