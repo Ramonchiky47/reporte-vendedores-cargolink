@@ -126,7 +126,7 @@
         <div class="der">
           <p>Referencia: {{ doc.id_cotizacion }}</p>
           <p>Creación de la cotización: {{ doc.fecha_creacion_larga }}</p>
-          <p>Caducidad de la cotización: {{ doc.fecha_vencimiento_larga or "—" }}</p>
+          <p>Vigencia: {{ doc.fecha_vencimiento_larga or "—" }}</p>
           <p>Cotización creada por: <strong>{{ doc.vendedor or "—" }}</strong></p>
         </div>
       </div>
