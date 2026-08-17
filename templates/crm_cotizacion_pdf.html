@@ -204,8 +204,8 @@
   <div class="firma">
     <p>¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
     <p class="nombre">{{ doc.firma_nombre }}</p>
-    <p>{{ doc.firma_puesto }}</p>
-    <p>Tel {{ doc.firma_telefono }}</p>
+    {% if doc.firma_puesto %}<p>{{ doc.firma_puesto }}</p>{% endif %}
+    {% if doc.firma_telefono %}<p>Tel {{ doc.firma_telefono }}</p>{% endif %}
     <p>Correo: {{ doc.firma_correo }}</p>
   </div>
 </body>

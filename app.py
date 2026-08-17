@@ -2535,6 +2535,15 @@ def obtener_lineas_cotizacion_crm(cotizacion_id):
     } for r in filas]
 
 
+def nombre_desde_correo(correo):
+    """Deriva un nombre legible de un correo tipo nombre.apellido@dominio
+    ("marielbis.camacaro@av2logistics.com" -> "Marielbis Camacaro"), para
+    cuando el creador de una cotización no tiene firma capturada todavía."""
+    local = (correo or "").split("@")[0]
+    partes = [p for p in re.split(r"[._-]+", local) if p]
+    return " ".join(p.capitalize() for p in partes)
+
+
 FIRMA_DEFAULT = {
     "nombre_firma": "Lic Armando Villanueva Silva",
     "puesto": "Ejecutivo de Cuenta Monterrey",
@@ -2553,25 +2562,33 @@ def construir_documento_cotizacion_crm(cotizacion_id):
                ct.nombre AS contacto_nombre, ct.apellido AS contacto_apellido,
                ct.telefono AS contacto_telefono, ct.correo AS contacto_correo,
                i.nombre AS incoterm, m.nombre AS modalidad,
-               f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo
+               f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo,
+               cu.email AS creador_correo
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
         WHERE co.id = %s
     """, (cotizacion_id,)).fetchone()
     db.close()
     if fila is None:
         return None
 
+    # El nombre de quien creó la cotización manda sobre el vendedor asignado
+    # al cliente: usa la firma capturada si existe, si no deriva un nombre
+    # legible del correo de login (p.ej. "marielbis.camacaro@..." →
+    # "Marielbis Camacaro"). Solo cae al vendedor del cliente en cotizaciones
+    # viejas, de antes de que existiera creado_por_user_id.
+    nombre_creador = fila["nombre_firma"] or nombre_desde_correo(fila["creador_correo"])
+
     if fila["cliente_folio"] is not None:
         cliente_nombre = fila["cliente_nombre"] or "#N/D"
-        vendedor = fila["cliente_vendedor"] or ""
     else:
         cliente_nombre = fila["cliente_prospecto"] or "Prospecto"
-        vendedor = ""
+    vendedor = nombre_creador or (fila["cliente_vendedor"] or "") if fila["cliente_folio"] is not None else nombre_creador
 
     lineas_crudas = obtener_lineas_cotizacion_crm(cotizacion_id)
     lineas = []
@@ -2622,10 +2639,15 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         "descripcion": fila["descripcion"] or "",
         "lineas": lineas,
         "totales_moneda": totales_moneda,
-        "firma_nombre": fila["nombre_firma"] or FIRMA_DEFAULT["nombre_firma"],
-        "firma_puesto": fila["firma_puesto"] or FIRMA_DEFAULT["puesto"],
-        "firma_telefono": fila["firma_telefono"] or FIRMA_DEFAULT["telefono"],
-        "firma_correo": fila["firma_correo"] or FIRMA_DEFAULT["correo"],
+        # Puesto y teléfono solo se muestran si la persona los capturó en su
+        # firma (Catálogos → Firmas de Cotización): no se inventan. El correo
+        # sí cae al correo real de login del creador si no capturó uno propio.
+        # Si la cotización no tiene creador conocido (de antes de este
+        # catálogo), se usa la firma genérica anterior como respaldo.
+        "firma_nombre": nombre_creador or FIRMA_DEFAULT["nombre_firma"],
+        "firma_puesto": fila["firma_puesto"] or (FIRMA_DEFAULT["puesto"] if not fila["creador_correo"] else ""),
+        "firma_telefono": fila["firma_telefono"] or (FIRMA_DEFAULT["telefono"] if not fila["creador_correo"] else ""),
+        "firma_correo": fila["firma_correo"] or fila["creador_correo"] or FIRMA_DEFAULT["correo"],
     }
 
 
