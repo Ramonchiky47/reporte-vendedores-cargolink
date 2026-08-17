@@ -1,0 +1,76 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 8.7pt; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; z-index: 2; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: #f5f5f5; }
+  .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.68rem; margin-right: 0.25rem; white-space: nowrap; }
+  .badge-si { background: #dcfce7; color: #166534; }
+  .badge-no { background: #f1f1f1; color: #999; }
+  .badge-nd { background: #f1f1f1; color: #aaa; font-style: italic; }
+  .buscador-clientes { margin-bottom: 0.9rem; max-width: 340px; }
+  .buscador-clientes input { width: 100%; padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  #contador-clientes-visibles { font-weight: 600; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Clientes</h2>
+  <p class="pista">Cliente, vendedor y desarrollador asignado (misma fuente que Reportes → Clientes Asignados).</p>
+
+  {% if clientes %}
+  <div class="buscador-clientes">
+    <input type="text" id="buscador-clientes" autocomplete="off" placeholder="Buscar por cliente, vendedor o desarrollador..." />
+  </div>
+  <p class="pista"><span id="contador-clientes-visibles">{{ clientes|length }}</span> de {{ "{:,}".format(clientes|length) }} cliente(s).</p>
+  <div class="tabla-scroll">
+    <table class="tabla-ordenable">
+      <thead>
+        <tr>
+          <th data-campo="cliente">Cliente</th>
+          <th data-campo="vendedor">Vendedor</th>
+          <th data-campo="desarrollador">Desarrollador</th>
+          <th>Actividad</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-clientes-cuerpo">
+        {% for c in clientes %}
+        <tr onclick="window.location.href='{{ url_for('crm_cliente_detalle', folio=c.folio) }}'">
+          <td>{{ c.cliente }}</td>
+          <td>{{ c.vendedor }}</td>
+          <td>{{ c.desarrollador }}</td>
+          <td>
+            <span class="badge {{ 'badge-si' if c.tiene_booking else 'badge-no' }}">Órdenes</span>
+            <span class="badge {{ 'badge-si' if c.tiene_cotizacion else 'badge-no' }}">Cotizaciones</span>
+            <span class="badge badge-nd" title="Sin fuente de datos de tareas por cliente todavía">Tareas</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay clientes asignados.</p>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      const input = document.getElementById('buscador-clientes');
+      if (!input) return;
+      const filas = Array.from(document.querySelectorAll('#tabla-clientes-cuerpo tr'));
+      const contador = document.getElementById('contador-clientes-visibles');
+      input.addEventListener('input', () => {
+        const termino = input.value.trim().toLowerCase();
+        let visibles = 0;
+        filas.forEach((fila) => {
+          const coincide = !termino || fila.textContent.toLowerCase().includes(termino);
+          fila.hidden = !coincide;
+          if (coincide) visibles += 1;
+        });
+        contador.textContent = visibles;
+      });
+    })();
+  </script>
+{% endblock %}

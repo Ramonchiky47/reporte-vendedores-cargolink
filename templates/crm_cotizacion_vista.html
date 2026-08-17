@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Cotización {{ doc.id_cotizacion }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --vino: #7a1f2c; --borde: #d0d0d0; --fuente: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--fuente); color: #222; background: #f1f1f1; -webkit-font-smoothing: antialiased; }
+  .hoja { max-width: 900px; margin: 1.5rem auto; background: #fff; padding: 2rem 2.5rem 3rem; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+
+  .barra-acciones { max-width: 900px; margin: 0 auto; padding: 0.75rem 2.5rem 0; display: flex; justify-content: flex-end; gap: 0.6rem; }
+  .barra-acciones a, .barra-acciones button {
+    padding: 0.45rem 0.9rem; border-radius: 6px; font-size: 0.85rem; font-family: system-ui, sans-serif;
+    border: 1px solid var(--borde); background: #fff; color: #333; cursor: pointer; text-decoration: none;
+  }
+  .barra-acciones .btn-imprimir { background: var(--vino); color: #fff; border-color: var(--vino); }
+
+  .encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
+  .logo { display: flex; align-items: center; gap: 0.5rem; }
+  .logo-badge {
+    width: 46px; height: 46px; border-radius: 10px; background: var(--vino); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem;
+  }
+  .logo-texto { font-size: 0.62rem; color: var(--vino); font-weight: 700; letter-spacing: 0.04em; }
+  .empresa { flex: 1; text-align: center; }
+  .empresa h1 { margin: 0 0 0.3rem; font-size: 1.6rem; font-weight: 700; letter-spacing: 0.06em; }
+  .empresa p { margin: 0.1rem 0; font-size: 0.75rem; font-weight: 500; color: #444; letter-spacing: 0.01em; }
+
+  .agradecimiento { text-align: center; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; margin: 1.2rem 0 0.6rem; color: #555; }
+  .realizada-por { font-size: 0.85rem; margin-bottom: 0.6rem; }
+  .realizada-por strong { font-weight: 700; }
+
+  .barra-vino {
+    background: var(--vino); color: #fff; display: flex; justify-content: space-between; align-items: center;
+    padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 700; margin: 0.4rem 0 1rem; border-radius: 3px;
+  }
+  .barra-vino.vacia { padding: 0.5rem 1rem; }
+
+  .datos-cliente { display: flex; justify-content: space-between; gap: 2rem; margin-bottom: 0.8rem; font-size: 0.85rem; }
+  .datos-cliente div p { margin: 0.15rem 0; }
+  .datos-cliente strong { display: inline-block; min-width: 80px; }
+
+  .caja-titulo { background: #fbe3e2; border-radius: 10px; padding: 1.3rem 1.6rem; margin: 1rem 0 1.4rem; }
+  .caja-titulo h2 { margin: 0 0 1rem; font-size: 1.4rem; font-weight: 700; color: #222; letter-spacing: 0.01em; }
+  .caja-titulo .fila-datos { display: flex; justify-content: space-between; gap: 2rem; font-size: 0.85rem; }
+  .caja-titulo .fila-datos > div { flex: 1; }
+  .caja-titulo .fila-datos p { margin: 0.15rem 0; }
+  .caja-titulo .fila-datos .der { text-align: right; }
+  .caja-titulo strong { font-weight: 700; }
+
+  .caja-notas { border: 1px solid var(--borde); border-radius: 10px; padding: 1rem 1.3rem; margin: 1rem 0; }
+  .caja-notas .notas-titulo { text-align: left; margin: 0 0 0.5rem; }
+
+  .firma { margin: 1.2rem 0 0.4rem; font-size: 0.85rem; color: #333; }
+  .firma .pregunta { margin: 0 0 0.6rem; }
+  .firma .nombre { font-weight: 700; margin: 0; }
+  .firma p { margin: 0.15rem 0; color: #444; }
+
+  .saludo { font-size: 0.85rem; margin: 0.6rem 0 1rem; }
+
+  .rejilla-envio {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem 1rem; font-size: 0.8rem; margin-bottom: 1.2rem;
+  }
+  .rejilla-envio .campo { border-bottom: 1px solid var(--borde); padding-bottom: 0.3rem; }
+  .rejilla-envio .campo strong { display: block; font-size: 0.68rem; letter-spacing: 0.03em; color: #555; }
+
+  table.tabla-rate { width: 100%; border-collapse: collapse; margin-bottom: 0.4rem; font-size: 0.82rem; }
+  table.tabla-rate th { background: var(--vino); color: #fff; text-align: left; padding: 0.5rem 0.8rem; font-size: 0.82rem; }
+  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; }
+  table.tabla-rate td { padding: 0.5rem 0.8rem; border: 1px solid var(--borde); }
+
+  .descripcion-texto { font-size: 0.82rem; padding: 0.6rem 0.2rem 1.2rem; min-height: 1.5rem; }
+
+  .tarjetas-totales { display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.8rem 0 1.4rem; font-family: system-ui, sans-serif; }
+  .tarjeta-moneda { flex: 1 1 220px; border: 1px solid var(--borde); border-radius: 10px; padding: 0.9rem 1rem; }
+  .tarjeta-moneda__titulo { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.5rem; }
+  .tarjeta-moneda .fila { display: flex; justify-content: space-between; font-size: 0.85rem; color: #444; padding: 0.15rem 0; }
+  .tarjeta-moneda .fila-total { border-top: 1px solid var(--borde); margin-top: 0.35rem; padding-top: 0.45rem; color: var(--vino); font-weight: 700; }
+
+  .notas-titulo { text-align: center; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.03em; margin: 1.2rem 0 0.6rem; }
+  .notas { font-size: 0.72rem; color: #333; line-height: 1.5; }
+  .notas p { margin: 0.3rem 0; }
+
+  @media print {
+    body { background: #fff; }
+    .hoja { box-shadow: none; margin: 0; max-width: none; }
+    .barra-acciones { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="barra-acciones">
+    <a href="{{ url_for('crm_cotizacion_editar', cotizacion_id=cotizacion_id) }}">&larr; Volver</a>
+    <button type="button" onclick="window.print()">Imprimir</button>
+    <a class="btn-imprimir" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion_id) }}">Descargar PDF</a>
+  </div>
+
+  <div class="hoja">
+    <div class="encabezado">
+      <div class="logo">
+        <div class="logo-badge">AV2</div>
+        <div class="logo-texto">IN LOGISTICS<br>YOUR PEACE<br>IS OUR<br>RESPONSABILITY</div>
+      </div>
+      <div class="empresa">
+        <h1>AV2 LOGISTICS</h1>
+        <p>AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
+        <p>ZAPOPAN, JALISCO</p>
+        <p>R.F.C ALO171009TZ1</p>
+      </div>
+      <div style="width:46px;"></div>
+    </div>
+
+    <p class="agradecimiento">AGRADECEMOS SU PREFERENCIA</p>
+
+    <div class="caja-titulo">
+      <h2>{{ doc.nombre_cotizacion or "Cotización" }}</h2>
+      <div class="fila-datos">
+        <div class="izq">
+          <p><strong>{{ doc.cliente_nombre }}</strong></p>
+          <p>{{ doc.destino }}</p>
+          {% if doc.contacto_nombre %}<p><strong>{{ doc.contacto_nombre }}</strong></p>{% endif %}
+          {% if doc.contacto_correo %}<p>{{ doc.contacto_correo }}</p>{% endif %}
+        </div>
+        <div class="der">
+          <p>Referencia: {{ doc.id_cotizacion }}</p>
+          <p>Creación de la cotización: {{ doc.fecha_creacion_larga }}</p>
+          <p>Caducidad de la cotización: {{ doc.fecha_vencimiento_larga or "—" }}</p>
+          <p>Cotización creada por: <strong>{{ doc.vendedor or "—" }}</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <p class="saludo">
+      Estimado Cliente.<br>
+      En atención a su amable solicitud de cotización, le proporcionamos a usted los costos para transporte de su mercancía.
+    </p>
+
+    <div class="barra-vino vacia">&nbsp;</div>
+
+    <div class="rejilla-envio">
+      <div class="campo"><strong>ORIGEN</strong>{{ doc.origen }}</div>
+      <div class="campo"><strong>MODALIDAD</strong>{{ doc.modalidad }}</div>
+      <div class="campo"><strong>TT (Tiempo de traslado)</strong>{{ doc.tiempo_traslado }}</div>
+      <div class="campo"><strong>SEG. MERC.</strong>{{ 'Sí' if doc.seguro_mercancia else 'No' }}</div>
+
+      <div class="campo"><strong>DESTINO</strong>{{ doc.destino }}</div>
+      <div class="campo"><strong>ESTIBABLE</strong>{{ 'Sí' if doc.estibable else 'No' }}</div>
+      <div class="campo"><strong>VÍA</strong>{{ doc.via }}</div>
+      <div class="campo"><strong>INCOTERM</strong>{{ doc.incoterm }}</div>
+
+      <div class="campo"><strong>HAZ-MAT</strong>{{ 'Sí' if doc.hazmat else 'No' }}</div>
+    </div>
+
+    <table class="tabla-rate">
+      <thead>
+        <tr>
+          <th>DESCRIPTION</th>
+          <th class="col-rate">PRECIO UNITARIO</th>
+          <th class="col-rate">IMPUESTO %</th>
+          <th class="col-rate">IMPUESTO</th>
+          <th class="col-rate">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in doc.lineas %}
+        <tr>
+          <td>{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
+          <td class="col-rate">{{ "{:,.2f}".format(l.precio_unitario) }}{{ l.moneda }}</td>
+          <td class="col-rate">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
+          <td class="col-rate">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
+          <td class="col-rate">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
+        </tr>
+        {% endfor %}
+        {% if not doc.lineas %}
+        <tr><td colspan="5" style="text-align:center; color:#999;">Sin conceptos capturados</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    {% if doc.totales_moneda %}
+    <div class="tarjetas-totales">
+      {% for t in doc.totales_moneda %}
+      <div class="tarjeta-moneda">
+        <div class="tarjeta-moneda__titulo">{{ t.moneda }}</div>
+        <div class="fila"><span>Sub total</span><span>${{ "{:,.2f}".format(t.subtotal) }}</span></div>
+        <div class="fila"><span>Impuesto</span><span>${{ "{:,.2f}".format(t.impuesto) }}</span></div>
+        <div class="fila fila-total"><span>Total</span><span>${{ "{:,.2f}".format(t.total) }}</span></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="barra-vino vacia">DESCRIPCIÓN</div>
+    <p class="descripcion-texto">{{ doc.descripcion or "" }}</p>
+
+    <div class="caja-notas">
+      <p class="notas-titulo">SHIPPING NOTES / OBSERVACIONES</p>
+      <div class="notas">
+        <p>1) El servicio no incluye en origen/destino: trámites aduanales, maniobras, seguros de transporte, impuestos por exportación/importación, cualquier otro gasto por cuenta y/o cualquier otro concepto no mencionado expresamente en la presente.</p>
+        <p>2) Las tarifas no deberán ser aplicadas a ninguna carga que requiera un equipo o manejo especial, a menos que sea especificado.</p>
+        <p>3) La Carga peligrosa, con sobrepeso o residuos peligrosos está sujeta a la aprobación del Transportista de Carga antes de ser transportada.</p>
+        <p>4) Las tarifas están sujetas a la disponibilidad del equipo en origen y destino.</p>
+        <p>5) Peso máximo autorizado: Nuestras tarifas están sujetas a la legislación vigente en cada país sobre las normas de pesos y dimensiones.</p>
+        <p>6) Los días libres de demoras de contenedor en Importación inician al término de la operación de descarga del buque:<br>
+        &nbsp;&nbsp;La cantidad de estos días libres revisarlos directamente con su ejecutivo comercial<br>
+        &nbsp;&nbsp;Costo por demoras USD 160 por día +iva</p>
+        <p>7) Servicio sujeto a disponibilidad de espacio y equipo al momento de la reservación.</p>
+        <p>8) El BAF es fluctuante (V.A.T.O.S.), sujeto a cambios sin previo aviso.</p>
+        <p>9) Acondicionamiento de equipo en caso de solicitarlo USD $150/cntr (food grade ctr).+iva</p>
+        <p>10) Si la presente cotización es aceptada, solicite su Orden de Servicio y envíela completada y firmada vía fax o email a su ejecutivo de cuenta.</p>
+        <p>11) Considere que FCL cargue y descargue; para LCL/LTL/FTL considere 2 horas para cargar y descargar, luego una hora adicional será un cargo de $150 usd cada hora.</p>
+        <p>* Los tiempos y frecuencias de tránsito corresponden a un servicio de línea regular, sin embargo estos pueden cambiar debido a fuerza mayor sin previo aviso.</p>
+        <p>** La validez de la cotización puede cambiar en cualquier momento debido a cambios en el esquema de costos.</p>
+      </div>
+    </div>
+
+    <div class="firma">
+      <p class="pregunta">¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
+      <p class="nombre">Lic Armando Villanueva Silva</p>
+      <p>Ejecutivo de Cuenta Monterrey</p>
+      <p>Tel +52 81 1778 7250</p>
+      <p>Correo: avillanueva@av2logistics.com</p>
+    </div>
+  </div>
+</body>
+</html>

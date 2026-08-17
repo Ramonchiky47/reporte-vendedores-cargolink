@@ -11,9 +11,10 @@ import csv
 import io
 import json
 import os
+import random
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -25,6 +26,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
 from psycopg.rows import dict_row
+from xhtml2pdf import pisa
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -32,6 +34,20 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 DATABASE_URL = (os.environ.get("DATABASE_URL") or "").strip()
 TZ_LOCAL = ZoneInfo(os.environ.get("TZ_LOCAL", "America/Mexico_City"))
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def fecha_valida_o_vacia(texto):
+    """Regresa `texto` si es una fecha YYYY-MM-DD real (no solo con el formato
+    correcto: rechaza cosas como "2026-99-99"), o "" si no. Para sanear
+    parámetros de filtro que vienen de la URL antes de mandarlos a SQL."""
+    texto = (texto or "").strip()
+    if not DATE_RE.match(texto):
+        return ""
+    try:
+        datetime.strptime(texto, "%Y-%m-%d")
+    except ValueError:
+        return ""
+    return texto
 
 CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
 CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
@@ -195,6 +211,151 @@ def init_db():
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_cobros_folio ON comisiones_cobros_detalle (folio);")
     db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_cobros_referencia ON comisiones_cobros_detalle (referencia);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_grupos (
+            id bigint generated always as identity primary key,
+            nombre text not null unique
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_contactos (
+            id bigint generated always as identity primary key,
+            nombre text not null,
+            apellido text,
+            telefono text,
+            correo text,
+            observaciones text,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_contacto_clientes (
+            contacto_id bigint not null references crm_contactos(id) on delete cascade,
+            cliente_folio integer not null references asignacion_de_clientes(folio) on delete cascade,
+            primary key (contacto_id, cliente_folio)
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_contacto_grupos (
+            contacto_id bigint not null references crm_contactos(id) on delete cascade,
+            grupo_id bigint not null references crm_grupos(id) on delete cascade,
+            primary key (contacto_id, grupo_id)
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_incoterms (
+            id bigint generated always as identity primary key,
+            nombre text not null unique
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_modalidades (
+            id bigint generated always as identity primary key,
+            nombre text not null unique
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_tipos_ingreso_egreso (
+            id bigint generated always as identity primary key,
+            nombre text not null,
+            id_externo integer,
+            concepto_ingles text,
+            naturaleza text,
+            producto text,
+            porcentaje_iva numeric,
+            porcentaje_ret numeric,
+            bloqueado boolean not null default false
+        );
+    """)
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso DROP CONSTRAINT IF EXISTS crm_tipos_ingreso_egreso_nombre_key;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS id_externo integer;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS concepto_ingles text;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS naturaleza text;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS producto text;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS porcentaje_iva numeric;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS porcentaje_ret numeric;")
+    db.execute("ALTER TABLE crm_tipos_ingreso_egreso ADD COLUMN IF NOT EXISTS bloqueado boolean not null default false;")
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_crm_tipos_ingreso_egreso_id_externo "
+        "ON crm_tipos_ingreso_egreso (id_externo) WHERE id_externo IS NOT NULL;"
+    )
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_cotizaciones (
+            id bigint generated always as identity primary key,
+            id_cotizacion text not null unique,
+            nombre_cotizacion text,
+            fecha_creacion date not null default current_date,
+            fecha_vencimiento date,
+            vencimiento_modo text not null default 'libre',
+            cliente_folio integer references asignacion_de_clientes(folio) on delete set null,
+            cliente_prospecto text,
+            contacto_id bigint references crm_contactos(id) on delete set null,
+            origen text,
+            destino text,
+            hazmat boolean not null default false,
+            hazmat_clase text,
+            hazmat_un_imo text,
+            incoterm_id bigint references crm_incoterms(id) on delete set null,
+            modalidad_id bigint references crm_modalidades(id) on delete set null,
+            tipo_ingreso_egreso_id bigint references crm_tipos_ingreso_egreso(id) on delete set null,
+            tipo_ingreso_egreso_texto text,
+            estibable boolean not null default false,
+            tiempo_traslado text,
+            via text,
+            seguro_mercancia boolean not null default false,
+            profit_estimado numeric,
+            tipo_cambio numeric,
+            descripcion text,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    tipo_id_cotizacion = db.execute("""
+        SELECT data_type FROM information_schema.columns
+        WHERE table_name = 'crm_cotizaciones' AND column_name = 'id_cotizacion'
+    """).fetchone()
+    if tipo_id_cotizacion and tipo_id_cotizacion["data_type"] != "text":
+        # Migración única: el ID de cotización pasó de numérico (6 dígitos) a
+        # texto con prefijo "COT-" (12 caracteres). Los folios ya generados
+        # conservan su número, solo se les da el nuevo formato.
+        db.execute(
+            "ALTER TABLE crm_cotizaciones ALTER COLUMN id_cotizacion TYPE text "
+            "USING ('COT-' || lpad(id_cotizacion::text, 8, '0'));"
+        )
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS cliente_folio integer references asignacion_de_clientes(folio) on delete set null;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS cliente_prospecto text;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS nombre_cotizacion text;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS contacto_id bigint references crm_contactos(id) on delete set null;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS tipo_ingreso_egreso_id bigint references crm_tipos_ingreso_egreso(id) on delete set null;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS tipo_ingreso_egreso_texto text;")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_cotizacion_productos (
+            id bigint generated always as identity primary key,
+            cotizacion_id bigint not null references crm_cotizaciones(id) on delete cascade,
+            producto_id bigint references crm_tipos_ingreso_egreso(id) on delete set null,
+            producto_texto text,
+            cantidad numeric not null default 1,
+            precio_unitario numeric not null default 0,
+            moneda text not null default 'MXN',
+            causa_impuesto boolean not null default false,
+            impuesto numeric not null default 0,
+            orden integer not null default 0
+        );
+    """)
+    db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS moneda text not null default 'MXN';")
+    db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS causa_impuesto boolean not null default false;")
+    db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS impuesto numeric not null default 0;")
+    db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS producto_texto text;")
+    db.execute("CREATE INDEX IF NOT EXISTS idx_crm_cotizacion_productos_cotizacion ON crm_cotizacion_productos (cotizacion_id);")
+    db.execute("""
+        INSERT INTO crm_incoterms (nombre) VALUES
+            ('EXW'), ('FCA'), ('FAS'), ('FOB'), ('CFR'), ('CIF'), ('CPT'), ('CIP'), ('DAP'), ('DPU'), ('DDP')
+        ON CONFLICT (nombre) DO NOTHING;
+    """)
+    db.execute("""
+        INSERT INTO crm_modalidades (nombre) VALUES
+            ('Aéreo'), ('Marítimo'), ('Terrestre'), ('Multimodal'), ('Paquetería')
+        ON CONFLICT (nombre) DO NOTHING;
+    """)
     db.commit()
     db.close()
 
@@ -252,8 +413,27 @@ def leer_filas_xlsx(file_storage):
     return resultado
 
 
+MESES_LARGOS_ES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+
+def fecha_larga_es(fecha):
+    """'2026-08-14' (date) -> '14 de agosto de 2026', sin depender del
+    locale del sistema (no confiable en serverless)."""
+    if not fecha:
+        return ""
+    return f"{fecha.day} de {MESES_LARGOS_ES[fecha.month - 1]} de {fecha.year}"
+
+
 def normalizar(texto):
     return (texto or "").strip().upper()
+
+
+def json_para_js(datos):
+    """json.dumps a salvo de </script> embebido dentro de un <script> inline."""
+    return json.dumps(datos).replace("</", "<\\/")
 
 
 def extraer_tipo_servicio(referencia):
@@ -860,6 +1040,48 @@ def admin_required(view):
     return wrapped
 
 
+def reportes_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_ver_reportes():
+            flash("No tienes permiso para ver Reportes.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def catalogos_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_ver_catalogos():
+            flash("No tienes permiso para ver Catálogos.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def crm_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_ver_crm():
+            flash("No tienes permiso para ver CRM.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
@@ -909,12 +1131,78 @@ def usuario_puede_comisiones():
     return bool(session.get("puede_comisiones"))
 
 
+def usuario_puede_ver_ventas():
+    """True = el usuario en sesión puede ver la pestaña Información de
+    Ventas. Los administradores siempre pueden; para el resto se usa el
+    permiso guardado en sesión al hacer login
+    (app_user_permissions.puede_ver_ventas), otorgado desde Catálogos →
+    Permisos de Usuario."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_ver_ventas"))
+
+
+def usuario_puede_ver_reportes():
+    """True = el usuario en sesión puede ver la pestaña Reportes (y sus
+    subpáginas: por vendedor, clientes asignados, clientes mensual). Los
+    administradores siempre pueden; para el resto se usa el permiso
+    guardado en sesión al hacer login (app_user_permissions.puede_ver_reportes),
+    otorgado desde Catálogos → Permisos de Usuario."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_ver_reportes"))
+
+
+def usuario_puede_ver_catalogos():
+    """True = el usuario en sesión puede ver la pantalla principal de
+    Catálogos. Los administradores siempre pueden; para el resto se usa el
+    permiso guardado en sesión al hacer login
+    (app_user_permissions.puede_ver_catalogos), otorgado desde Catálogos →
+    Permisos de Usuario. Las herramientas individuales dentro de Catálogos
+    (vendedores, presupuesto, permisos de usuario, etc.) siguen siendo
+    exclusivas de administradores."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_ver_catalogos"))
+
+
+def usuario_puede_ver_crm():
+    """True = el usuario en sesión puede ver la pestaña CRM. Los
+    administradores siempre pueden; para el resto se usa el permiso
+    guardado en sesión al hacer login (app_user_permissions.puede_ver_crm),
+    otorgado desde Catálogos → Permisos de Usuario."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_ver_crm"))
+
+
+def primera_pagina_permitida():
+    """Nombre de la ruta a la que mandar al usuario en sesión: la primera
+    sección para la que sí tiene permiso de ver, en el mismo orden del menú."""
+    if session.get("es_admin"):
+        return "dashboard"
+    if usuario_puede_ver_ventas():
+        return "dashboard_plazas_vendedores"
+    if usuario_puede_ver_reportes():
+        return "reportes_graficas"
+    if usuario_puede_comisiones():
+        return "comisiones"
+    if usuario_puede_ver_crm():
+        return "crm"
+    return "login"
+
+
 @app.context_processor
-def inject_permisos_exportar():
+def inject_permisos():
     return {
         "puede_exportar": usuario_puede_exportar(),
         "puede_actualizar": usuario_puede_actualizar(),
         "puede_comisiones": usuario_puede_comisiones(),
+        "puede_ver_ventas": usuario_puede_ver_ventas(),
+        "puede_ver_reportes": usuario_puede_ver_reportes(),
+        "puede_ver_catalogos": usuario_puede_ver_catalogos(),
+        "puede_ver_crm": usuario_puede_ver_crm(),
+        "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
 
 
@@ -935,6 +1223,10 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_exportar, false) AS puede_exportar,
             coalesce(p.puede_actualizar, false) AS puede_actualizar,
             coalesce(p.puede_comisiones, false) AS puede_comisiones,
+            coalesce(p.puede_ver_ventas, true) AS puede_ver_ventas,
+            coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
+            coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
+            coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
@@ -965,8 +1257,12 @@ def login():
             session["puede_exportar"] = bool(fila["puede_exportar"])
             session["puede_actualizar"] = bool(fila["puede_actualizar"])
             session["puede_comisiones"] = bool(fila["puede_comisiones"])
+            session["puede_ver_ventas"] = bool(fila["puede_ver_ventas"])
+            session["puede_ver_reportes"] = bool(fila["puede_ver_reportes"])
+            session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
+            session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
-            destino = "dashboard" if fila["es_admin"] else "dashboard_plazas_vendedores"
+            destino = primera_pagina_permitida()
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
     return render_template("login.html")
@@ -1151,6 +1447,10 @@ def descargar():
 @app.route("/dashboard")
 @login_required
 def dashboard_plazas_vendedores():
+    if not usuario_puede_ver_ventas():
+        flash("No tienes permiso para ver Información de Ventas.")
+        return redirect(url_for(primera_pagina_permitida()))
+
     datos = construir_datos_dashboard(plazas_permitidas_usuario())
     if datos is None:
         if session.get("es_admin"):
@@ -1221,7 +1521,7 @@ def construir_presupuesto_mensual(plazas_permitidas=None):
 
 
 @app.route("/reportes")
-@login_required
+@reportes_required
 def reportes_graficas():
     plazas_permitidas = plazas_permitidas_usuario()
     filas = construir_filas_reportes(plazas_permitidas)
@@ -1581,7 +1881,7 @@ def comisiones_cobros_cargar():
 
 
 @app.route("/reportes/por-vendedor")
-@login_required
+@reportes_required
 def reportes_por_vendedor():
     filas = construir_filas_reportes(plazas_permitidas_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
@@ -1589,7 +1889,7 @@ def reportes_por_vendedor():
 
 
 @app.route("/reportes/clientes-asignados")
-@login_required
+@reportes_required
 def reportes_clientes_asignados():
     db = get_db()
 
@@ -1625,7 +1925,7 @@ def reportes_clientes_asignados():
 
 
 @app.route("/reportes/clientes-mensual")
-@login_required
+@reportes_required
 def reportes_clientes_mensual():
     db = get_db()
 
@@ -1683,10 +1983,1243 @@ def reportes_clientes_mensual():
     return render_template("reportes_clientes_mensual.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
+CRM_NAV = [
+    {"grupo": None, "texto": "Inicio", "slug": "inicio"},
+    {"grupo": None, "texto": "Booking", "slug": "booking"},
+    {"grupo": None, "texto": "Negocios", "slug": "negocios"},
+    {"grupo": None, "texto": "Cotizaciones", "slug": "cotizaciones"},
+    {"grupo": None, "texto": "Tareas", "slug": "tareas"},
+    {"grupo": "Catálogos", "texto": "Clientes", "slug": "clientes"},
+    {"grupo": "Catálogos", "texto": "Grupo", "slug": "grupo"},
+    {"grupo": "Catálogos", "texto": "Contactos", "slug": "contactos"},
+    {"grupo": "Catálogos", "texto": "Productos", "slug": "productos"},
+    {"grupo": "Catálogos", "texto": "Estatus", "slug": "estatus"},
+    {"grupo": "Catálogos", "texto": "Estado de la República", "slug": "estado-republica"},
+    {"grupo": "Catálogos", "texto": "Etapa del Negocio", "slug": "etapa-negocio"},
+    {"grupo": "Catálogos", "texto": "Actividades", "slug": "actividades"},
+    {"grupo": "Administración", "texto": "Usuarios", "slug": "usuarios"},
+    {"grupo": "Administración", "texto": "Representantes", "slug": "representantes"},
+    {"grupo": "Administración", "texto": "Almacenamiento", "slug": "almacenamiento"},
+    {"grupo": "Administración", "texto": "Configuración", "slug": "configuracion"},
+]
+
+# Datos de ejemplo para la vista de Tareas mientras se define la fuente de datos real.
+TAREAS_MOCK = [
+    {"id": "219261", "nombre": "Planchas Alejandrina", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-05", "actividad": "Cotizacion"},
+    {"id": "992289", "nombre": "Duda si tiene este control: AKB7...", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-06", "actividad": "Cotizacion"},
+    {"id": "849078", "nombre": "Cabo Azul", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-12", "actividad": "Garantias"},
+    {"id": "752756", "nombre": "Holiday Inn Sendero", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-12", "actividad": "Garantias"},
+    {"id": "694773", "nombre": "Maria Laura Tru", "creado_en": "2026-08-13", "fecha_compromiso": "2026-08-13", "actividad": "Cotizacion"},
+]
+
+
+def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300):
+    """Detalle a nivel booking para la pantalla CRM → Booking: mismos datos
+    (tabla reporte_bookings) y mismo filtro de plazas que Reporte de Ventas,
+    pero mostrados fila por fila en vez de agregados. `limite` acota la
+    respuesta a los bookings más recientes (o más recientes dentro del rango
+    de fechas dado): la tabla puede tener miles de filas y no vale la pena
+    paginar/virtualizar solo para esta vista de detalle mientras se define
+    si de verdad se necesita ver el histórico completo aquí."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    condiciones = []
+    parametros = []
+    if fecha_inicio:
+        condiciones.append("fecha >= %s")
+        parametros.append(fecha_inicio)
+    if fecha_fin:
+        condiciones.append("fecha < (%s::date + interval '1 day')")
+        parametros.append(fecha_fin)
+    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+
+    bookings = db.execute(
+        "SELECT referencia, fecha, vendedor, ejecutivo, venta_por, cliente_servicio, venta, profit, margen "
+        f"FROM reporte_bookings {where} ORDER BY fecha DESC",
+        parametros,
+    ).fetchall()
+    db.close()
+
+    filas = []
+    for r in bookings:
+        fecha = r["fecha"]
+        if fecha is None:
+            continue
+        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        filas.append({
+            "referencia": r["referencia"] or "#N/D",
+            "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
+            "plaza": plaza,
+            "vendedor": r["vendedor"] or "#N/D",
+            "ejecutivo": normalizar(r["ejecutivo"]) or "#N/D",
+            "venta_por": r["venta_por"] or "Sin tipo",
+            "cliente_servicio": r["cliente_servicio"] or "Sin cliente",
+            "venta": round(float(r["venta"]), 2),
+            "profit": round(float(r["profit"]), 2),
+            "margen": round(float(r["margen"]), 2),
+        })
+    total = len(filas)
+    return filas[:limite], total
+
+
+def construir_clientes_crm(plazas_permitidas=None):
+    """Cliente + vendedor + desarrollador asignado para CRM → Clientes:
+    misma fuente (asignacion_de_clientes) y filtro de plazas que Reportes →
+    Clientes Asignados, pero solo con las columnas que pidió mostrar aquí.
+    También trae si el cliente tiene bookings reales (reporte_bookings,
+    casados por nombre) y si tiene cotizaciones reales (crm_cotizaciones,
+    por cliente_folio) — Tareas todavía no tiene una fuente de datos
+    conectada, así que no se puede calcular aquí."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    bookings_por_cliente = set()
+    for r in db.execute(
+        "SELECT DISTINCT cliente_servicio FROM reporte_bookings WHERE cliente_servicio IS NOT NULL"
+    ):
+        bookings_por_cliente.add(normalizar(r["cliente_servicio"]))
+
+    clientes_con_cotizacion = set()
+    for r in db.execute(
+        "SELECT DISTINCT cliente_folio FROM crm_cotizaciones WHERE cliente_folio IS NOT NULL"
+    ):
+        clientes_con_cotizacion.add(r["cliente_folio"])
+
+    filas_clientes = db.execute(
+        "SELECT folio, razon_social, vendedor, desarrollador "
+        "FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY razon_social"
+    ).fetchall()
+    db.close()
+
+    filas = []
+    for r in filas_clientes:
+        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        filas.append({
+            "folio": r["folio"],
+            "cliente": r["razon_social"],
+            "vendedor": r["vendedor"] or "#N/D",
+            "desarrollador": r["desarrollador"] or "Sin asignar",
+            "tiene_booking": normalizar(r["razon_social"]) in bookings_por_cliente,
+            "tiene_cotizacion": r["folio"] in clientes_con_cotizacion,
+        })
+    return filas
+
+
+def construir_cotizaciones_resumen_crm(cliente_folio=None, contacto_id=None):
+    """Cotizaciones ligadas a un cliente (por cliente_folio) o a un contacto
+    (por contacto_id), para los paneles 'Cotizaciones' de sus páginas de
+    detalle. Trae el gran total (suma de líneas + su impuesto, por moneda)
+    de cada una."""
+    if cliente_folio is None and contacto_id is None:
+        return []
+    db = get_db()
+    if cliente_folio is not None:
+        filas = db.execute("""
+            SELECT id, id_cotizacion, nombre_cotizacion, fecha_creacion
+            FROM crm_cotizaciones WHERE cliente_folio = %s
+            ORDER BY fecha_creacion DESC
+        """, (cliente_folio,)).fetchall()
+    else:
+        filas = db.execute("""
+            SELECT id, id_cotizacion, nombre_cotizacion, fecha_creacion
+            FROM crm_cotizaciones WHERE contacto_id = %s
+            ORDER BY fecha_creacion DESC
+        """, (contacto_id,)).fetchall()
+
+    resultado = []
+    for f in filas:
+        totales = db.execute("""
+            SELECT moneda, SUM(cantidad * precio_unitario) AS subtotal, SUM(cantidad * precio_unitario * impuesto / 100.0) AS impuesto
+            FROM crm_cotizacion_productos WHERE cotizacion_id = %s GROUP BY moneda
+        """, (f["id"],)).fetchall()
+        gran_total_texto = " / ".join(
+            f"{t['moneda']} ${float(t['subtotal']) + float(t['impuesto'] or 0):,.2f}" for t in totales
+        )
+        resultado.append({
+            "id": f["id"],
+            "id_cotizacion": f["id_cotizacion"],
+            "nombre_cotizacion": f["nombre_cotizacion"] or "",
+            "fecha_creacion": f["fecha_creacion"].strftime("%Y-%m-%d") if f["fecha_creacion"] else "",
+            "gran_total_texto": gran_total_texto,
+        })
+    db.close()
+    return resultado
+
+
+def construir_cliente_detalle_crm(folio, plazas_permitidas=None):
+    """Info de un cliente (asignacion_de_clientes) + sus bookings reales
+    (reporte_bookings, casados por nombre de cliente) para la página de
+    detalle de CRM → Clientes. Regresa None si el folio no existe o si el
+    usuario no tiene permiso de ver la plaza de ese cliente."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    cliente = db.execute(
+        "SELECT folio, razon_social, vendedor, desarrollador, tipo_cliente, cant_booking, fecha_ultimo_booking "
+        "FROM asignacion_de_clientes WHERE folio = %s",
+        (folio,),
+    ).fetchone()
+    if cliente is None:
+        db.close()
+        return None
+
+    plaza = plaza_por_vendedor.get(normalizar(cliente["vendedor"]), "#N/D")
+    if plazas_permitidas is not None and plaza not in plazas_permitidas:
+        db.close()
+        return None
+
+    bookings_cliente = db.execute(
+        "SELECT referencia, fecha, venta, profit "
+        "FROM reporte_bookings WHERE cliente_servicio ILIKE %s ORDER BY fecha DESC",
+        (cliente["razon_social"],),
+    ).fetchall()
+    db.close()
+
+    bookings = [{
+        "referencia": b["referencia"] or "#N/D",
+        "fecha": b["fecha"].astimezone(TZ_LOCAL).strftime("%Y-%m-%d") if b["fecha"] else "",
+        "venta": round(float(b["venta"]), 2),
+        "profit": round(float(b["profit"]), 2),
+    } for b in bookings_cliente]
+
+    return {
+        "folio": cliente["folio"],
+        "razon_social": cliente["razon_social"],
+        "vendedor": cliente["vendedor"] or "#N/D",
+        "desarrollador": cliente["desarrollador"] or "Sin asignar",
+        "plaza": plaza,
+        "tipo_cliente": cliente["tipo_cliente"] or "Sin clasificar",
+        "cant_booking": cliente["cant_booking"] or 0,
+        "fecha_ultimo_booking": cliente["fecha_ultimo_booking"].strftime("%Y-%m-%d") if cliente["fecha_ultimo_booking"] else "",
+        "bookings": bookings,
+    }
+
+
+def construir_contactos_crm(plazas_permitidas=None):
+    """Contactos del CRM con sus clientes y grupos asociados (muchos-a-muchos).
+    Un contacto sin ningún cliente asociado todavía es visible para todos
+    (no hay plaza que restringir); si tiene clientes, solo es visible si
+    alguno de esos clientes cae en una plaza permitida para el usuario.
+    También trae si el contacto tiene cotizaciones reales (crm_cotizaciones,
+    por contacto_id)."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    clientes_con_booking = set()
+    for r in db.execute(
+        "SELECT DISTINCT cliente_servicio FROM reporte_bookings WHERE cliente_servicio IS NOT NULL"
+    ):
+        clientes_con_booking.add(normalizar(r["cliente_servicio"]))
+
+    contactos_con_cotizacion = set()
+    for r in db.execute(
+        "SELECT DISTINCT contacto_id FROM crm_cotizaciones WHERE contacto_id IS NOT NULL"
+    ):
+        contactos_con_cotizacion.add(r["contacto_id"])
+
+    filas = db.execute("""
+        SELECT c.id, c.nombre, c.apellido, c.telefono, c.correo, c.observaciones,
+               COALESCE(array_agg(DISTINCT ac.razon_social) FILTER (WHERE ac.razon_social IS NOT NULL), '{}') AS clientes,
+               COALESCE(array_agg(DISTINCT ac.vendedor) FILTER (WHERE ac.vendedor IS NOT NULL), '{}') AS vendedores,
+               COALESCE(array_agg(DISTINCT g.nombre) FILTER (WHERE g.nombre IS NOT NULL), '{}') AS grupos
+        FROM crm_contactos c
+        LEFT JOIN crm_contacto_clientes cc ON cc.contacto_id = c.id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = cc.cliente_folio
+        LEFT JOIN crm_contacto_grupos cg ON cg.contacto_id = c.id
+        LEFT JOIN crm_grupos g ON g.id = cg.grupo_id
+        GROUP BY c.id
+        ORDER BY c.nombre, c.apellido
+    """).fetchall()
+    db.close()
+
+    resultado = []
+    for r in filas:
+        plazas_contacto = {plaza_por_vendedor.get(normalizar(v), "#N/D") for v in r["vendedores"]}
+        if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+            continue
+        tiene_booking = any(normalizar(cl) in clientes_con_booking for cl in r["clientes"])
+        resultado.append({
+            "id": r["id"],
+            "nombre": r["nombre"],
+            "apellido": r["apellido"] or "",
+            "telefono": r["telefono"] or "",
+            "correo": r["correo"] or "",
+            "observaciones": r["observaciones"] or "",
+            "clientes": sorted(r["clientes"]),
+            "grupos": sorted(r["grupos"]),
+            "tiene_booking": tiene_booking,
+            "tiene_cotizacion": r["id"] in contactos_con_cotizacion,
+        })
+    return resultado
+
+
+def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None):
+    """Info de un contacto + sus clientes/grupos asociados + los bookings
+    reales de esos clientes (reporte_bookings, casados por nombre), para la
+    página de detalle de CRM → Contactos."""
+    db = get_db()
+    contacto = db.execute("SELECT * FROM crm_contactos WHERE id = %s", (contacto_id,)).fetchone()
+    if contacto is None:
+        db.close()
+        return None
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    clientes = db.execute("""
+        SELECT ac.folio, ac.razon_social, ac.vendedor
+        FROM crm_contacto_clientes cc
+        JOIN asignacion_de_clientes ac ON ac.folio = cc.cliente_folio
+        WHERE cc.contacto_id = %s
+        ORDER BY ac.razon_social
+    """, (contacto_id,)).fetchall()
+
+    plazas_contacto = {plaza_por_vendedor.get(normalizar(c["vendedor"]), "#N/D") for c in clientes}
+    if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+        db.close()
+        return None
+
+    grupos = db.execute("""
+        SELECT g.nombre FROM crm_contacto_grupos cg
+        JOIN crm_grupos g ON g.id = cg.grupo_id
+        WHERE cg.contacto_id = %s ORDER BY g.nombre
+    """, (contacto_id,)).fetchall()
+
+    bookings = []
+    if clientes:
+        nombres_lower = [c["razon_social"].lower() for c in clientes]
+        filas_bookings = db.execute(
+            "SELECT referencia, fecha, cliente_servicio, venta "
+            "FROM reporte_bookings WHERE lower(cliente_servicio) = ANY(%s) ORDER BY fecha DESC",
+            (nombres_lower,),
+        ).fetchall()
+        bookings = [{
+            "referencia": b["referencia"] or "#N/D",
+            "fecha": b["fecha"].astimezone(TZ_LOCAL).strftime("%Y-%m-%d") if b["fecha"] else "",
+            "cliente": b["cliente_servicio"],
+            "venta": round(float(b["venta"]), 2),
+        } for b in filas_bookings]
+    db.close()
+
+    return {
+        "id": contacto["id"],
+        "nombre": contacto["nombre"],
+        "apellido": contacto["apellido"] or "",
+        "telefono": contacto["telefono"] or "",
+        "correo": contacto["correo"] or "",
+        "observaciones": contacto["observaciones"] or "",
+        "clientes": [c["razon_social"] for c in clientes],
+        "grupos": [g["nombre"] for g in grupos],
+        "bookings": bookings,
+    }
+
+
+def opciones_clientes_grupos_crm():
+    db = get_db()
+    clientes = db.execute(
+        "SELECT folio, razon_social FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
+    ).fetchall()
+    grupos = db.execute("SELECT id, nombre FROM crm_grupos ORDER BY nombre").fetchall()
+    db.close()
+    return clientes, grupos
+
+
+def guardar_contacto_crm(contacto_id):
+    """Crea o actualiza un contacto y reemplaza sus asociaciones de clientes
+    y grupos por las que vengan en el formulario. Regresa None si guardó
+    bien, o un mensaje de error si faltó el nombre."""
+    nombre = request.form.get("nombre", "").strip()
+    apellido = request.form.get("apellido", "").strip()
+    telefono = request.form.get("telefono", "").strip()
+    correo = request.form.get("correo", "").strip()
+    observaciones = request.form.get("observaciones", "").strip()
+    grupo_nuevo = request.form.get("grupo_nuevo", "").strip()
+    clientes_folios = {int(v) for v in request.form.getlist("clientes") if v.strip().lstrip("-").isdigit()}
+    grupos_ids = {int(v) for v in request.form.getlist("grupos") if v.strip().isdigit()}
+
+    if not nombre:
+        return "El nombre es obligatorio."
+
+    db = get_db()
+    if grupo_nuevo:
+        fila_grupo = db.execute(
+            "INSERT INTO crm_grupos (nombre) VALUES (%s) "
+            "ON CONFLICT (nombre) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id",
+            (grupo_nuevo,),
+        ).fetchone()
+        grupos_ids.add(fila_grupo["id"])
+
+    if contacto_id is None:
+        fila = db.execute(
+            "INSERT INTO crm_contactos (nombre, apellido, telefono, correo, observaciones) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (nombre, apellido, telefono, correo, observaciones),
+        ).fetchone()
+        contacto_id = fila["id"]
+    else:
+        db.execute(
+            "UPDATE crm_contactos SET nombre = %s, apellido = %s, telefono = %s, correo = %s, observaciones = %s WHERE id = %s",
+            (nombre, apellido, telefono, correo, observaciones, contacto_id),
+        )
+        db.execute("DELETE FROM crm_contacto_clientes WHERE contacto_id = %s", (contacto_id,))
+        db.execute("DELETE FROM crm_contacto_grupos WHERE contacto_id = %s", (contacto_id,))
+
+    for folio in clientes_folios:
+        db.execute(
+            "INSERT INTO crm_contacto_clientes (contacto_id, cliente_folio) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (contacto_id, folio),
+        )
+    for grupo_id in grupos_ids:
+        db.execute(
+            "INSERT INTO crm_contacto_grupos (contacto_id, grupo_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (contacto_id, grupo_id),
+        )
+    db.commit()
+    db.close()
+    return None
+
+
+VENCIMIENTO_DIAS = ("15", "30", "45", "60")
+
+
+def generar_id_cotizacion(db):
+    """ID de 12 caracteres con prefijo 'COT-' (COT- + 8 dígitos), único en
+    crm_cotizaciones (reintenta si choca)."""
+    for _ in range(20):
+        candidato = f"COT-{random.randint(0, 99999999):08d}"
+        if not db.execute("SELECT 1 FROM crm_cotizaciones WHERE id_cotizacion = %s", (candidato,)).fetchone():
+            return candidato
+    raise RuntimeError("No se pudo generar un ID de cotización único.")
+
+
+def construir_cotizaciones_crm(plazas_permitidas=None):
+    """Cotizaciones con su cliente (o prospecto) resuelto. Una cotización con
+    cliente real hereda su restricción de plaza (igual que Clientes/Contactos);
+    una de prospecto no tiene plaza que restringir, así que es visible para
+    todos los que puedan ver el CRM."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    filas = db.execute("""
+        SELECT co.id, co.id_cotizacion, co.nombre_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.vencimiento_modo,
+               co.cliente_folio, co.cliente_prospecto, ac.razon_social AS cliente_nombre, ac.vendedor AS cliente_vendedor,
+               co.contacto_id, ct.nombre AS contacto_nombre, ct.apellido AS contacto_apellido,
+               co.origen, co.destino, co.hazmat, co.hazmat_clase, co.hazmat_un_imo,
+               i.nombre AS incoterm, m.nombre AS modalidad,
+               co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
+               co.profit_estimado, co.tipo_cambio, co.descripcion
+        FROM crm_cotizaciones co
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
+        LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
+        LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        ORDER BY co.fecha_creacion DESC, co.id DESC
+    """).fetchall()
+
+    totales_por_moneda = {}
+    for r in db.execute("""
+        SELECT cotizacion_id, moneda,
+               SUM(cantidad * precio_unitario) AS subtotal,
+               SUM(cantidad * precio_unitario * impuesto / 100.0) AS impuesto
+        FROM crm_cotizacion_productos GROUP BY cotizacion_id, moneda
+    """):
+        totales_por_moneda.setdefault(r["cotizacion_id"], {})[r["moneda"]] = {
+            "subtotal": float(r["subtotal"]),
+            "impuesto": float(r["impuesto"] or 0),
+            "total": float(r["subtotal"]) + float(r["impuesto"] or 0),
+        }
+    db.close()
+
+    resultado = []
+    for r in filas:
+        es_prospecto = r["cliente_folio"] is None
+        if not es_prospecto:
+            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+            if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            cliente_texto = r["cliente_nombre"] or "#N/D"
+        else:
+            cliente_texto = f"Prospecto: {r['cliente_prospecto']}" if r["cliente_prospecto"] else "Prospecto"
+
+        contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
+
+        resultado.append({
+            "id": r["id"],
+            "id_cotizacion": r["id_cotizacion"],
+            "nombre_cotizacion": r["nombre_cotizacion"] or "",
+            "cliente": cliente_texto,
+            "es_prospecto": es_prospecto,
+            "contacto": contacto_texto,
+            "fecha_creacion": r["fecha_creacion"].strftime("%Y-%m-%d") if r["fecha_creacion"] else "",
+            "fecha_vencimiento": r["fecha_vencimiento"].strftime("%Y-%m-%d") if r["fecha_vencimiento"] else "",
+            "origen": r["origen"] or "",
+            "destino": r["destino"] or "",
+            "hazmat": r["hazmat"],
+            "hazmat_clase": r["hazmat_clase"] or "",
+            "hazmat_un_imo": r["hazmat_un_imo"] or "",
+            "incoterm": r["incoterm"] or "",
+            "modalidad": r["modalidad"] or "",
+            "estibable": r["estibable"],
+            "tiempo_traslado": r["tiempo_traslado"] or "",
+            "via": r["via"] or "",
+            "seguro_mercancia": r["seguro_mercancia"],
+            "profit_estimado": float(r["profit_estimado"]) if r["profit_estimado"] is not None else None,
+            "tipo_cambio": float(r["tipo_cambio"]) if r["tipo_cambio"] is not None else None,
+            "descripcion": r["descripcion"] or "",
+            "totales_moneda": totales_por_moneda.get(r["id"], {}),
+            "gran_total_texto": " / ".join(
+                f"{moneda} ${datos['total']:,.2f}"
+                for moneda, datos in totales_por_moneda.get(r["id"], {}).items()
+            ),
+        })
+    return resultado
+
+
+def obtener_lineas_cotizacion_crm(cotizacion_id):
+    db = get_db()
+    filas = db.execute("""
+        SELECT lp.producto_id, lp.producto_texto, p.nombre AS producto_nombre, lp.cantidad, lp.precio_unitario,
+               lp.moneda, lp.causa_impuesto, lp.impuesto
+        FROM crm_cotizacion_productos lp
+        LEFT JOIN crm_tipos_ingreso_egreso p ON p.id = lp.producto_id
+        WHERE lp.cotizacion_id = %s
+        ORDER BY lp.orden
+    """, (cotizacion_id,)).fetchall()
+    db.close()
+    return [{
+        "producto_id": r["producto_id"],
+        "producto_texto": r["producto_texto"],
+        "producto_nombre": r["producto_texto"] or r["producto_nombre"] or "",
+        "cantidad": float(r["cantidad"]),
+        "precio_unitario": float(r["precio_unitario"]),
+        "moneda": r["moneda"] or "MXN",
+        "causa_impuesto": r["causa_impuesto"],
+        "impuesto": float(r["impuesto"] or 0),
+    } for r in filas]
+
+
+def construir_documento_cotizacion_crm(cotizacion_id):
+    """Junta toda la información de una cotización (cliente/prospecto,
+    contacto, catálogos resueltos, líneas de producto con su total) para
+    la vista imprimible."""
+    db = get_db()
+    fila = db.execute("""
+        SELECT co.*, ac.razon_social AS cliente_nombre, ac.vendedor AS cliente_vendedor,
+               ct.nombre AS contacto_nombre, ct.apellido AS contacto_apellido,
+               ct.telefono AS contacto_telefono, ct.correo AS contacto_correo,
+               i.nombre AS incoterm, m.nombre AS modalidad
+        FROM crm_cotizaciones co
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
+        LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
+        LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        WHERE co.id = %s
+    """, (cotizacion_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return None
+
+    if fila["cliente_folio"] is not None:
+        cliente_nombre = fila["cliente_nombre"] or "#N/D"
+        vendedor = fila["cliente_vendedor"] or ""
+    else:
+        cliente_nombre = fila["cliente_prospecto"] or "Prospecto"
+        vendedor = ""
+
+    lineas_crudas = obtener_lineas_cotizacion_crm(cotizacion_id)
+    lineas = []
+    totales_por_moneda = {}
+    for l in lineas_crudas:
+        subtotal = l["cantidad"] * l["precio_unitario"]
+        impuesto_monto = subtotal * (l["impuesto"] / 100) if l["causa_impuesto"] else 0
+        lineas.append({
+            "descripcion": l["producto_nombre"],
+            "cantidad": l["cantidad"],
+            "precio_unitario": l["precio_unitario"],
+            "impuesto_pct": l["impuesto"] if l["causa_impuesto"] else 0,
+            "impuesto": impuesto_monto,
+            "total": subtotal + impuesto_monto,
+            "moneda": l["moneda"],
+        })
+        t = totales_por_moneda.setdefault(l["moneda"], {"subtotal": 0.0, "impuesto": 0.0})
+        t["subtotal"] += subtotal
+        t["impuesto"] += impuesto_monto
+    totales_moneda = [
+        {"moneda": moneda, "subtotal": datos["subtotal"], "impuesto": datos["impuesto"],
+         "total": datos["subtotal"] + datos["impuesto"]}
+        for moneda, datos in sorted(totales_por_moneda.items())
+    ]
+
+    return {
+        "id_cotizacion": fila["id_cotizacion"],
+        "nombre_cotizacion": fila["nombre_cotizacion"] or "",
+        "fecha_creacion": fila["fecha_creacion"],
+        "fecha_vencimiento": fila["fecha_vencimiento"],
+        "fecha_creacion_larga": fecha_larga_es(fila["fecha_creacion"]),
+        "fecha_vencimiento_larga": fecha_larga_es(fila["fecha_vencimiento"]),
+        "creado_en": fila["creado_en"],
+        "cliente_nombre": cliente_nombre,
+        "vendedor": vendedor,
+        "contacto_nombre": f"{fila['contacto_nombre']} {fila['contacto_apellido'] or ''}".strip() if fila["contacto_id"] else "",
+        "contacto_telefono": fila["contacto_telefono"] or "",
+        "contacto_correo": fila["contacto_correo"] or "",
+        "origen": fila["origen"] or "",
+        "destino": fila["destino"] or "",
+        "hazmat": fila["hazmat"],
+        "incoterm": fila["incoterm"] or "",
+        "modalidad": fila["modalidad"] or "",
+        "estibable": fila["estibable"],
+        "tiempo_traslado": fila["tiempo_traslado"] or "",
+        "via": fila["via"] or "",
+        "seguro_mercancia": fila["seguro_mercancia"],
+        "descripcion": fila["descripcion"] or "",
+        "lineas": lineas,
+        "totales_moneda": totales_moneda,
+    }
+
+
+def clonar_cotizacion_crm(cotizacion_id):
+    """Duplica una cotización (encabezado + líneas de producto) con un ID y
+    fecha de creación nuevos; si el vencimiento era a N días, se recalcula
+    desde hoy. Regresa el `id` interno de la copia, o None si el original
+    no existe."""
+    db = get_db()
+    original = db.execute("SELECT vencimiento_modo, fecha_vencimiento FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    if original is None:
+        db.close()
+        return None
+
+    nuevo_id_cotizacion = generar_id_cotizacion(db)
+    fecha_creacion = datetime.now(TZ_LOCAL).date()
+    if original["vencimiento_modo"] in VENCIMIENTO_DIAS:
+        fecha_vencimiento = (fecha_creacion + timedelta(days=int(original["vencimiento_modo"]))).isoformat()
+    else:
+        fecha_vencimiento = original["fecha_vencimiento"]
+
+    fila_nueva = db.execute("""
+        INSERT INTO crm_cotizaciones (
+            id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
+            cliente_folio, cliente_prospecto, contacto_id,
+            origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
+            incoterm_id, modalidad_id, tipo_ingreso_egreso_id,
+            estibable, tiempo_traslado, via, seguro_mercancia,
+            profit_estimado, tipo_cambio, descripcion
+        )
+        SELECT %s, nombre_cotizacion, %s, %s, vencimiento_modo,
+               cliente_folio, cliente_prospecto, contacto_id,
+               origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
+               incoterm_id, modalidad_id, tipo_ingreso_egreso_id,
+               estibable, tiempo_traslado, via, seguro_mercancia,
+               profit_estimado, tipo_cambio, descripcion
+        FROM crm_cotizaciones WHERE id = %s
+        RETURNING id
+    """, (nuevo_id_cotizacion, fecha_creacion, fecha_vencimiento, cotizacion_id)).fetchone()
+    nuevo_id = fila_nueva["id"]
+
+    db.execute("""
+        INSERT INTO crm_cotizacion_productos
+            (cotizacion_id, producto_id, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden)
+        SELECT %s, producto_id, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden
+        FROM crm_cotizacion_productos WHERE cotizacion_id = %s
+    """, (nuevo_id, cotizacion_id))
+
+    db.commit()
+    db.close()
+    return nuevo_id
+
+
+def opciones_incoterm_modalidad_crm():
+    db = get_db()
+    incoterms = db.execute("SELECT id, nombre FROM crm_incoterms ORDER BY nombre").fetchall()
+    modalidades = db.execute("SELECT id, nombre FROM crm_modalidades ORDER BY nombre").fetchall()
+    db.close()
+    return incoterms, modalidades
+
+
+def opciones_tipo_producto_crm():
+    """Catálogo único Tipo Ingreso/Egreso: su nombre es lo que se usa como
+    'Producto' tanto en el encabezado de la cotización como en cada línea.
+    Solo se ofrecen los que sí generan ingreso (naturaleza INGRESO o AMBOS
+    — AMBOS aplica tanto a ingreso como egreso) y que ya traen un Producto
+    asignado (AEREO, ADUANA, MARITIMO, TERRESTRE, SEGURO) — es lo que
+    alimenta el primer desplegable (Producto); el segundo (Nombre) se
+    filtra en el navegador contra estos mismos datos."""
+    db = get_db()
+    tipos = db.execute("""
+        SELECT id, nombre, producto FROM crm_tipos_ingreso_egreso
+        WHERE naturaleza IN ('INGRESO', 'AMBOS') AND producto IS NOT NULL AND producto <> ''
+        ORDER BY producto, nombre
+    """).fetchall()
+    db.close()
+    return tipos
+
+
+def opciones_clientes_cotizacion_crm():
+    db = get_db()
+    clientes = db.execute(
+        "SELECT folio, razon_social FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
+    ).fetchall()
+    db.close()
+    return clientes
+
+
+def opciones_contactos_cotizacion_crm():
+    db = get_db()
+    contactos = db.execute(
+        "SELECT id, nombre, apellido FROM crm_contactos ORDER BY nombre, apellido"
+    ).fetchall()
+    db.close()
+    return contactos
+
+
+def parse_numero_formato_miles(texto):
+    texto = (texto or "").strip().replace(",", "")
+    if not texto:
+        return None, None
+    try:
+        return float(texto), None
+    except ValueError:
+        return None, "no es un número válido"
+
+
+def guardar_cotizacion_crm(cotizacion_id):
+    """Crea o actualiza una cotización. Regresa None si guardó bien, o un
+    mensaje de error si algo obligatorio faltó o un número vino mal."""
+    nombre_cotizacion = request.form.get("nombre_cotizacion", "").strip()[:60]
+    contacto_id_raw = request.form.get("contacto_id", "").strip()
+    contacto_id = int(contacto_id_raw) if contacto_id_raw.isdigit() else None
+
+    es_prospecto = request.form.get("es_prospecto") == "si"
+    cliente_folio_raw = request.form.get("cliente_folio", "").strip()
+    cliente_prospecto = request.form.get("cliente_prospecto", "").strip()[:120]
+    if es_prospecto:
+        if not cliente_prospecto:
+            return "Captura el nombre del prospecto."
+        cliente_folio = None
+    else:
+        if not cliente_folio_raw.isdigit():
+            return "Selecciona un cliente (o marca Prospecto)."
+        cliente_folio = int(cliente_folio_raw)
+        cliente_prospecto = None
+
+    origen = request.form.get("origen", "").strip()[:50]
+    destino = request.form.get("destino", "").strip()[:50]
+    if not origen or not destino:
+        return "Origen y Destino son obligatorios."
+
+    hazmat = request.form.get("hazmat") == "si"
+    hazmat_clase = request.form.get("hazmat_clase", "").strip()[:50] if hazmat else None
+    hazmat_un_imo = request.form.get("hazmat_un_imo", "").strip()[:50] if hazmat else None
+
+    incoterm_id = request.form.get("incoterm_id") or None
+    incoterm_id = int(incoterm_id) if incoterm_id else None
+    incoterm_nuevo = request.form.get("incoterm_nuevo", "").strip()
+    modalidad_id = request.form.get("modalidad_id") or None
+    modalidad_id = int(modalidad_id) if modalidad_id else None
+    modalidad_nuevo = request.form.get("modalidad_nuevo", "").strip()
+
+    estibable = request.form.get("estibable") == "si"
+    seguro_mercancia = request.form.get("seguro_mercancia") == "si"
+    tiempo_traslado = request.form.get("tiempo_traslado", "").strip()[:30]
+    via = request.form.get("via", "").strip()[:60]
+    descripcion = request.form.get("descripcion", "").strip()
+
+    vencimiento_modo = request.form.get("vencimiento_modo", "libre").strip()
+    if vencimiento_modo not in VENCIMIENTO_DIAS + ("libre",):
+        return "Fecha de vencimiento inválida."
+    fecha_vencimiento_libre = fecha_valida_o_vacia(request.form.get("fecha_vencimiento_libre", ""))
+    if vencimiento_modo == "libre" and not fecha_vencimiento_libre:
+        return "Captura la fecha de vencimiento."
+
+    profit_estimado, error_profit = parse_numero_formato_miles(request.form.get("profit_estimado", ""))
+    if error_profit:
+        return f"Profit estimado {error_profit}."
+    tipo_cambio, error_tc = parse_numero_formato_miles(request.form.get("tipo_cambio", ""))
+    if error_tc:
+        return f"Tipo de cambio {error_tc}."
+
+    db = get_db()
+    if incoterm_nuevo:
+        fila = db.execute(
+            "INSERT INTO crm_incoterms (nombre) VALUES (%s) "
+            "ON CONFLICT (nombre) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id",
+            (incoterm_nuevo,),
+        ).fetchone()
+        incoterm_id = fila["id"]
+    if modalidad_nuevo:
+        fila = db.execute(
+            "INSERT INTO crm_modalidades (nombre) VALUES (%s) "
+            "ON CONFLICT (nombre) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id",
+            (modalidad_nuevo,),
+        ).fetchone()
+        modalidad_id = fila["id"]
+    if cotizacion_id is None:
+        fecha_creacion = datetime.now(TZ_LOCAL).date()
+    else:
+        fila_actual = db.execute(
+            "SELECT fecha_creacion FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
+        ).fetchone()
+        fecha_creacion = fila_actual["fecha_creacion"]
+
+    if vencimiento_modo == "libre":
+        fecha_vencimiento = fecha_vencimiento_libre
+    else:
+        fecha_vencimiento = (fecha_creacion + timedelta(days=int(vencimiento_modo))).isoformat()
+
+    if cotizacion_id is None:
+        id_cotizacion = generar_id_cotizacion(db)
+        fila_nueva = db.execute("""
+            INSERT INTO crm_cotizaciones (
+                id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
+                cliente_folio, cliente_prospecto, contacto_id,
+                origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
+                incoterm_id, modalidad_id,
+                estibable, tiempo_traslado, via, seguro_mercancia,
+                profit_estimado, tipo_cambio, descripcion
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
+            cliente_folio, cliente_prospecto, contacto_id,
+            origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
+            incoterm_id, modalidad_id,
+            estibable, tiempo_traslado, via, seguro_mercancia,
+            profit_estimado, tipo_cambio, descripcion,
+        )).fetchone()
+        cotizacion_id = fila_nueva["id"]
+    else:
+        db.execute("""
+            UPDATE crm_cotizaciones SET
+                nombre_cotizacion = %s, fecha_vencimiento = %s, vencimiento_modo = %s,
+                cliente_folio = %s, cliente_prospecto = %s, contacto_id = %s,
+                origen = %s, destino = %s, hazmat = %s, hazmat_clase = %s, hazmat_un_imo = %s,
+                incoterm_id = %s, modalidad_id = %s,
+                estibable = %s, tiempo_traslado = %s, via = %s,
+                seguro_mercancia = %s, profit_estimado = %s, tipo_cambio = %s, descripcion = %s
+            WHERE id = %s
+        """, (
+            nombre_cotizacion, fecha_vencimiento, vencimiento_modo,
+            cliente_folio, cliente_prospecto, contacto_id,
+            origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
+            incoterm_id, modalidad_id,
+            estibable, tiempo_traslado, via,
+            seguro_mercancia, profit_estimado, tipo_cambio, descripcion,
+            cotizacion_id,
+        ))
+
+    guardar_lineas_cotizacion_crm(db, cotizacion_id)
+
+    db.commit()
+    db.close()
+    return None
+
+
+MONEDAS_VALIDAS = ("USD", "MXN", "EUR")
+
+
+def guardar_lineas_cotizacion_crm(db, cotizacion_id):
+    """Reemplaza las líneas de producto de una cotización con las que vengan
+    en el formulario (arrays paralelos linea_producto_id / linea_producto_texto /
+    linea_cantidad / linea_precio_unitario / linea_moneda, uno por fila
+    agregada con '+ Agregar producto'). Una línea sin producto de catálogo
+    usa linea_producto_texto ("Sin producto", texto libre en mayúsculas).
+    Filas sin producto (ni catálogo ni texto) o sin cantidad/precio
+    numéricos se ignoran."""
+    productos = request.form.getlist("linea_producto_id")
+    productos_texto = request.form.getlist("linea_producto_texto")
+    cantidades = request.form.getlist("linea_cantidad")
+    precios = request.form.getlist("linea_precio_unitario")
+    monedas = request.form.getlist("linea_moneda")
+    causa_impuestos = request.form.getlist("linea_causa_impuesto")
+    impuestos = request.form.getlist("linea_impuesto")
+
+    db.execute("DELETE FROM crm_cotizacion_productos WHERE cotizacion_id = %s", (cotizacion_id,))
+    orden = 0
+    for i, (cantidad_raw, precio_raw) in enumerate(zip(cantidades, precios)):
+        producto_id_raw = productos[i] if i < len(productos) else ""
+        producto_texto = (productos_texto[i].strip().upper()[:100] if i < len(productos_texto) else "") or None
+        producto_id = int(producto_id_raw) if producto_id_raw.isdigit() else None
+        if producto_texto:
+            producto_id = None
+        elif producto_id is None:
+            continue
+        cantidad, _ = parse_numero_formato_miles(cantidad_raw)
+        precio, _ = parse_numero_formato_miles(precio_raw)
+        if cantidad is None or precio is None:
+            continue
+        moneda = monedas[i] if i < len(monedas) and monedas[i] in MONEDAS_VALIDAS else "MXN"
+        causa_impuesto = i < len(causa_impuestos) and causa_impuestos[i] == "si"
+        impuesto = 0.0
+        if causa_impuesto:
+            impuesto, _ = parse_numero_formato_miles(impuestos[i] if i < len(impuestos) else "")
+            impuesto = impuesto or 0.0
+        db.execute(
+            "INSERT INTO crm_cotizacion_productos "
+            "(cotizacion_id, producto_id, producto_texto, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (cotizacion_id, producto_id, producto_texto, cantidad, precio, moneda, causa_impuesto, impuesto, orden),
+        )
+        orden += 1
+
+
+def agrupar_nav_crm(slug_activo):
+    """Arma la barra lateral del CRM agrupada (sin grupo, Catálogos, Administración),
+    marcando como activo el item que corresponde a la sección actual."""
+    grupos_orden = [None, "Catálogos", "Administración"]
+    grupos = []
+    for nombre_grupo in grupos_orden:
+        items = [
+            {**item, "activo": item["slug"] == slug_activo}
+            for item in CRM_NAV if item["grupo"] == nombre_grupo
+        ]
+        if items:
+            grupos.append({"nombre": nombre_grupo, "elementos": items})
+    return grupos
+
+
+@app.route("/crm")
+@crm_required
+def crm():
+    return redirect(url_for("crm_seccion", slug="tareas"))
+
+
+@app.route("/crm/<slug>")
+@crm_required
+def crm_seccion(slug):
+    item = next((i for i in CRM_NAV if i["slug"] == slug), None)
+    if item is None:
+        return redirect(url_for("crm_seccion", slug="tareas"))
+
+    nav_groups = agrupar_nav_crm(slug)
+    if slug == "tareas":
+        hoy = datetime.now(TZ_LOCAL).date().isoformat()
+        tareas = [{**t, "vencida": t["fecha_compromiso"] < hoy} for t in TAREAS_MOCK]
+        return render_template("crm_tareas.html", nav_groups=nav_groups, titulo_pagina=item["texto"], tareas=tareas)
+
+    if slug == "booking":
+        hoy = datetime.now(TZ_LOCAL).date()
+        fecha_inicio_default = hoy.replace(day=1).isoformat()
+        fecha_fin_default = hoy.isoformat()
+        fecha_inicio = fecha_valida_o_vacia(request.args.get("fecha_inicio", "")) or fecha_inicio_default
+        fecha_fin = fecha_valida_o_vacia(request.args.get("fecha_fin", "")) or fecha_fin_default
+        bookings, total_bookings = construir_booking_crm(plazas_permitidas_usuario(), fecha_inicio, fecha_fin)
+        return render_template(
+            "crm_booking.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
+            bookings=bookings, total_bookings=total_bookings,
+            fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            filtro_personalizado=(fecha_inicio != fecha_inicio_default or fecha_fin != fecha_fin_default),
+        )
+
+    if slug == "clientes":
+        clientes = construir_clientes_crm(plazas_permitidas_usuario())
+        return render_template("crm_clientes.html", nav_groups=nav_groups, titulo_pagina=item["texto"], clientes=clientes)
+
+    if slug == "contactos":
+        contactos = construir_contactos_crm(plazas_permitidas_usuario())
+        return render_template("crm_contactos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], contactos=contactos)
+
+    if slug == "cotizaciones":
+        cotizaciones = construir_cotizaciones_crm(plazas_permitidas_usuario())
+        return render_template("crm_cotizaciones.html", nav_groups=nav_groups, titulo_pagina=item["texto"], cotizaciones=cotizaciones)
+
+    return render_template("crm_placeholder.html", nav_groups=nav_groups, titulo_pagina=item["texto"])
+
+
+@app.route("/crm/clientes/<int:folio>")
+@crm_required
+def crm_cliente_detalle(folio):
+    cliente = construir_cliente_detalle_crm(folio, plazas_permitidas_usuario())
+    if cliente is None:
+        flash("Cliente no encontrado o sin permiso para verlo.")
+        return redirect(url_for("crm_seccion", slug="clientes"))
+
+    cotizaciones = construir_cotizaciones_resumen_crm(cliente_folio=folio)
+    nav_groups = agrupar_nav_crm("clientes")
+    return render_template(
+        "crm_cliente_detalle.html", nav_groups=nav_groups,
+        titulo_pagina=cliente["razon_social"], cliente=cliente, cotizaciones=cotizaciones,
+    )
+
+
+@app.route("/crm/contactos/nuevo", methods=["GET", "POST"])
+@crm_required
+def crm_contacto_nuevo():
+    if request.method == "POST":
+        error = guardar_contacto_crm(None)
+        if error:
+            flash(error)
+        else:
+            return redirect(url_for("crm_seccion", slug="contactos"))
+
+    clientes, grupos = opciones_clientes_grupos_crm()
+    nav_groups = agrupar_nav_crm("contactos")
+    return render_template(
+        "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Nuevo contacto",
+        contacto=None, clientes=clientes, grupos=grupos, clientes_sel=set(), grupos_sel=set(),
+    )
+
+
+@app.route("/crm/contactos/<int:contacto_id>")
+@crm_required
+def crm_contacto_detalle(contacto_id):
+    contacto = construir_contacto_detalle_crm(contacto_id, plazas_permitidas_usuario())
+    if contacto is None:
+        flash("Contacto no encontrado o sin permiso para verlo.")
+        return redirect(url_for("crm_seccion", slug="contactos"))
+
+    cotizaciones = construir_cotizaciones_resumen_crm(contacto_id=contacto_id)
+    nav_groups = agrupar_nav_crm("contactos")
+    nombre_completo = f"{contacto['nombre']} {contacto['apellido']}".strip()
+    return render_template(
+        "crm_contacto_detalle.html", nav_groups=nav_groups,
+        titulo_pagina=nombre_completo, contacto=contacto, cotizaciones=cotizaciones,
+    )
+
+
+@app.route("/crm/contactos/<int:contacto_id>/editar", methods=["GET", "POST"])
+@crm_required
+def crm_contacto_editar(contacto_id):
+    if request.method == "POST":
+        error = guardar_contacto_crm(contacto_id)
+        if error:
+            flash(error)
+        else:
+            return redirect(url_for("crm_seccion", slug="contactos"))
+
+    db = get_db()
+    contacto = db.execute("SELECT * FROM crm_contactos WHERE id = %s", (contacto_id,)).fetchone()
+    if contacto is None:
+        db.close()
+        return "No encontrado", 404
+    clientes_sel = {
+        r["cliente_folio"] for r in db.execute(
+            "SELECT cliente_folio FROM crm_contacto_clientes WHERE contacto_id = %s", (contacto_id,)
+        )
+    }
+    grupos_sel = {
+        r["grupo_id"] for r in db.execute(
+            "SELECT grupo_id FROM crm_contacto_grupos WHERE contacto_id = %s", (contacto_id,)
+        )
+    }
+    db.close()
+
+    clientes, grupos = opciones_clientes_grupos_crm()
+    nav_groups = agrupar_nav_crm("contactos")
+    return render_template(
+        "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Editar contacto",
+        contacto=contacto, clientes=clientes, grupos=grupos, clientes_sel=clientes_sel, grupos_sel=grupos_sel,
+    )
+
+
+@app.route("/crm/contactos/<int:contacto_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_contacto_eliminar(contacto_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_contactos WHERE id = %s", (contacto_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_seccion", slug="contactos"))
+
+
+@app.route("/crm/cotizaciones/nueva", methods=["GET", "POST"])
+@crm_required
+def crm_cotizacion_nueva():
+    if request.method == "POST":
+        error = guardar_cotizacion_crm(None)
+        if error:
+            flash(error)
+        else:
+            return redirect(url_for("crm_seccion", slug="cotizaciones"))
+
+    incoterms, modalidades = opciones_incoterm_modalidad_crm()
+    tipos_ingreso_egreso = opciones_tipo_producto_crm()
+    clientes = opciones_clientes_cotizacion_crm()
+    contactos = opciones_contactos_cotizacion_crm()
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_cotizacion_form.html", nav_groups=nav_groups, titulo_pagina="Nueva cotización",
+        cotizacion=None, incoterms=incoterms, modalidades=modalidades,
+        clientes=clientes, contactos=contactos, lineas=[],
+        productos_json=json_para_js([{"id": t["id"], "nombre": t["nombre"], "producto": t["producto"]} for t in tipos_ingreso_egreso]),
+        lineas_json=json_para_js([]),
+    )
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/editar", methods=["GET", "POST"])
+@crm_required
+def crm_cotizacion_editar(cotizacion_id):
+    if request.method == "POST":
+        error = guardar_cotizacion_crm(cotizacion_id)
+        if error:
+            flash(error)
+        else:
+            return redirect(url_for("crm_seccion", slug="cotizaciones"))
+
+    db = get_db()
+    cotizacion = db.execute("SELECT * FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    db.close()
+    if cotizacion is None:
+        return "No encontrado", 404
+
+    incoterms, modalidades = opciones_incoterm_modalidad_crm()
+    tipos_ingreso_egreso = opciones_tipo_producto_crm()
+    clientes = opciones_clientes_cotizacion_crm()
+    contactos = opciones_contactos_cotizacion_crm()
+    lineas = obtener_lineas_cotizacion_crm(cotizacion_id)
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_cotizacion_form.html", nav_groups=nav_groups,
+        titulo_pagina=f"Cotización {cotizacion['id_cotizacion']}",
+        cotizacion=cotizacion, incoterms=incoterms, modalidades=modalidades,
+        clientes=clientes, contactos=contactos, lineas=lineas,
+        productos_json=json_para_js([{"id": t["id"], "nombre": t["nombre"], "producto": t["producto"]} for t in tipos_ingreso_egreso]),
+        lineas_json=json_para_js(lineas),
+    )
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_cotizacion_eliminar(cotizacion_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_seccion", slug="cotizaciones"))
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>")
+@crm_required
+def crm_cotizacion_detalle(cotizacion_id):
+    documento = construir_documento_cotizacion_crm(cotizacion_id)
+    if documento is None:
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_cotizacion_detalle.html", nav_groups=nav_groups,
+        titulo_pagina=documento["nombre_cotizacion"] or f"Cotización {documento['id_cotizacion']}",
+        doc=documento, cotizacion_id=cotizacion_id,
+    )
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/clonar", methods=["POST"])
+@crm_required
+def crm_cotizacion_clonar(cotizacion_id):
+    nuevo_id = clonar_cotizacion_crm(cotizacion_id)
+    if nuevo_id is None:
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    flash("Cotización clonada correctamente.")
+    return redirect(url_for("crm_cotizacion_editar", cotizacion_id=nuevo_id))
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/vista")
+@crm_required
+def crm_cotizacion_vista(cotizacion_id):
+    documento = construir_documento_cotizacion_crm(cotizacion_id)
+    if documento is None:
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    return render_template("crm_cotizacion_vista.html", doc=documento, cotizacion_id=cotizacion_id)
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/pdf")
+@crm_required
+def crm_cotizacion_pdf(cotizacion_id):
+    documento = construir_documento_cotizacion_crm(cotizacion_id)
+    if documento is None:
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+
+    html = render_template("crm_cotizacion_pdf.html", doc=documento)
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF de la cotización.")
+        return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id))
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=True, download_name=f"Cotizacion_{documento['id_cotizacion']}.pdf",
+        mimetype="application/pdf",
+    )
+
+
+@app.route("/crm/productos", methods=["GET", "POST"])
+@crm_required
+def crm_productos():
+    """Catálogo Productos = Tipo Ingreso/Egreso (crm_tipos_ingreso_egreso):
+    un solo catálogo, visible aquí y usado como Producto en Cotizaciones."""
+    db = get_db()
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip()
+        if not nombre:
+            flash("El nombre es obligatorio.")
+        else:
+            db.execute("INSERT INTO crm_tipos_ingreso_egreso (nombre) VALUES (%s)", (nombre,))
+            db.commit()
+        db.close()
+        return redirect(url_for("crm_productos"))
+
+    filas = db.execute("""
+        SELECT id, nombre, concepto_ingles, naturaleza, producto, porcentaje_iva, porcentaje_ret, bloqueado
+        FROM crm_tipos_ingreso_egreso WHERE producto IS NOT NULL AND producto <> '' ORDER BY nombre
+    """).fetchall()
+    db.close()
+    productos = [{
+        "id": f["id"],
+        "nombre": f["nombre"],
+        "concepto_ingles": f["concepto_ingles"] or "",
+        "naturaleza": f["naturaleza"] or "",
+        "producto": f["producto"] or "",
+        "porcentaje_iva": float(f["porcentaje_iva"]) if f["porcentaje_iva"] is not None else 0,
+        "porcentaje_ret": float(f["porcentaje_ret"]) if f["porcentaje_ret"] is not None else 0,
+        "bloqueado": f["bloqueado"],
+    } for f in filas]
+    nav_groups = agrupar_nav_crm("productos")
+    return render_template("crm_productos.html", nav_groups=nav_groups, titulo_pagina="Productos", productos=productos)
+
+
+@app.route("/crm/productos/<int:producto_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_producto_eliminar(producto_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_tipos_ingreso_egreso WHERE id = %s", (producto_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_productos"))
+
+
 @app.route("/catalogos")
-@admin_required
+@catalogos_required
 def catalogos():
     return render_template("catalogos.html")
+
+
+PERMISOS_LISTA = [
+    ("puede_ver_ventas", "Información de Ventas"),
+    ("puede_ver_reportes", "Reportes"),
+    ("puede_comisiones", "Comisiones"),
+    ("puede_ver_crm", "CRM"),
+    ("puede_ver_catalogos", "Catálogos"),
+    ("puede_actualizar", "Actualizar"),
+]
+PERMISOS_TOGGLEABLES = {campo for campo, _ in PERMISOS_LISTA}
 
 
 @app.route("/catalogos/permisos-actualizar")
@@ -1698,17 +3231,18 @@ def permisos_actualizar():
         SELECT u.id, u.email,
             coalesce(p.es_admin, false) AS es_admin,
             coalesce(p.puede_actualizar, false) AS puede_actualizar,
-            coalesce(p.puede_comisiones, false) AS puede_comisiones
+            coalesce(p.puede_comisiones, false) AS puede_comisiones,
+            coalesce(p.puede_ver_ventas, true) AS puede_ver_ventas,
+            coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
+            coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
+            coalesce(p.puede_ver_crm, false) AS puede_ver_crm
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
         """
     ).fetchall()
     db.close()
-    return render_template("permisos_actualizar.html", filas=filas)
-
-
-PERMISOS_TOGGLEABLES = {"puede_actualizar", "puede_comisiones"}
+    return render_template("permisos_actualizar.html", filas=filas, permisos_lista=PERMISOS_LISTA)
 
 
 @app.route("/catalogos/permisos-actualizar/<uuid:user_id>/toggle", methods=["POST"])

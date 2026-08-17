@@ -1,0 +1,116 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .btn-atras { display: inline-block; margin-bottom: 1rem; padding: 0.4rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; color: #333; text-decoration: none; font-size: 0.85rem; }
+  .btn-atras:hover { background: #f5f5f5; }
+  .acciones-detalle { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .acciones-detalle a, .acciones-detalle button {
+    padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    border: none; text-decoration: none; display: inline-block;
+  }
+  .btn-editar-cot { background: #ef6c00; color: #fff; }
+  .btn-clonar { background: #555; color: #fff; }
+  .btn-visualizar { background: #1565c0; color: #fff; }
+  .btn-pdf { background: #7a1f2c; color: #fff; }
+
+  .detalle-grid { display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 800px) { .detalle-grid { grid-template-columns: 1fr; } }
+  .tarjeta { border: 1px solid var(--borde); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.2rem; background: #fff; }
+  .campo-etiqueta { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #999; margin: 0.7rem 0 0.15rem; }
+  .campo-etiqueta:first-child { margin-top: 0; }
+  .campo-valor { font-size: 0.9rem; margin: 0; }
+  .id-badge { display: inline-block; background: #f1f1f1; color: #555; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.78rem; margin-bottom: 0.8rem; }
+
+  .tarjeta h3 { margin: 0 0 0.9rem; font-size: 1rem; }
+  table.tabla-lineas { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  table.tabla-lineas th { text-align: left; background: #fafafa; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); }
+  table.tabla-lineas td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); }
+  table.tabla-lineas td.num { text-align: right; }
+  .pendiente { color: #999; font-size: 0.85rem; }
+
+  .tarjetas-totales { display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 1.2rem; }
+  .tarjeta-moneda { flex: 1 1 200px; border: 1px solid var(--borde); border-radius: 8px; padding: 0.8rem 1rem; }
+  .tarjeta-moneda__titulo { font-weight: 700; margin-bottom: 0.4rem; }
+  .tarjeta-moneda .fila { display: flex; justify-content: space-between; font-size: 0.85rem; color: #444; padding: 0.1rem 0; }
+  .tarjeta-moneda .fila-total { border-top: 1px solid var(--borde); margin-top: 0.3rem; padding-top: 0.35rem; color: #1565c0; font-weight: 700; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
+
+  <div class="acciones-detalle">
+    <a class="btn-editar-cot" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=cotizacion_id) }}">Editar</a>
+    <form method="post" action="{{ url_for('crm_cotizacion_clonar', cotizacion_id=cotizacion_id) }}" onsubmit="return confirm('¿Clonar esta cotización? Se creará una copia nueva con su propio ID.');">
+      <button type="submit" class="btn-clonar">Clonar</button>
+    </form>
+    <a class="btn-visualizar" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id) }}" target="_blank">Visualizar</a>
+    <a class="btn-pdf" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion_id) }}">Descargar PDF</a>
+  </div>
+
+  <div class="detalle-grid">
+    <div class="tarjeta">
+      <span class="id-badge">{{ doc.id_cotizacion }}</span>
+      <p class="campo-etiqueta">Nombre</p>
+      <p class="campo-valor">{{ doc.nombre_cotizacion or "Sin nombre" }}</p>
+      <p class="campo-etiqueta">Cliente</p>
+      <p class="campo-valor">{{ doc.cliente_nombre }}</p>
+      {% if doc.contacto_nombre %}
+        <p class="campo-etiqueta">Contacto</p>
+        <p class="campo-valor">{{ doc.contacto_nombre }}{% if doc.contacto_correo %} · {{ doc.contacto_correo }}{% endif %}</p>
+      {% endif %}
+      <p class="campo-etiqueta">Creación / Vencimiento</p>
+      <p class="campo-valor">{{ doc.fecha_creacion }} &rarr; {{ doc.fecha_vencimiento or "—" }}</p>
+      <p class="campo-etiqueta">Origen / Destino</p>
+      <p class="campo-valor">{{ doc.origen }} &rarr; {{ doc.destino }}</p>
+      <p class="campo-etiqueta">HAZ-MAT</p>
+      <p class="campo-valor">{{ "Sí" if doc.hazmat else "No" }}</p>
+      <p class="campo-etiqueta">Incoterm / Modalidad</p>
+      <p class="campo-valor">{{ doc.incoterm or "—" }} / {{ doc.modalidad or "—" }}</p>
+      <p class="campo-etiqueta">Estibable / Seg. Mercancía</p>
+      <p class="campo-valor">{{ "Sí" if doc.estibable else "No" }} / {{ "Sí" if doc.seguro_mercancia else "No" }}</p>
+      <p class="campo-etiqueta">Tiempo de traslado / Vía</p>
+      <p class="campo-valor">{{ doc.tiempo_traslado or "—" }} / {{ doc.via or "—" }}</p>
+      {% if doc.descripcion %}
+        <p class="campo-etiqueta">Descripción</p>
+        <p class="campo-valor">{{ doc.descripcion }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="tarjeta">
+        <h3>Productos ({{ doc.lineas|length }})</h3>
+        {% if doc.lineas %}
+        <table class="tabla-lineas">
+          <thead>
+            <tr><th>Producto</th><th class="num">Precio unitario</th><th class="num">Impuesto %</th><th class="num">Impuesto</th><th class="num">Total</th></tr>
+          </thead>
+          <tbody>
+            {% for l in doc.lineas %}
+            <tr>
+              <td>{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
+              <td class="num">{{ "{:,.2f}".format(l.precio_unitario) }} {{ l.moneda }}</td>
+              <td class="num">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
+              <td class="num">{{ "{:,.2f}".format(l.impuesto) }} {{ l.moneda }}</td>
+              <td class="num">{{ "{:,.2f}".format(l.total) }} {{ l.moneda }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+          <p class="pendiente">Sin productos capturados en esta cotización.</p>
+        {% endif %}
+
+        {% if doc.totales_moneda %}
+        <div class="tarjetas-totales">
+          {% for t in doc.totales_moneda %}
+          <div class="tarjeta-moneda">
+            <div class="tarjeta-moneda__titulo">{{ t.moneda }}</div>
+            <div class="fila"><span>Sub total</span><span>${{ "{:,.2f}".format(t.subtotal) }}</span></div>
+            <div class="fila"><span>Impuesto</span><span>${{ "{:,.2f}".format(t.impuesto) }}</span></div>
+            <div class="fila fila-total"><span>Total</span><span>${{ "{:,.2f}".format(t.total) }}</span></div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

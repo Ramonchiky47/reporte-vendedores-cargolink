@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}{{ titulo_pagina }} · AV2 Logistics CRM{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light;
+    --borde: #d0d0d0;
+    --fondo-suave: #f5f5f5;
+    --peligro: #c0392b;
+    --exito: #2e7d32;
+    --editar: #ef6c00;
+    --lateral-bg: #1c1712;
+    --lateral-ink: #f3ede6;
+    --lateral-ink-mid: #c9bfae;
+    --lateral-ink-baja: #8d8375;
+    --lateral-hover: rgba(255, 255, 255, 0.06);
+    --lateral-activo: rgba(192, 57, 43, 0.22);
+    --altura-topbar: 3.2rem;
+    --ancho-lateral: 246px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+    background: #fff; color: #222;
+  }
+
+  /* ---------- Barra lateral ---------- */
+  .barra-lateral {
+    position: fixed; left: 0; top: 0; bottom: 0; width: var(--ancho-lateral);
+    background: var(--lateral-bg); color: var(--lateral-ink);
+    display: flex; flex-direction: column; padding: 1.1rem 0.8rem; overflow-y: auto; z-index: 10;
+  }
+  .lateral-marca { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.3rem 0.6rem 1.1rem; }
+  .lateral-marca__fila { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+  .lateral-marca__nombre { font-size: 0.88rem; font-weight: 800; letter-spacing: 0.02em; color: var(--lateral-ink); white-space: nowrap; }
+  .lateral-marca__sufijo { font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; color: var(--peligro); text-transform: uppercase; }
+  .lateral-marca__autor { font-size: 0.62rem; color: var(--lateral-ink-baja); }
+  .nav-lateral { display: flex; flex-direction: column; gap: 1.15rem; }
+  .nav-grupo { display: flex; flex-direction: column; gap: 0.1rem; }
+  .nav-grupo__titulo { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--lateral-ink-baja); padding: 0 0.6rem 0.35rem; }
+  .nav-item { display: block; padding: 0.42rem 0.6rem; border-radius: 7px; color: var(--lateral-ink-mid); text-decoration: none; font-size: 0.83rem; }
+  .nav-item:hover { background: var(--lateral-hover); color: var(--lateral-ink); }
+  .nav-item.activo { background: var(--lateral-activo); color: #fff; font-weight: 600; }
+  .nav-item--sub { padding-left: 1rem; font-size: 0.79rem; color: var(--lateral-ink-baja); }
+  .nav-item--sub:hover { color: var(--lateral-ink); }
+
+  /* ---------- Barra superior ---------- */
+  .con-barra-lateral { margin: 0.75rem 0.75rem 0.75rem calc(var(--ancho-lateral) + 0.75rem); max-width: 1500px; padding-top: var(--altura-topbar); }
+  .barra-superior {
+    position: fixed; top: 0; left: var(--ancho-lateral); right: 0; height: var(--altura-topbar);
+    display: flex; align-items: center; gap: 1rem; padding: 0 1rem;
+    background: #fff; border-bottom: 1px solid var(--borde); font-size: 0.8rem; color: #757575; z-index: 9;
+  }
+  .barra-superior__titulo { flex: 1 1 auto; margin: 0; font-size: 1.05rem; font-weight: 700; color: #222; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .barra-superior span { white-space: nowrap; }
+  .buscador-global { flex: 0 1 260px; }
+  .buscador-global input { width: 100%; padding: 0.4rem 0.6rem; font-size: 0.78rem; border: 1px solid var(--borde); border-radius: 4px; font: inherit; }
+  .barra-superior button { background: #757575; padding: 0.4rem 0.8rem; font-size: 0.78rem; border: none; border-radius: 4px; color: #fff; cursor: pointer; text-decoration: none; }
+  .btn-volver { flex: 0 0 auto; color: #1565c0; font-size: 0.82rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .btn-volver:hover { text-decoration: underline; }
+
+  @media (max-width: 900px) {
+    .barra-lateral { position: static; width: auto; height: auto; flex-direction: row; flex-wrap: wrap; overflow-x: auto; padding: 0.6rem; }
+    .lateral-marca { padding: 0 0.8rem 0 0.2rem; }
+    .nav-lateral { flex-direction: row; flex-wrap: wrap; gap: 0.25rem; }
+    .nav-grupo { flex-direction: row; flex-wrap: wrap; }
+    .nav-grupo__titulo { display: none; }
+    .con-barra-lateral { margin: 0.75rem auto; max-width: 1300px; padding-top: 0; }
+    .barra-superior { position: static; height: auto; flex-wrap: wrap; margin-bottom: 0.5rem; border-bottom: none; padding: 0; }
+  }
+
+  /* ---------- Contenido ---------- */
+  h2 { margin: 0 0 0.3rem; }
+  .pista { color: #757575; font-size: 0.85rem; margin: 0 0 0.9rem; }
+  .flash { background: #fee2e2; color: #b91c1c; padding: 0.7rem 1rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; }
+
+  table.tabla-ordenable thead th[data-campo] { cursor: pointer; user-select: none; white-space: nowrap; }
+  table.tabla-ordenable thead th[data-campo]::after { content: '⇅'; display: inline-block; margin-left: 0.3rem; opacity: 0.35; font-size: 0.75em; }
+  table.tabla-ordenable thead th[data-campo].orden-asc::after { content: '▲'; opacity: 1; }
+  table.tabla-ordenable thead th[data-campo].orden-desc::after { content: '▼'; opacity: 1; }
+
+  {% block extra_style %}{% endblock %}
+</style>
+{% block extra_head %}{% endblock %}
+</head>
+<body class="con-barra-lateral">
+  <aside class="barra-lateral">
+    <div class="lateral-marca">
+      <div class="lateral-marca__fila">
+        <span class="lateral-marca__nombre">AV2 LOGISTICS</span>
+        <span class="lateral-marca__sufijo">CRM</span>
+      </div>
+      <span class="lateral-marca__autor">By Ing Ramón Villanueva</span>
+    </div>
+    <nav class="nav-lateral" aria-label="Navegación principal">
+      {% for grupo in nav_groups %}
+        <div class="nav-grupo">
+          {% if grupo.nombre %}<div class="nav-grupo__titulo">{{ grupo.nombre }}</div>{% endif %}
+          {% for item in grupo.elementos %}
+            <a class="nav-item{{ ' nav-item--sub' if grupo.nombre else '' }}{{ ' activo' if item.activo else '' }}"
+               href="{{ url_for('crm_seccion', slug=item.slug) }}"{{ ' aria-current="page"'|safe if item.activo else '' }}>{{ item.texto }}</a>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <div class="barra-superior">
+    {% if reporte_ventas_url %}
+      <a class="btn-volver" href="{{ reporte_ventas_url }}">&larr; Reporte de Ventas</a>
+    {% endif %}
+    <h2 class="barra-superior__titulo">{{ titulo_pagina }}</h2>
+    <form class="buscador-global" role="search" onsubmit="return false;">
+      <input type="text" autocomplete="off" placeholder="Buscar contacto, hotel/local u orden..." />
+    </form>
+    <span>{{ session.get('usuario', '') }}{{ ' (admin)' if session.get('es_admin') else '' }}</span>
+    <button type="button" onclick="window.location.href='{{ url_for('logout') }}'">Cerrar sesión</button>
+  </div>
+
+  <div class="crm-contenido">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+    {% endwith %}
+    {% block crm_content %}{% endblock %}
+  </div>
+
+  <script>
+    // Ordenamiento ascendente/descendente al hacer clic en un encabezado con
+    // data-campo, para cualquier tabla marcada como "tabla-ordenable".
+    function valorCeldaOrdenamiento(celda, tipo) {
+      const texto = celda ? celda.textContent.trim() : '';
+      if (tipo === 'num') return parseFloat(texto.replace(/[^0-9.\-]/g, '')) || 0;
+      return texto.toLowerCase();
+    }
+
+    function inicializarOrdenamiento(tabla) {
+      const thead = tabla.querySelector('thead');
+      const tbody = tabla.querySelector('tbody');
+      if (!thead || !tbody) return;
+      const columnas = Array.from(thead.querySelectorAll('th'));
+      columnas.forEach((th) => {
+        if (!th.dataset.campo) return;
+        th.addEventListener('click', () => {
+          const idx = columnas.indexOf(th);
+          const nuevoAsc = !th.classList.contains('orden-asc');
+          columnas.forEach((c) => c.classList.remove('orden-asc', 'orden-desc'));
+          th.classList.add(nuevoAsc ? 'orden-asc' : 'orden-desc');
+          const tipo = th.dataset.tipo || 'texto';
+          const filas = Array.from(tbody.querySelectorAll('tr'));
+          filas.sort((a, b) => {
+            const va = valorCeldaOrdenamiento(a.children[idx], tipo);
+            const vb = valorCeldaOrdenamiento(b.children[idx], tipo);
+            if (va < vb) return nuevoAsc ? -1 : 1;
+            if (va > vb) return nuevoAsc ? 1 : -1;
+            return 0;
+          });
+          filas.forEach((f) => tbody.appendChild(f));
+        });
+      });
+    }
+
+    document.querySelectorAll('table.tabla-ordenable').forEach(inicializarOrdenamiento);
+  </script>
+  {% block extra_script %}{% endblock %}
+</body>
+</html>

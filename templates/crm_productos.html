@@ -1,0 +1,98 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-agregar-producto { display: flex; gap: 0.5rem; margin-bottom: 1rem; max-width: 420px; }
+  .form-agregar-producto input { flex: 1; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem; }
+  .form-agregar-producto button { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .buscador-productos { margin-bottom: 0.9rem; max-width: 340px; }
+  .buscador-productos input { width: 100%; padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.82rem; white-space: nowrap; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; z-index: 2; }
+  th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 0 var(--borde); }
+  th:first-child { z-index: 3; background: #fafafa; }
+  td.num { text-align: right; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.72rem; }
+  .badge-ingreso { background: #dcfce7; color: #166534; }
+  .badge-egreso { background: #fee2e2; color: #991b1b; }
+  .badge-ambos { background: #e0e7ff; color: #3730a3; }
+  .badge-bloqueado { background: #fee2e2; color: #991b1b; }
+  .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: #c0392b; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Productos</h2>
+  <p class="pista">Mismo catálogo que "Tipo Ingreso/Egreso" en Cotizaciones — importado de CargoLink (Catálogos → Tipo ingreso/egreso). El nombre que agregues aquí aparece también ahí.</p>
+
+  <form class="form-agregar-producto" method="post">
+    <input type="text" name="nombre" placeholder="Nombre del producto" required>
+    <button type="submit">+ Agregar</button>
+  </form>
+
+  {% if productos %}
+  <div class="buscador-productos">
+    <input type="text" id="buscador-productos" autocomplete="off" placeholder="Buscar por nombre, concepto en inglés..." />
+  </div>
+  <p class="pista"><span id="contador-productos-visibles">{{ productos|length }}</span> de {{ productos|length }} producto(s).</p>
+  <div class="tabla-scroll">
+    <table class="tabla-ordenable">
+      <thead>
+        <tr>
+          <th data-campo="nombre">Nombre</th>
+          <th data-campo="concepto_ingles">Concepto en inglés</th>
+          <th data-campo="naturaleza">Tipo</th>
+          <th data-campo="porcentaje_iva" data-tipo="num">IVA</th>
+          <th data-campo="porcentaje_ret" data-tipo="num">RET</th>
+          <th data-campo="producto">Producto</th>
+          <th>Estatus</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-productos-cuerpo">
+        {% for p in productos %}
+        <tr>
+          <td>{{ p.nombre }}</td>
+          <td>{{ p.concepto_ingles }}</td>
+          <td>
+            {% if p.naturaleza %}
+              <span class="badge badge-{{ p.naturaleza|lower }}">{{ p.naturaleza }}</span>
+            {% endif %}
+          </td>
+          <td class="num">{{ p.porcentaje_iva|int }}%</td>
+          <td class="num">{{ p.porcentaje_ret|int }}%</td>
+          <td>{{ p.producto }}</td>
+          <td>{% if p.bloqueado %}<span class="badge badge-bloqueado">Bloqueado</span>{% endif %}</td>
+          <td>
+            <form method="post" action="{{ url_for('crm_producto_eliminar', producto_id=p.id) }}" onsubmit="return confirm('¿Borrar este producto? Esta acción no se puede deshacer.');">
+              <button type="submit" class="btn-borrar">Borrar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay productos en el catálogo.</p>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      const input = document.getElementById('buscador-productos');
+      if (!input) return;
+      const filas = Array.from(document.querySelectorAll('#tabla-productos-cuerpo tr'));
+      const contador = document.getElementById('contador-productos-visibles');
+      input.addEventListener('input', () => {
+        const termino = input.value.trim().toLowerCase();
+        let visibles = 0;
+        filas.forEach((fila) => {
+          const coincide = !termino || fila.textContent.toLowerCase().includes(termino);
+          fila.hidden = !coincide;
+          if (coincide) visibles += 1;
+        });
+        contador.textContent = visibles;
+      });
+    })();
+  </script>
+{% endblock %}

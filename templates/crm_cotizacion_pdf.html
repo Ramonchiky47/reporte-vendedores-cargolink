@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: letter; margin: 2cm 2cm 2.2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 9pt; }
+  table { border-collapse: collapse; width: 100%; }
+  .tabla-encabezado td { vertical-align: top; border: none; padding: 0; }
+  .logo-badge {
+    width: 40px; height: 40px; border-radius: 8px; background-color: #7a1f2c; color: #ffffff;
+    text-align: center; font-weight: bold; font-size: 10pt;
+  }
+  .empresa { text-align: center; }
+  .empresa h1 { margin: 0 0 4px; font-size: 14pt; font-weight: bold; letter-spacing: 1.5px; }
+  .empresa p { margin: 1px 0; font-size: 7.5pt; font-weight: normal; color: #444444; }
+
+  table.agradecimiento-tabla { margin: 10px 0 6px; }
+  table.agradecimiento-tabla td { border: none; padding: 0; text-align: center; }
+  .agradecimiento { font-size: 8pt; font-weight: bold; color: #555555; }
+  .realizada-por { font-size: 9pt; margin-bottom: 6px; }
+
+  .barra-vino td { background-color: #7a1f2c; color: #ffffff; font-size: 9pt; font-weight: bold; padding: 6px 10px; border: none; }
+  .barra-vino-vacia td { background-color: #7a1f2c; padding: 6px 10px; border: none; }
+
+  .datos-cliente td { border: none; padding: 1px 0; font-size: 9pt; vertical-align: top; }
+
+  table.caja-titulo { background-color: #fbe3e2; border-radius: 6px; margin: 10px 0 12px; }
+  table.caja-titulo > tr > td { padding: 14px 18px; border: none; }
+  .caja-titulo-nombre { font-size: 13pt; font-weight: bold; margin: 0 0 10px; letter-spacing: 0.3px; }
+  .caja-titulo p { margin: 1px 0; font-size: 8.5pt; }
+  .caja-titulo .der { text-align: right; }
+
+  .saludo { font-size: 9pt; margin: 8px 0 10px; }
+
+  table.rejilla-envio { table-layout: fixed; }
+  .rejilla-envio td { border-bottom: 1px solid #d0d0d0; padding: 4px 6px 6px 0; font-size: 8pt; vertical-align: top; width: 25%; }
+  .rejilla-envio .etiqueta { font-size: 6.5pt; letter-spacing: 0.5px; color: #555555; font-weight: bold; margin: 0 0 2px; }
+  .rejilla-envio .valor { font-size: 8pt; color: #222222; margin: 0; }
+
+  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 9pt; }
+  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; }
+  table.tabla-rate td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 8.5pt; }
+
+  table.tarjetas-totales { margin: 10px 0 6px; }
+  table.tarjetas-totales > tr > td {
+    border: 1px solid #d0d0d0; border-radius: 4px; padding: 8px 10px; vertical-align: top; width: 33%;
+  }
+  .tarjeta-titulo { font-weight: bold; font-size: 9pt; margin: 0 0 5px; }
+  .tarjeta-fila { font-size: 8pt; color: #444444; margin: 1px 0; }
+  .tarjeta-fila-etq { width: 60%; }
+  .tarjeta-fila-val { width: 40%; text-align: right; }
+  .tarjeta-total-etq { width: 60%; color: #7a1f2c; font-weight: bold; font-size: 8.5pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
+  .tarjeta-total-val { width: 40%; text-align: right; color: #7a1f2c; font-weight: bold; font-size: 8.5pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
+
+  .descripcion-texto { font-size: 8.5pt; padding: 6px 2px 12px; }
+
+  .notas-titulo { text-align: left; font-size: 8.5pt; font-weight: bold; letter-spacing: 0.5px; margin: 0 0 6px; }
+  .notas p { margin: 3px 0; font-size: 6.8pt; color: #333333; line-height: 1.4; }
+  table.caja-notas { border: 1px solid #d0d0d0; border-radius: 6px; margin: 10px 0; }
+  table.caja-notas > tr > td { padding: 10px 14px; border: none; }
+
+  .firma { margin: 12px 0 4px; font-size: 8.5pt; color: #333333; }
+  .firma p { margin: 2px 0; color: #444444; }
+  .firma .nombre { font-weight: bold; color: #222222; }
+</style>
+</head>
+<body>
+  <table class="tabla-encabezado">
+    <tr>
+      <td style="width:60px;"><div class="logo-badge">AV2</div></td>
+      <td class="empresa">
+        <h1>AV2 LOGISTICS</h1>
+        <p>AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
+        <p>ZAPOPAN, JALISCO</p>
+        <p>R.F.C ALO171009TZ1</p>
+      </td>
+      <td style="width:60px;"></td>
+    </tr>
+  </table>
+
+  <table class="agradecimiento-tabla"><tr><td class="agradecimiento">AGRADECEMOS SU PREFERENCIA</td></tr></table>
+
+  <table class="caja-titulo">
+    <tr>
+      <td colspan="2"><p class="caja-titulo-nombre"><b>{{ doc.nombre_cotizacion or "Cotización" }}</b></p></td>
+    </tr>
+    <tr>
+      <td style="width:55%;">
+        <p><b>{{ doc.cliente_nombre }}</b></p>
+        <p>{{ doc.destino }}</p>
+        {% if doc.contacto_nombre %}<p><b>{{ doc.contacto_nombre }}</b></p>{% endif %}
+        {% if doc.contacto_correo %}<p>{{ doc.contacto_correo }}</p>{% endif %}
+      </td>
+      <td class="der">
+        <p>Referencia: {{ doc.id_cotizacion }}</p>
+        <p>Creación de la cotización: {{ doc.fecha_creacion_larga }}</p>
+        <p>Caducidad de la cotización: {{ doc.fecha_vencimiento_larga or "—" }}</p>
+        <p>Cotización creada por: <b>{{ doc.vendedor or "—" }}</b></p>
+      </td>
+    </tr>
+  </table>
+
+  <p class="saludo">
+    Estimado Cliente.<br/>
+    En atención a su amable solicitud de cotización, le proporcionamos a usted los costos para transporte de su mercancía.
+  </p>
+
+  <table class="barra-vino-vacia"><tr><td>&nbsp;</td></tr></table>
+
+  <table class="rejilla-envio">
+    <tr>
+      <td><p class="etiqueta">ORIGEN</p><p class="valor">{{ doc.origen }}</p></td>
+      <td><p class="etiqueta">MODALIDAD</p><p class="valor">{{ doc.modalidad }}</p></td>
+      <td><p class="etiqueta">TT (TIEMPO DE TRASLADO)</p><p class="valor">{{ doc.tiempo_traslado }}</p></td>
+      <td><p class="etiqueta">SEG. MERC.</p><p class="valor">{{ 'Sí' if doc.seguro_mercancia else 'No' }}</p></td>
+    </tr>
+    <tr>
+      <td><p class="etiqueta">DESTINO</p><p class="valor">{{ doc.destino }}</p></td>
+      <td><p class="etiqueta">ESTIBABLE</p><p class="valor">{{ 'Sí' if doc.estibable else 'No' }}</p></td>
+      <td><p class="etiqueta">VÍA</p><p class="valor">{{ doc.via }}</p></td>
+      <td><p class="etiqueta">INCOTERM</p><p class="valor">{{ doc.incoterm }}</p></td>
+    </tr>
+    <tr>
+      <td><p class="etiqueta">HAZ-MAT</p><p class="valor">{{ 'Sí' if doc.hazmat else 'No' }}</p></td>
+      <td></td><td></td><td></td>
+    </tr>
+  </table>
+
+  <br/>
+  <table class="tabla-rate">
+    <thead>
+      <tr>
+        <th>DESCRIPTION</th>
+        <th class="col-rate">PRECIO UNITARIO</th>
+        <th class="col-rate">IMPUESTO %</th>
+        <th class="col-rate">IMPUESTO</th>
+        <th class="col-rate">TOTAL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in doc.lineas %}
+      <tr>
+        <td>{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
+        <td class="col-rate">{{ "{:,.2f}".format(l.precio_unitario) }}{{ l.moneda }}</td>
+        <td class="col-rate">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
+        <td class="col-rate">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
+        <td class="col-rate">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
+      </tr>
+      {% endfor %}
+      {% if not doc.lineas %}
+      <tr><td colspan="5" style="text-align:center; color:#999999;">Sin conceptos capturados</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  {% if doc.totales_moneda %}
+  <table class="tarjetas-totales">
+    <tr>
+      {% for t in doc.totales_moneda %}
+      <td>
+        <p class="tarjeta-titulo">{{ t.moneda }}</p>
+        <table>
+          <tr><td class="tarjeta-fila tarjeta-fila-etq">Sub total</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.subtotal) }}</td></tr>
+          <tr><td class="tarjeta-fila tarjeta-fila-etq">Impuesto</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.impuesto) }}</td></tr>
+          <tr><td class="tarjeta-total-etq">Total</td><td class="tarjeta-total-val">${{ "{:,.2f}".format(t.total) }}</td></tr>
+        </table>
+      </td>
+      {% endfor %}
+      {% for _ in range(3 - doc.totales_moneda|length) %}<td style="border:none;"></td>{% endfor %}
+    </tr>
+  </table>
+  {% endif %}
+
+  <table class="barra-vino"><tr><td>DESCRIPCIÓN</td></tr></table>
+  <p class="descripcion-texto">{{ doc.descripcion or "" }}</p>
+
+  <table class="caja-notas">
+    <tr>
+      <td>
+        <p class="notas-titulo">SHIPPING NOTES / OBSERVACIONES</p>
+        <div class="notas">
+          <p>1) El servicio no incluye en origen/destino: trámites aduanales, maniobras, seguros de transporte, impuestos por exportación/importación, cualquier otro gasto por cuenta y/o cualquier otro concepto no mencionado expresamente en la presente.</p>
+          <p>2) Las tarifas no deberán ser aplicadas a ninguna carga que requiera un equipo o manejo especial, a menos que sea especificado.</p>
+          <p>3) La Carga peligrosa, con sobrepeso o residuos peligrosos está sujeta a la aprobación del Transportista de Carga antes de ser transportada.</p>
+          <p>4) Las tarifas están sujetas a la disponibilidad del equipo en origen y destino.</p>
+          <p>5) Peso máximo autorizado: Nuestras tarifas están sujetas a la legislación vigente en cada país sobre las normas de pesos y dimensiones.</p>
+          <p>6) Los días libres de demoras de contenedor en Importación inician al término de la operación de descarga del buque: la cantidad de estos días libres revisarlos directamente con su ejecutivo comercial. Costo por demoras USD 160 por día +iva.</p>
+          <p>7) Servicio sujeto a disponibilidad de espacio y equipo al momento de la reservación.</p>
+          <p>8) El BAF es fluctuante (V.A.T.O.S.), sujeto a cambios sin previo aviso.</p>
+          <p>9) Acondicionamiento de equipo en caso de solicitarlo USD $150/cntr (food grade ctr).+iva</p>
+          <p>10) Si la presente cotización es aceptada, solicite su Orden de Servicio y envíela completada y firmada vía fax o email a su ejecutivo de cuenta.</p>
+          <p>11) Considere que FCL cargue y descargue; para LCL/LTL/FTL considere 2 horas para cargar y descargar, luego una hora adicional será un cargo de $150 usd cada hora.</p>
+          <p>* Los tiempos y frecuencias de tránsito corresponden a un servicio de línea regular, sin embargo estos pueden cambiar debido a fuerza mayor sin previo aviso.</p>
+          <p>** La validez de la cotización puede cambiar en cualquier momento debido a cambios en el esquema de costos.</p>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="firma">
+    <p>¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
+    <p class="nombre">Lic Armando Villanueva Silva</p>
+    <p>Ejecutivo de Cuenta Monterrey</p>
+    <p>Tel +52 81 1778 7250</p>
+    <p>Correo: avillanueva@av2logistics.com</p>
+  </div>
+</body>
+</html>

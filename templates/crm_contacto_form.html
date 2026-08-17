@@ -1,0 +1,160 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-contacto { max-width: 640px; }
+  .form-contacto label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin: 1rem 0 0.3rem; }
+  .form-contacto label:first-of-type { margin-top: 0; }
+  .form-contacto input[type="text"], .form-contacto input[type="tel"], .form-contacto input[type="email"],
+  .form-contacto textarea {
+    width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem;
+  }
+  .form-contacto textarea { resize: vertical; min-height: 70px; }
+  .fila-2 { display: flex; gap: 1rem; }
+  .fila-2 > div { flex: 1; }
+  .pista-campo { color: #999; font-size: 0.75rem; margin: 0.25rem 0 0; }
+  .acciones-form-contacto { display: flex; gap: 0.6rem; margin-top: 1.5rem; }
+  .acciones-form-contacto button, .acciones-form-contacto a {
+    padding: 0.55rem 1.1rem; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn-guardar { background: #1565c0; color: #fff; font-weight: 600; }
+  .btn-cancelar { background: #e0e0e0; color: #333; }
+
+  .multi-select { position: relative; }
+  .multi-select-btn {
+    width: 100%; text-align: left; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px;
+    background: #fff; font: inherit; font-size: 0.88rem; cursor: pointer; color: #333;
+  }
+  .multi-select-btn:after { content: '▾'; float: right; color: #999; }
+  .multi-select-panel {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: #fff; border: 1px solid var(--borde); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 0.6rem;
+  }
+  .multi-select-panel input[type="text"] { margin-bottom: 0.5rem; }
+  .multi-select-lista { max-height: 220px; overflow-y: auto; border: 1px solid var(--borde); border-radius: 6px; padding: 0.3rem 0.5rem; }
+  .multi-select-lista label {
+    display: flex; align-items: center; gap: 0.5rem; font-weight: 400; font-size: 0.85rem;
+    margin: 0; padding: 0.3rem 0.15rem; cursor: pointer; color: #333;
+  }
+  .multi-select-lista label:hover { background: #f5f5f5; }
+  .multi-select-lista label[hidden] { display: none; }
+  .multi-select-lista input[type="checkbox"] { margin: 0; }
+  .multi-select-acciones { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
+  .btn-aplicar-multiselect { padding: 0.35rem 0.9rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" style="display:inline-block; margin-bottom:1rem; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
+     href="{{ url_for('crm_seccion', slug='contactos') }}">&larr; Contactos</a>
+
+  <h2>{{ titulo_pagina }}</h2>
+
+  <form class="form-contacto" method="post">
+    <div class="fila-2">
+      <div>
+        <label for="nombre">Nombre *</label>
+        <input type="text" id="nombre" name="nombre" required value="{{ contacto.nombre if contacto else '' }}">
+      </div>
+      <div>
+        <label for="apellido">Apellido</label>
+        <input type="text" id="apellido" name="apellido" value="{{ contacto.apellido if contacto else '' }}">
+      </div>
+    </div>
+
+    <div class="fila-2">
+      <div>
+        <label for="telefono">Teléfono</label>
+        <input type="tel" id="telefono" name="telefono" value="{{ contacto.telefono if contacto else '' }}">
+      </div>
+      <div>
+        <label for="correo">Correo electrónico</label>
+        <input type="email" id="correo" name="correo" value="{{ contacto.correo if contacto else '' }}">
+      </div>
+    </div>
+
+    <label for="observaciones">Observaciones</label>
+    <textarea id="observaciones" name="observaciones">{{ contacto.observaciones if contacto else '' }}</textarea>
+
+    <label>Clientes asociados</label>
+    <div class="multi-select" id="clientes-multiselect">
+      <button type="button" class="multi-select-btn" id="clientes-btn">Selecciona clientes</button>
+      <div class="multi-select-panel" id="clientes-panel" hidden>
+        <input type="text" id="clientes-buscar" autocomplete="off" placeholder="Buscar cliente...">
+        <div class="multi-select-lista">
+          {% for cl in clientes %}
+            <label>
+              <input type="checkbox" name="clientes" value="{{ cl.folio }}" {{ 'checked' if cl.folio in clientes_sel else '' }}>
+              {{ cl.razon_social }}
+            </label>
+          {% endfor %}
+        </div>
+        <div class="multi-select-acciones">
+          <button type="button" class="btn-aplicar-multiselect" id="clientes-aplicar">Aplicar</button>
+        </div>
+      </div>
+    </div>
+
+    <label>Grupos asociados</label>
+    <div class="multi-select" id="grupos-multiselect">
+      <button type="button" class="multi-select-btn" id="grupos-btn">Selecciona grupos</button>
+      <div class="multi-select-panel" id="grupos-panel" hidden>
+        <div class="multi-select-lista">
+          {% for g in grupos %}
+            <label>
+              <input type="checkbox" name="grupos" value="{{ g.id }}" {{ 'checked' if g.id in grupos_sel else '' }}>
+              {{ g.nombre }}
+            </label>
+          {% endfor %}
+          {% if not grupos %}<p class="pista-campo">Todavía no hay grupos creados.</p>{% endif %}
+        </div>
+        <div class="multi-select-acciones">
+          <button type="button" class="btn-aplicar-multiselect" id="grupos-aplicar">Aplicar</button>
+        </div>
+      </div>
+    </div>
+
+    <label for="grupo_nuevo">O crea un grupo nuevo</label>
+    <input type="text" id="grupo_nuevo" name="grupo_nuevo" placeholder="Nombre del grupo nuevo (opcional)">
+
+    <div class="acciones-form-contacto">
+      <button type="submit" class="btn-guardar">Guardar contacto</button>
+      <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='contactos') }}">Cancelar</a>
+    </div>
+  </form>
+{% endblock %}
+{% block extra_script %}
+  <script>
+    function inicializarMultiSelect(prefijo, singular, plural) {
+      const contenedor = document.getElementById(`${prefijo}-multiselect`);
+      const boton = document.getElementById(`${prefijo}-btn`);
+      const panel = document.getElementById(`${prefijo}-panel`);
+      const aplicar = document.getElementById(`${prefijo}-aplicar`);
+      const buscador = document.getElementById(`${prefijo}-buscar`);
+      if (!contenedor || !boton || !panel) return;
+      const checkboxes = Array.from(panel.querySelectorAll('input[type="checkbox"]'));
+
+      function actualizarBoton() {
+        const n = checkboxes.filter((cb) => cb.checked).length;
+        boton.textContent = n === 0 ? `Selecciona ${plural}` : `${n} ${n === 1 ? singular : plural} seleccionado(s)`;
+      }
+
+      boton.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+      if (aplicar) aplicar.addEventListener('click', () => { panel.hidden = true; actualizarBoton(); });
+      if (buscador) {
+        buscador.addEventListener('input', () => {
+          const termino = buscador.value.trim().toLowerCase();
+          checkboxes.forEach((cb) => {
+            const fila = cb.closest('label');
+            fila.hidden = termino.length > 0 && !fila.textContent.toLowerCase().includes(termino);
+          });
+        });
+      }
+      checkboxes.forEach((cb) => cb.addEventListener('change', actualizarBoton));
+      document.addEventListener('click', (e) => {
+        if (!contenedor.contains(e.target)) panel.hidden = true;
+      });
+      actualizarBoton();
+    }
+
+    inicializarMultiSelect('clientes', 'cliente', 'clientes');
+    inicializarMultiSelect('grupos', 'grupo', 'grupos');
+  </script>
+{% endblock %}

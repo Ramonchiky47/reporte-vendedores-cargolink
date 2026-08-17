@@ -1,0 +1,62 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .tabs-catalogo { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .tab-catalogo { background: #fff; color: inherit; border: 1px solid var(--borde); padding: 0.3rem 0.7rem; font-size: 0.85rem; border-radius: 4px; cursor: pointer; }
+  .tab-catalogo.activo { background: #1565c0; color: #fff; border-color: #1565c0; }
+  .acciones-form { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .acciones-form button { padding: 0.4rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; font: inherit; font-size: 0.85rem; background: #1565c0; color: #fff; }
+  .tabla-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; white-space: nowrap; }
+  th { color: #555; background: #fafafa; }
+  tr.fila-vencida, tr.fila-vencida td { background: rgba(192, 57, 43, 0.6) !important; color: #fff; }
+  td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
+  .btn-editar, .btn-borrar, .btn-listo { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; }
+  .btn-listo { background: var(--exito); }
+  .btn-editar { background: var(--editar); }
+  .btn-borrar { background: var(--peligro); }
+  .aviso-mock { color: #757575; font-size: 0.78rem; margin: -0.4rem 0 0.9rem; }
+{% endblock %}
+{% block crm_content %}
+  <div class="tabs-catalogo">
+    <button type="button" class="tab-catalogo activo">Tareas</button>
+    <button type="button" class="tab-catalogo">Calendario</button>
+  </div>
+
+  <h2>Tareas</h2>
+  <p class="pista">Base de datos de pendientes: cada uno tiene un ID único, un nombre, una fecha de compromiso y una o varias actividades asociadas.</p>
+  <p class="aviso-mock">Datos de ejemplo — todavía sin conectar a una fuente real.</p>
+
+  <div class="acciones-form">
+    <button type="button">+ Agregar tarea</button>
+    <button type="button">Sincronizar con Google</button>
+  </div>
+
+  <div class="tabla-scroll">
+    <table class="tabla-ordenable">
+      <thead>
+        <tr>
+          <th data-campo="id" data-tipo="num">ID</th><th data-campo="nombre">Nombre</th>
+          <th data-campo="creado_en">Fecha de creación</th><th data-campo="fecha_compromiso">Fecha de compromiso</th>
+          <th data-campo="actividad">Actividades</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tareas %}
+        <tr {% if t.vencida %}class="fila-vencida"{% endif %}>
+          <td>{{ t.id }}</td>
+          <td>{{ t.nombre }}</td>
+          <td>{{ t.creado_en }}</td>
+          <td>{{ t.fecha_compromiso }}</td>
+          <td>{{ t.actividad }}</td>
+          <td class="acciones">
+            <button class="btn-listo" type="button">Listo</button>
+            <button class="btn-editar" type="button">Editar</button>
+            <button class="btn-borrar" type="button">Borrar</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

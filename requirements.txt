@@ -4,3 +4,4 @@ beautifulsoup4
 openpyxl
 python-dotenv
 psycopg[binary]
+xhtml2pdf

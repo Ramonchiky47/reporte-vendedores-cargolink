@@ -1,0 +1,73 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .btn-atras { display: inline-block; margin-bottom: 1rem; padding: 0.4rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; color: #333; text-decoration: none; font-size: 0.85rem; }
+  .btn-atras:hover { background: #f5f5f5; }
+  .detalle-grid { display: grid; grid-template-columns: 280px 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 800px) { .detalle-grid { grid-template-columns: 1fr; } }
+  .tarjeta { border: 1px solid var(--borde); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.2rem; background: #fff; }
+  .campo-etiqueta { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #999; margin: 0 0 0.15rem; }
+  .campo-valor { font-size: 0.95rem; margin: 0 0 0.9rem; }
+  .tarjeta h3 { margin: 0 0 0.9rem; font-size: 1rem; display: flex; align-items: baseline; gap: 0.35rem; }
+  .tarjeta h3 .contador { color: #999; font-weight: 400; font-size: 0.85rem; }
+  .fila-booking { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid var(--borde); font-size: 0.88rem; }
+  .fila-booking:last-child { border-bottom: none; }
+  .fila-booking .monto { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pendiente { color: #999; font-size: 0.85rem; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" href="{{ url_for('crm_seccion', slug='clientes') }}">&larr; Clientes</a>
+
+  <div class="detalle-grid">
+    <div class="tarjeta">
+      <p class="campo-etiqueta">Nombre</p>
+      <p class="campo-valor">{{ cliente.razon_social }}</p>
+      <p class="campo-etiqueta">Plaza</p>
+      <p class="campo-valor">{{ cliente.plaza }}</p>
+      <p class="campo-etiqueta">Vendedor</p>
+      <p class="campo-valor">{{ cliente.vendedor }}</p>
+      <p class="campo-etiqueta">Desarrollador</p>
+      <p class="campo-valor">{{ cliente.desarrollador }}</p>
+      <p class="campo-etiqueta">Tipo de cliente</p>
+      <p class="campo-valor">{{ cliente.tipo_cliente }}</p>
+      <p class="campo-etiqueta">Cant. Booking</p>
+      <p class="campo-valor">{{ cliente.cant_booking }}</p>
+      <p class="campo-etiqueta">Último booking</p>
+      <p class="campo-valor">{{ cliente.fecha_ultimo_booking or "Sin registro" }}</p>
+    </div>
+
+    <div>
+      <div class="tarjeta">
+        <h3>Cotizaciones <span class="contador">({{ cotizaciones|length }})</span></h3>
+        {% if cotizaciones %}
+          {% for c in cotizaciones %}
+          <div class="fila-booking" style="cursor:pointer;" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+            <span>{{ c.id_cotizacion }} — {{ c.nombre_cotizacion or "Sin nombre" }} — {{ c.fecha_creacion }}</span>
+            <span class="monto">{{ c.gran_total_texto or "—" }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="pendiente">Sin cotizaciones registradas para este cliente.</p>
+        {% endif %}
+      </div>
+
+      <div class="tarjeta">
+        <h3>Booking <span class="contador">({{ cliente.bookings|length }})</span></h3>
+        {% if cliente.bookings %}
+          {% for b in cliente.bookings %}
+          <div class="fila-booking">
+            <span>{{ b.referencia }} — {{ b.fecha }}</span>
+            <span class="monto">${{ "{:,.2f}".format(b.venta) }}</span>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="pendiente">Sin bookings registrados para este cliente.</p>
+        {% endif %}
+      </div>
+
+      <div class="tarjeta">
+        <h3>Tareas <span class="contador">(sin fuente de datos)</span></h3>
+        <p class="pendiente">Las Tareas del CRM todavía usan datos de ejemplo sin vincular a clientes específicos.</p>
+      </div>
+    </div>
+  </div>
+{% endblock %}

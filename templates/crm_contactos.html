@@ -1,0 +1,109 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; z-index: 2; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+  .col-observaciones { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .etiqueta { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.72rem; margin: 0 0.25rem 0.15rem 0; background: #e8eef7; color: #1e4a8a; }
+  .etiqueta-grupo { background: #fdf1e0; color: #8a5a1e; }
+  .sin-asociar { color: #999; font-size: 0.8rem; }
+  td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
+  .btn-editar, .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; text-decoration: none; display: inline-block; }
+  .btn-editar { background: #ef6c00; }
+  .btn-borrar { background: #c0392b; }
+  .acciones-encabezado { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .buscador-contactos input { padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; min-width: 280px; }
+  .btn-agregar { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: #f5f5f5; }
+  .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 10px; font-size: 0.68rem; margin-right: 0.25rem; white-space: nowrap; }
+  .badge-si { background: #dcfce7; color: #166534; }
+  .badge-no { background: #f1f1f1; color: #999; }
+  .badge-nd { background: #f1f1f1; color: #aaa; font-style: italic; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Contactos</h2>
+  <p class="pista">Nombre, apellido, teléfono, correo y observaciones, asociados a uno o más clientes y/o grupos.</p>
+
+  <div class="acciones-encabezado">
+    <div class="buscador-contactos">
+      <input type="text" id="buscador-contactos" autocomplete="off" placeholder="Buscar por nombre, cliente, grupo..." />
+    </div>
+    <a class="btn-agregar" href="{{ url_for('crm_contacto_nuevo') }}">+ Agregar contacto</a>
+  </div>
+
+  {% if contactos %}
+  <p class="pista"><span id="contador-contactos-visibles">{{ contactos|length }}</span> de {{ contactos|length }} contacto(s).</p>
+  <div class="tabla-scroll">
+    <table class="tabla-ordenable">
+      <thead>
+        <tr>
+          <th data-campo="nombre">Nombre</th>
+          <th data-campo="apellido">Apellido</th>
+          <th data-campo="telefono">Teléfono</th>
+          <th data-campo="correo">Correo</th>
+          <th>Clientes</th>
+          <th>Grupos</th>
+          <th>Observaciones</th>
+          <th>Actividad</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-contactos-cuerpo">
+        {% for c in contactos %}
+        <tr onclick="window.location.href='{{ url_for('crm_contacto_detalle', contacto_id=c.id) }}'">
+          <td>{{ c.nombre }}</td>
+          <td>{{ c.apellido }}</td>
+          <td>{{ c.telefono }}</td>
+          <td>{{ c.correo }}</td>
+          <td>
+            {% for cliente in c.clientes %}<span class="etiqueta">{{ cliente }}</span>{% endfor %}
+            {% if not c.clientes %}<span class="sin-asociar">Sin cliente</span>{% endif %}
+          </td>
+          <td>
+            {% for grupo in c.grupos %}<span class="etiqueta etiqueta-grupo">{{ grupo }}</span>{% endfor %}
+            {% if not c.grupos %}<span class="sin-asociar">Sin grupo</span>{% endif %}
+          </td>
+          <td class="col-observaciones" title="{{ c.observaciones }}">{{ c.observaciones }}</td>
+          <td>
+            <span class="badge {{ 'badge-si' if c.tiene_booking else 'badge-no' }}">Órdenes</span>
+            <span class="badge {{ 'badge-si' if c.tiene_cotizacion else 'badge-no' }}">Cotizaciones</span>
+            <span class="badge badge-nd" title="Sin fuente de datos de tareas por contacto todavía">Tareas</span>
+          </td>
+          <td class="acciones" onclick="event.stopPropagation();">
+            <a class="btn-editar" href="{{ url_for('crm_contacto_editar', contacto_id=c.id) }}">Editar</a>
+            <form method="post" action="{{ url_for('crm_contacto_eliminar', contacto_id=c.id) }}" onsubmit="return confirm('¿Borrar este contacto? Esta acción no se puede deshacer.');">
+              <button type="submit" class="btn-borrar">Borrar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay contactos. Usa "+ Agregar contacto" para crear el primero.</p>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      const input = document.getElementById('buscador-contactos');
+      if (!input) return;
+      const filas = Array.from(document.querySelectorAll('#tabla-contactos-cuerpo tr'));
+      const contador = document.getElementById('contador-contactos-visibles');
+      input.addEventListener('input', () => {
+        const termino = input.value.trim().toLowerCase();
+        let visibles = 0;
+        filas.forEach((fila) => {
+          const coincide = !termino || fila.textContent.toLowerCase().includes(termino);
+          fila.hidden = !coincide;
+          if (coincide) visibles += 1;
+        });
+        contador.textContent = visibles;
+      });
+    })();
+  </script>
+{% endblock %}

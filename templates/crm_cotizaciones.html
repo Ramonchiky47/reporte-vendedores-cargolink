@@ -1,0 +1,110 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; white-space: nowrap; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; z-index: 2; }
+  td.num { text-align: right; }
+  th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 0 var(--borde); }
+  th:first-child { z-index: 3; background: #fafafa; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.75rem; }
+  .badge-si { background: #dcfce7; color: #166534; }
+  .badge-no { background: #f1f1f1; color: #757575; }
+  td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
+  .btn-editar, .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; text-decoration: none; display: inline-block; }
+  .btn-editar { background: #ef6c00; }
+  .btn-borrar { background: #c0392b; }
+  .acciones-encabezado { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .buscador-cotizaciones input { padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; min-width: 280px; }
+  .btn-agregar { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: #f5f5f5; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Cotizaciones</h2>
+  <p class="pista">Base de datos de cotizaciones: origen/destino, HAZ-MAT, Incoterm, Modalidad y condiciones comerciales.</p>
+
+  <div class="acciones-encabezado">
+    <div class="buscador-cotizaciones">
+      <input type="text" id="buscador-cotizaciones" autocomplete="off" placeholder="Buscar por ID, origen, destino, incoterm..." />
+    </div>
+    <a class="btn-agregar" href="{{ url_for('crm_cotizacion_nueva') }}">+ Agregar cotización</a>
+  </div>
+
+  {% if cotizaciones %}
+  <p class="pista"><span id="contador-cotizaciones-visibles">{{ cotizaciones|length }}</span> de {{ cotizaciones|length }} cotización(es).</p>
+  <div class="tabla-scroll">
+    <table class="tabla-ordenable">
+      <thead>
+        <tr>
+          <th data-campo="nombre_cotizacion">Nombre</th>
+          <th data-campo="cliente">Cliente</th>
+          <th data-campo="contacto">Contacto</th>
+          <th data-campo="id_cotizacion" data-tipo="num">ID</th>
+          <th data-campo="fecha_creacion">Fecha creación</th>
+          <th data-campo="fecha_vencimiento">Fecha vencimiento</th>
+          <th data-campo="origen">Origen</th>
+          <th data-campo="destino">Destino</th>
+          <th data-campo="hazmat">HAZ-MAT</th>
+          <th data-campo="incoterm">Incoterm</th>
+          <th data-campo="modalidad">Modalidad</th>
+          <th data-campo="via">Vía</th>
+          <th data-campo="gran_total_texto">Gran total</th>
+          <th data-campo="profit_estimado" data-tipo="num">Profit estimado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla-cotizaciones-cuerpo">
+        {% for c in cotizaciones %}
+        <tr onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+          <td>{{ c.nombre_cotizacion }}</td>
+          <td>{{ c.cliente }}</td>
+          <td>{{ c.contacto }}</td>
+          <td>{{ c.id_cotizacion }}</td>
+          <td>{{ c.fecha_creacion }}</td>
+          <td>{{ c.fecha_vencimiento }}</td>
+          <td>{{ c.origen }}</td>
+          <td>{{ c.destino }}</td>
+          <td><span class="badge {{ 'badge-si' if c.hazmat else 'badge-no' }}">{{ 'Sí' if c.hazmat else 'No' }}</span></td>
+          <td>{{ c.incoterm }}</td>
+          <td>{{ c.modalidad }}</td>
+          <td>{{ c.via }}</td>
+          <td>{{ c.gran_total_texto }}</td>
+          <td class="num">{{ "${:,.2f}".format(c.profit_estimado) if c.profit_estimado is not none else "" }}</td>
+          <td class="acciones" onclick="event.stopPropagation();">
+            <a class="btn-editar" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=c.id) }}">Editar</a>
+            <a class="btn-editar" style="background:#555;" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=c.id) }}">PDF</a>
+            <form method="post" action="{{ url_for('crm_cotizacion_eliminar', cotizacion_id=c.id) }}" onsubmit="return confirm('¿Borrar esta cotización? Esta acción no se puede deshacer.');">
+              <button type="submit" class="btn-borrar">Borrar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay cotizaciones. Usa "+ Agregar cotización" para crear la primera.</p>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      const input = document.getElementById('buscador-cotizaciones');
+      if (!input) return;
+      const filas = Array.from(document.querySelectorAll('#tabla-cotizaciones-cuerpo tr'));
+      const contador = document.getElementById('contador-cotizaciones-visibles');
+      input.addEventListener('input', () => {
+        const termino = input.value.trim().toLowerCase();
+        let visibles = 0;
+        filas.forEach((fila) => {
+          const coincide = !termino || fila.textContent.toLowerCase().includes(termino);
+          fila.hidden = !coincide;
+          if (coincide) visibles += 1;
+        });
+        contador.textContent = visibles;
+      });
+    })();
+  </script>
+{% endblock %}

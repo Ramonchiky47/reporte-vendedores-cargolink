@@ -1,0 +1,631 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-cotizacion { max-width: 720px; }
+  .form-cotizacion label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin: 1rem 0 0.3rem; }
+  .form-cotizacion input[type="text"], .form-cotizacion input[type="date"],
+  .form-cotizacion input[type="number"], .form-cotizacion textarea, .form-cotizacion select {
+    width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem;
+  }
+  .form-cotizacion textarea { resize: vertical; min-height: 80px; }
+  .fila-2 { display: flex; gap: 1rem; }
+  .fila-2 > div { flex: 1; }
+  .fila-3 { display: flex; gap: 1rem; }
+  .fila-3 > div { flex: 1; }
+  .pista-campo { color: #999; font-size: 0.75rem; margin: 0.25rem 0 0; }
+  .caja-hazmat { border: 1px solid var(--borde); border-radius: 8px; padding: 0.8rem; margin-top: 0.5rem; background: #fafafa; }
+  .acciones-form-cotizacion { display: flex; gap: 0.6rem; margin-top: 1.5rem; }
+  .acciones-form-cotizacion button, .acciones-form-cotizacion a {
+    padding: 0.55rem 1.1rem; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn-guardar { background: #1565c0; color: #fff; font-weight: 600; }
+  .btn-cancelar { background: #e0e0e0; color: #333; }
+  .id-cotizacion { font-size: 0.8rem; color: #999; margin-bottom: 0.5rem; }
+  .id-cotizacion strong { color: #333; font-size: 1.1rem; }
+
+  .tabla-productos-scroll { overflow-x: auto; border: 1px solid var(--borde); border-radius: 8px; }
+  table.tabla-productos { width: 100%; border-collapse: collapse; min-width: 520px; }
+  table.tabla-productos th, table.tabla-productos td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; }
+  table.tabla-productos th { background: #fafafa; color: #555; text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  table.tabla-productos th.col-num, table.tabla-productos td.col-num { text-align: right; }
+  table.tabla-productos td select, table.tabla-productos td input {
+    width: 100%; padding: 0.35rem 0.5rem; border: 1px solid var(--borde); border-radius: 4px; font: inherit; font-size: 0.85rem;
+  }
+  table.tabla-productos td.celda-total { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .btn-quitar-linea { background: #c0392b; color: #fff; border: none; border-radius: 4px; padding: 0.3rem 0.55rem; font-size: 0.78rem; cursor: pointer; }
+  .aviso-sin-productos { padding: 0.9rem; text-align: center; color: #999; font-size: 0.82rem; }
+  .btn-agregar-linea {
+    margin-top: 0.6rem; padding: 0.4rem 0.9rem; background: #1565c0; color: #fff; border: none; border-radius: 6px;
+    font-size: 0.85rem; cursor: pointer;
+  }
+  .resumen-totales { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: flex-end; }
+  .bloque-moneda { min-width: 220px; max-width: 280px; border: 1px solid var(--borde); border-radius: 8px; padding: 0.7rem 0.9rem; }
+  .bloque-moneda__titulo { font-size: 0.78rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.35rem; }
+  .bloque-moneda > div { display: flex; justify-content: space-between; padding: 0.2rem 0; font-size: 0.88rem; color: #555; }
+  .bloque-moneda .fila-gran-total { border-top: 1px solid var(--borde); margin-top: 0.3rem; padding-top: 0.4rem; font-size: 1rem; color: #1565c0; }
+  .bloque-moneda .fila-gran-total strong { color: #1565c0; }
+  select.linea-moneda, select.linea-causa-impuesto { width: 100%; }
+  .campo-inactivo { background: #f5f5f5; color: #999; cursor: not-allowed; }
+  input.linea-impuesto { width: 100%; }
+
+  .multi-select { position: relative; }
+  .multi-select-btn {
+    width: 100%; text-align: left; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px;
+    background: #fff; font: inherit; font-size: 0.88rem; cursor: pointer; color: #333;
+  }
+  .multi-select-btn:after { content: '▾'; float: right; color: #999; }
+  .multi-select-panel {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: #fff; border: 1px solid var(--borde); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    padding: 0.6rem;
+  }
+  .multi-select-panel input[type="text"] { margin-bottom: 0.5rem; }
+  .opcion-prospecto {
+    display: flex; align-items: center; gap: 0.5rem; font-weight: 400; font-size: 0.85rem; color: #333;
+    margin: 0 0 0.5rem; padding: 0.35rem 0.15rem; border-bottom: 1px solid var(--borde); cursor: pointer;
+  }
+  .multi-select-lista { max-height: 220px; overflow-y: auto; border: 1px solid var(--borde); border-radius: 6px; padding: 0.3rem 0.5rem; }
+  .multi-select-lista label {
+    display: flex; align-items: center; gap: 0.5rem; font-weight: 400; font-size: 0.85rem;
+    margin: 0; padding: 0.3rem 0.15rem; cursor: pointer; color: #333;
+  }
+  .multi-select-lista label:hover { background: #f5f5f5; }
+  .multi-select-lista label[hidden] { display: none; }
+  .multi-select-lista input[type="checkbox"] { margin: 0; }
+  .multi-select-acciones { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
+  .btn-aplicar-multiselect { padding: 0.35rem 0.9rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" style="display:inline-block; margin-bottom:1rem; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
+     href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
+
+  <h2>{{ titulo_pagina }}</h2>
+  {% if cotizacion %}
+    <p class="id-cotizacion">ID de cotización: <strong>{{ cotizacion.id_cotizacion }}</strong> · Creada el {{ cotizacion.fecha_creacion }}</p>
+  {% else %}
+    <p class="id-cotizacion">Se generará un ID único de 6 dígitos al guardar.</p>
+  {% endif %}
+
+  <form class="form-cotizacion" method="post">
+    <label for="nombre_cotizacion">Nombre de la cotización</label>
+    <input type="text" id="nombre_cotizacion" name="nombre_cotizacion" maxlength="60"
+           value="{{ cotizacion.nombre_cotizacion if cotizacion and cotizacion.nombre_cotizacion else '' }}">
+
+    {% set folio_actual = cotizacion.cliente_folio if cotizacion else none %}
+    {% set es_prospecto_actual = cotizacion and cotizacion.cliente_folio is none and cotizacion.cliente_prospecto %}
+    <label>Cliente *</label>
+    <div class="multi-select" id="cliente-multiselect">
+      <button type="button" class="multi-select-btn" id="cliente-btn">Selecciona un cliente</button>
+      <div class="multi-select-panel" id="cliente-panel" hidden>
+        <label class="opcion-prospecto">
+          <input type="checkbox" id="check-prospecto" {{ 'checked' if es_prospecto_actual else '' }}>
+          Prospecto (cliente nuevo, sin catálogo)
+        </label>
+        <div id="caja-prospecto-nombre" hidden>
+          <input type="text" id="cliente_prospecto" name="cliente_prospecto" maxlength="120"
+                 placeholder="Nombre del prospecto"
+                 value="{{ cotizacion.cliente_prospecto if cotizacion and cotizacion.cliente_prospecto else '' }}">
+        </div>
+        <input type="text" id="cliente-buscar" autocomplete="off" placeholder="Buscar cliente...">
+        <div class="multi-select-lista" id="cliente-lista">
+          {% for cl in clientes %}
+            <label>
+              <input type="checkbox" class="check-cliente" name="cliente_folio" value="{{ cl.folio }}"
+                     {{ 'checked' if folio_actual == cl.folio else '' }}>
+              {{ cl.razon_social }}
+            </label>
+          {% endfor %}
+        </div>
+        <div class="multi-select-acciones">
+          <button type="button" class="btn-aplicar-multiselect" id="cliente-aplicar">Aplicar</button>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" id="es_prospecto" name="es_prospecto" value="{{ 'si' if es_prospecto_actual else 'no' }}">
+
+    {% set contacto_actual = cotizacion.contacto_id if cotizacion else none %}
+    <label>Contacto</label>
+    <div class="multi-select" id="contacto-multiselect">
+      <button type="button" class="multi-select-btn" id="contacto-btn">Selecciona un contacto</button>
+      <div class="multi-select-panel" id="contacto-panel" hidden>
+        <input type="text" id="contacto-buscar" autocomplete="off" placeholder="Buscar contacto...">
+        <div class="multi-select-lista" id="contacto-lista">
+          {% for ct in contactos %}
+            <label>
+              <input type="checkbox" class="check-contacto" name="contacto_id" value="{{ ct.id }}"
+                     {{ 'checked' if contacto_actual == ct.id else '' }}>
+              {{ ct.nombre }} {{ ct.apellido or '' }}
+            </label>
+          {% endfor %}
+          {% if not contactos %}<p class="pista-campo">Todavía no hay contactos en el catálogo.</p>{% endif %}
+        </div>
+        <div class="multi-select-acciones">
+          <button type="button" class="btn-aplicar-multiselect" id="contacto-aplicar">Aplicar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="fila-2">
+      <div>
+        <label for="origen">Origen *</label>
+        <input type="text" id="origen" name="origen" maxlength="50" required value="{{ cotizacion.origen if cotizacion else '' }}">
+      </div>
+      <div>
+        <label for="destino">Destino *</label>
+        <input type="text" id="destino" name="destino" maxlength="50" required value="{{ cotizacion.destino if cotizacion else '' }}">
+      </div>
+    </div>
+
+    <label for="vencimiento_modo">Fecha de vencimiento</label>
+    <select id="vencimiento_modo" name="vencimiento_modo">
+      {% set modo_actual = cotizacion.vencimiento_modo if cotizacion else 'libre' %}
+      <option value="15" {{ 'selected' if modo_actual == '15' else '' }}>15 días desde la creación</option>
+      <option value="30" {{ 'selected' if modo_actual == '30' else '' }}>30 días desde la creación</option>
+      <option value="45" {{ 'selected' if modo_actual == '45' else '' }}>45 días desde la creación</option>
+      <option value="60" {{ 'selected' if modo_actual == '60' else '' }}>60 días desde la creación</option>
+      <option value="libre" {{ 'selected' if modo_actual == 'libre' else '' }}>Libre captura</option>
+    </select>
+    <div id="caja-vencimiento-libre" hidden>
+      <label for="fecha_vencimiento_libre">Fecha de vencimiento</label>
+      <input type="date" id="fecha_vencimiento_libre" name="fecha_vencimiento_libre"
+             value="{{ cotizacion.fecha_vencimiento.isoformat() if cotizacion and cotizacion.vencimiento_modo == 'libre' and cotizacion.fecha_vencimiento else '' }}">
+    </div>
+    {% if cotizacion and cotizacion.vencimiento_modo != 'libre' %}
+      <p class="pista-campo">Vence: {{ cotizacion.fecha_vencimiento }}</p>
+    {% endif %}
+
+    <label for="hazmat">HAZ-MAT</label>
+    <select id="hazmat" name="hazmat">
+      <option value="no" {{ 'selected' if cotizacion and not cotizacion.hazmat else '' }}>No</option>
+      <option value="si" {{ 'selected' if cotizacion and cotizacion.hazmat else '' }}>Sí</option>
+    </select>
+    <div id="caja-hazmat" class="caja-hazmat" hidden>
+      <div class="fila-2">
+        <div>
+          <label for="hazmat_clase">Clase</label>
+          <input type="text" id="hazmat_clase" name="hazmat_clase" maxlength="50" value="{{ cotizacion.hazmat_clase if cotizacion else '' }}">
+        </div>
+        <div>
+          <label for="hazmat_un_imo">UN/IMO</label>
+          <input type="text" id="hazmat_un_imo" name="hazmat_un_imo" maxlength="50" value="{{ cotizacion.hazmat_un_imo if cotizacion else '' }}">
+        </div>
+      </div>
+    </div>
+
+    <div class="fila-2">
+      <div>
+        <label for="incoterm_id">Incoterm</label>
+        <select id="incoterm_id" name="incoterm_id">
+          <option value="">-- Selecciona --</option>
+          {% for i in incoterms %}
+            <option value="{{ i.id }}" {{ 'selected' if cotizacion and cotizacion.incoterm_id == i.id else '' }}>{{ i.nombre }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="incoterm_nuevo" placeholder="O agrega un Incoterm nuevo (opcional)" style="margin-top:0.4rem;">
+      </div>
+      <div>
+        <label for="modalidad_id">Modalidad</label>
+        <select id="modalidad_id" name="modalidad_id">
+          <option value="">-- Selecciona --</option>
+          {% for m in modalidades %}
+            <option value="{{ m.id }}" {{ 'selected' if cotizacion and cotizacion.modalidad_id == m.id else '' }}>{{ m.nombre }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="modalidad_nuevo" placeholder="O agrega una Modalidad nueva (opcional)" style="margin-top:0.4rem;">
+      </div>
+    </div>
+
+    <div class="fila-3">
+      <div>
+        <label for="estibable">Estibable</label>
+        <select id="estibable" name="estibable">
+          <option value="no" {{ 'selected' if cotizacion and not cotizacion.estibable else '' }}>No</option>
+          <option value="si" {{ 'selected' if cotizacion and cotizacion.estibable else '' }}>Sí</option>
+        </select>
+      </div>
+      <div>
+        <label for="tiempo_traslado">Tiempo de traslado</label>
+        <input type="text" id="tiempo_traslado" name="tiempo_traslado" maxlength="30" value="{{ cotizacion.tiempo_traslado if cotizacion else '' }}">
+      </div>
+      <div>
+        <label for="seguro_mercancia">Seg. Mercancía</label>
+        <select id="seguro_mercancia" name="seguro_mercancia">
+          <option value="no" {{ 'selected' if cotizacion and not cotizacion.seguro_mercancia else '' }}>No</option>
+          <option value="si" {{ 'selected' if cotizacion and cotizacion.seguro_mercancia else '' }}>Sí</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="via">Vía</label>
+    <input type="text" id="via" name="via" maxlength="60" value="{{ cotizacion.via if cotizacion else '' }}">
+
+    <div class="fila-2">
+      <div>
+        <label for="profit_estimado">Profit estimado</label>
+        <input type="text" id="profit_estimado" name="profit_estimado" inputmode="decimal"
+               value="{{ '{:,.2f}'.format(cotizacion.profit_estimado) if cotizacion and cotizacion.profit_estimado is not none else '' }}">
+      </div>
+      <div>
+        <label for="tipo_cambio">Tipo de cambio</label>
+        <input type="text" id="tipo_cambio" name="tipo_cambio" inputmode="decimal"
+               value="{{ cotizacion.tipo_cambio if cotizacion and cotizacion.tipo_cambio is not none else '' }}">
+      </div>
+    </div>
+
+    <label for="descripcion">Descripción / Instrucciones</label>
+    <textarea id="descripcion" name="descripcion">{{ cotizacion.descripcion if cotizacion else '' }}</textarea>
+
+    <label>Productos de la cotización</label>
+    <div class="tabla-productos-scroll">
+      <table class="tabla-productos">
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th class="col-num">Cantidad</th>
+            <th class="col-num">Precio unitario</th>
+            <th>Moneda</th>
+            <th>Causa Impuesto</th>
+            <th class="col-num">Impuesto %</th>
+            <th class="col-num">Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="cuerpo-lineas-producto"></tbody>
+      </table>
+    </div>
+    <button type="button" id="btn-agregar-producto" class="btn-agregar-linea">+ Agregar producto</button>
+
+    <div class="resumen-totales" id="resumen-totales"></div>
+
+    <div class="acciones-form-cotizacion">
+      <button type="submit" class="btn-guardar">Guardar cotización</button>
+      {% if cotizacion %}
+        <a class="btn-cancelar" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion.id) }}" target="_blank">Ver</a>
+        <a class="btn-cancelar" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion.id) }}">Descargar PDF</a>
+      {% endif %}
+      <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">Cancelar</a>
+    </div>
+  </form>
+{% endblock %}
+{% block extra_script %}
+  <script>
+    (function () {
+      const contenedor = document.getElementById('cliente-multiselect');
+      const boton = document.getElementById('cliente-btn');
+      const panel = document.getElementById('cliente-panel');
+      const aplicar = document.getElementById('cliente-aplicar');
+      const buscador = document.getElementById('cliente-buscar');
+      const checkProspecto = document.getElementById('check-prospecto');
+      const inputEsProspecto = document.getElementById('es_prospecto');
+      const cajaProspectoNombre = document.getElementById('caja-prospecto-nombre');
+      const inputProspectoNombre = document.getElementById('cliente_prospecto');
+      const listaClientes = document.getElementById('cliente-lista');
+      const checksClientes = Array.from(listaClientes.querySelectorAll('.check-cliente'));
+
+      function actualizarBoton() {
+        if (checkProspecto.checked) {
+          const nombre = inputProspectoNombre.value.trim();
+          boton.textContent = nombre ? `Prospecto: ${nombre}` : 'Prospecto (sin nombre aún)';
+          return;
+        }
+        const seleccionado = checksClientes.find((cb) => cb.checked);
+        boton.textContent = seleccionado ? seleccionado.closest('label').textContent.trim() : 'Selecciona un cliente';
+      }
+
+      function actualizarModoProspecto() {
+        inputEsProspecto.value = checkProspecto.checked ? 'si' : 'no';
+        cajaProspectoNombre.hidden = !checkProspecto.checked;
+        listaClientes.style.opacity = checkProspecto.checked ? '0.4' : '1';
+        checksClientes.forEach((cb) => {
+          cb.disabled = checkProspecto.checked;
+          if (checkProspecto.checked) cb.checked = false;
+        });
+        actualizarBoton();
+      }
+
+      checkProspecto.addEventListener('change', actualizarModoProspecto);
+      inputProspectoNombre.addEventListener('input', actualizarBoton);
+      checksClientes.forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) checksClientes.forEach((otro) => { if (otro !== cb) otro.checked = false; });
+          actualizarBoton();
+        });
+      });
+
+      boton.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+      if (aplicar) aplicar.addEventListener('click', () => { panel.hidden = true; actualizarBoton(); });
+      if (buscador) {
+        buscador.addEventListener('input', () => {
+          const termino = buscador.value.trim().toLowerCase();
+          checksClientes.forEach((cb) => {
+            const fila = cb.closest('label');
+            fila.hidden = termino.length > 0 && !fila.textContent.toLowerCase().includes(termino);
+          });
+        });
+      }
+      document.addEventListener('click', (e) => { if (!contenedor.contains(e.target)) panel.hidden = true; });
+
+      actualizarModoProspecto();
+    })();
+
+    (function () {
+      const contenedor = document.getElementById('contacto-multiselect');
+      const boton = document.getElementById('contacto-btn');
+      const panel = document.getElementById('contacto-panel');
+      const aplicar = document.getElementById('contacto-aplicar');
+      const buscador = document.getElementById('contacto-buscar');
+      const lista = document.getElementById('contacto-lista');
+      const checks = Array.from(lista.querySelectorAll('.check-contacto'));
+      if (!contenedor || !boton || !panel) return;
+
+      function actualizarBoton() {
+        const seleccionado = checks.find((cb) => cb.checked);
+        boton.textContent = seleccionado ? seleccionado.closest('label').textContent.trim() : 'Selecciona un contacto';
+      }
+
+      checks.forEach((cb) => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) checks.forEach((otro) => { if (otro !== cb) otro.checked = false; });
+          actualizarBoton();
+        });
+      });
+
+      boton.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+      if (aplicar) aplicar.addEventListener('click', () => { panel.hidden = true; actualizarBoton(); });
+      if (buscador) {
+        buscador.addEventListener('input', () => {
+          const termino = buscador.value.trim().toLowerCase();
+          checks.forEach((cb) => {
+            const fila = cb.closest('label');
+            fila.hidden = termino.length > 0 && !fila.textContent.toLowerCase().includes(termino);
+          });
+        });
+      }
+      document.addEventListener('click', (e) => { if (!contenedor.contains(e.target)) panel.hidden = true; });
+
+      actualizarBoton();
+    })();
+
+    (function () {
+      const selectHazmat = document.getElementById('hazmat');
+      const cajaHazmat = document.getElementById('caja-hazmat');
+      function actualizarHazmat() { cajaHazmat.hidden = selectHazmat.value !== 'si'; }
+      selectHazmat.addEventListener('change', actualizarHazmat);
+      actualizarHazmat();
+
+      const selectVencimiento = document.getElementById('vencimiento_modo');
+      const cajaVencimiento = document.getElementById('caja-vencimiento-libre');
+      function actualizarVencimiento() { cajaVencimiento.hidden = selectVencimiento.value !== 'libre'; }
+      selectVencimiento.addEventListener('change', actualizarVencimiento);
+      actualizarVencimiento();
+
+      const profit = document.getElementById('profit_estimado');
+      profit.addEventListener('blur', () => {
+        const limpio = profit.value.replace(/,/g, '').trim();
+        const numero = parseFloat(limpio);
+        if (!isNaN(numero)) profit.value = numero.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      });
+    })();
+
+    (function () {
+      const opcionesProducto = {{ productos_json|safe }};
+      const lineasIniciales = {{ lineas_json|safe }};
+      const MONEDAS = ['USD', 'MXN', 'EUR'];
+      const cuerpo = document.getElementById('cuerpo-lineas-producto');
+      const btnAgregar = document.getElementById('btn-agregar-producto');
+      const contenedorResumen = document.getElementById('resumen-totales');
+
+      function formatoMoneda(numero) {
+        return '$' + numero.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function recalcularTotales() {
+        const totalesPorMoneda = {};
+        cuerpo.querySelectorAll('tr').forEach((fila) => {
+          const cantidad = parseFloat(fila.querySelector('.linea-cantidad').value) || 0;
+          const precio = parseFloat(fila.querySelector('.linea-precio').value.replace(/,/g, '')) || 0;
+          const moneda = fila.querySelector('.linea-moneda').value;
+          const causaImpuesto = fila.querySelector('.linea-causa-impuesto').value === 'si';
+          const inputImpuesto = fila.querySelector('.linea-impuesto');
+          const impuestoPct = causaImpuesto ? (parseFloat(inputImpuesto.value.replace(/,/g, '')) || 0) : 0;
+          const subtotalLinea = cantidad * precio;
+          const impuestoMonto = subtotalLinea * (impuestoPct / 100);
+          const total = subtotalLinea + impuestoMonto;
+          fila.querySelector('.celda-total').textContent = formatoMoneda(total);
+
+          if (!totalesPorMoneda[moneda]) totalesPorMoneda[moneda] = { subtotal: 0, impuesto: 0 };
+          totalesPorMoneda[moneda].subtotal += subtotalLinea;
+          totalesPorMoneda[moneda].impuesto += impuestoMonto;
+        });
+
+        contenedorResumen.innerHTML = Object.keys(totalesPorMoneda).sort().map((moneda) => {
+          const t = totalesPorMoneda[moneda];
+          const total = t.subtotal + t.impuesto;
+          return `
+            <div class="bloque-moneda">
+              <div class="bloque-moneda__titulo">${moneda}</div>
+              <div><span>Sub total</span><strong>${formatoMoneda(t.subtotal)}</strong></div>
+              <div><span>Impuesto</span><strong>${formatoMoneda(t.impuesto)}</strong></div>
+              <div class="fila-gran-total"><span>Total</span><strong>${formatoMoneda(total)}</strong></div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      function agregarFilaProducto(datos) {
+        datos = datos || {};
+        const fila = document.createElement('tr');
+
+        const encontrado = datos.producto_id != null ? opcionesProducto.find((p) => p.id === datos.producto_id) : null;
+
+        const tdProducto = document.createElement('td');
+        const selectCategoria = document.createElement('select');
+        selectCategoria.style.marginBottom = '0.3rem';
+        selectCategoria.innerHTML = '<option value="">-- Producto --</option>' +
+          `<option value="__SIN_PRODUCTO__"${datos.producto_texto ? ' selected' : ''}>SIN PRODUCTO</option>` +
+          [...new Set(opcionesProducto.map((p) => p.producto))].sort().map((c) =>
+            `<option value="${c}"${encontrado && encontrado.producto === c ? ' selected' : ''}>${c}</option>`
+          ).join('');
+
+        const selectNombre = document.createElement('select');
+        selectNombre.className = 'linea-producto';
+        selectNombre.name = 'linea_producto_id';
+
+        const inputTextoProducto = document.createElement('input');
+        inputTextoProducto.type = 'text';
+        inputTextoProducto.className = 'linea-producto-texto';
+        inputTextoProducto.name = 'linea_producto_texto';
+        inputTextoProducto.maxLength = 100;
+        inputTextoProducto.placeholder = 'Escribe el nombre (máx. 100 caracteres)';
+        inputTextoProducto.value = datos.producto_texto || '';
+        inputTextoProducto.hidden = true;
+        inputTextoProducto.addEventListener('input', () => {
+          const inicio = inputTextoProducto.selectionStart;
+          inputTextoProducto.value = inputTextoProducto.value.toUpperCase();
+          inputTextoProducto.setSelectionRange(inicio, inicio);
+        });
+
+        function poblarNombresLinea(categoria, idPreseleccionado) {
+          // Importante: nunca usar .disabled aquí. Un <select>/<input> deshabilitado
+          // no se envía con el formulario, lo que desalinearía los arreglos paralelos
+          // (linea_producto_id, linea_cantidad, linea_precio_unitario, ...) para todas
+          // las filas siguientes. Basta con .hidden: un campo oculto ya no es interactuable.
+          if (categoria === '__SIN_PRODUCTO__') {
+            selectNombre.hidden = true;
+            inputTextoProducto.hidden = false;
+            return;
+          }
+          selectNombre.hidden = false;
+          inputTextoProducto.hidden = true;
+          selectNombre.innerHTML = '<option value="">-- Selecciona un Producto primero --</option>';
+          if (!categoria) return;
+          selectNombre.innerHTML = '<option value="">-- Selecciona --</option>';
+          opcionesProducto.filter((p) => p.producto === categoria).forEach((p) => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.nombre;
+            if (idPreseleccionado != null && p.id === idPreseleccionado) opt.selected = true;
+            selectNombre.appendChild(opt);
+          });
+        }
+        poblarNombresLinea(datos.producto_texto ? '__SIN_PRODUCTO__' : (encontrado ? encontrado.producto : ''), datos.producto_id);
+        selectCategoria.addEventListener('change', () => poblarNombresLinea(selectCategoria.value, null));
+
+        tdProducto.appendChild(selectCategoria);
+        tdProducto.appendChild(document.createElement('br'));
+        tdProducto.appendChild(selectNombre);
+        tdProducto.appendChild(inputTextoProducto);
+
+        const tdCantidad = document.createElement('td');
+        tdCantidad.className = 'col-num';
+        const inputCantidad = document.createElement('input');
+        inputCantidad.type = 'text';
+        inputCantidad.inputMode = 'decimal';
+        inputCantidad.className = 'linea-cantidad';
+        inputCantidad.name = 'linea_cantidad';
+        inputCantidad.value = datos.cantidad != null ? datos.cantidad : 1;
+        tdCantidad.appendChild(inputCantidad);
+
+        const tdPrecio = document.createElement('td');
+        tdPrecio.className = 'col-num';
+        const inputPrecio = document.createElement('input');
+        inputPrecio.type = 'text';
+        inputPrecio.inputMode = 'decimal';
+        inputPrecio.className = 'linea-precio';
+        inputPrecio.name = 'linea_precio_unitario';
+        inputPrecio.value = datos.precio_unitario != null ? datos.precio_unitario : '';
+        tdPrecio.appendChild(inputPrecio);
+
+        const tdMoneda = document.createElement('td');
+        const selectMoneda = document.createElement('select');
+        selectMoneda.className = 'linea-moneda';
+        selectMoneda.name = 'linea_moneda';
+        selectMoneda.innerHTML = MONEDAS.map((m) =>
+          `<option value="${m}"${(datos.moneda || 'MXN') === m ? ' selected' : ''}>${m}</option>`
+        ).join('');
+        tdMoneda.appendChild(selectMoneda);
+
+        const tdCausaImpuesto = document.createElement('td');
+        const selectCausaImpuesto = document.createElement('select');
+        selectCausaImpuesto.className = 'linea-causa-impuesto';
+        selectCausaImpuesto.name = 'linea_causa_impuesto';
+        selectCausaImpuesto.innerHTML = `
+          <option value="no"${!datos.causa_impuesto ? ' selected' : ''}>No</option>
+          <option value="si"${datos.causa_impuesto ? ' selected' : ''}>Sí</option>
+        `;
+        tdCausaImpuesto.appendChild(selectCausaImpuesto);
+
+        const tdImpuesto = document.createElement('td');
+        tdImpuesto.className = 'col-num';
+        const inputImpuesto = document.createElement('input');
+        inputImpuesto.type = 'text';
+        inputImpuesto.inputMode = 'decimal';
+        inputImpuesto.className = 'linea-impuesto';
+        inputImpuesto.name = 'linea_impuesto';
+        inputImpuesto.placeholder = 'Ej. 16';
+        inputImpuesto.value = datos.impuesto ? datos.impuesto : '';
+        // readonly (no disabled): un campo disabled no se envía con el formulario y
+        // desalinearía los arreglos paralelos de las demás filas. readonly sí se envía.
+        inputImpuesto.readOnly = !datos.causa_impuesto;
+        if (!datos.causa_impuesto) inputImpuesto.classList.add('campo-inactivo');
+        tdImpuesto.appendChild(inputImpuesto);
+
+        selectCausaImpuesto.addEventListener('change', () => {
+          inputImpuesto.readOnly = selectCausaImpuesto.value !== 'si';
+          inputImpuesto.classList.toggle('campo-inactivo', inputImpuesto.readOnly);
+          if (inputImpuesto.readOnly) inputImpuesto.value = '';
+          recalcularTotales();
+        });
+
+        const tdTotal = document.createElement('td');
+        tdTotal.className = 'col-num celda-total';
+        tdTotal.textContent = formatoMoneda(0);
+
+        const tdAcciones = document.createElement('td');
+        const btnQuitar = document.createElement('button');
+        btnQuitar.type = 'button';
+        btnQuitar.className = 'btn-quitar-linea';
+        btnQuitar.textContent = 'Quitar';
+        btnQuitar.addEventListener('click', () => { fila.remove(); recalcularTotales(); });
+        tdAcciones.appendChild(btnQuitar);
+
+        fila.append(tdProducto, tdCantidad, tdPrecio, tdMoneda, tdCausaImpuesto, tdImpuesto, tdTotal, tdAcciones);
+        cuerpo.appendChild(fila);
+
+        selectNombre.addEventListener('change', recalcularTotales);
+        selectMoneda.addEventListener('change', recalcularTotales);
+        inputCantidad.addEventListener('input', recalcularTotales);
+        inputPrecio.addEventListener('input', recalcularTotales);
+        inputImpuesto.addEventListener('input', recalcularTotales);
+        recalcularTotales();
+      }
+
+      btnAgregar.addEventListener('click', () => agregarFilaProducto());
+
+      if (lineasIniciales.length) {
+        lineasIniciales.forEach((linea) => agregarFilaProducto(linea));
+      } else {
+        recalcularTotales();
+      }
+    })();
+
+    (function () {
+      // Avisa antes de salir si hay cambios sin guardar. Los cambios hechos
+      // por JS al precargar el formulario (editar una cotización existente)
+      // no cuentan como "cambio del usuario": setear .value/.selected por
+      // código no dispara eventos input/change nativos, así que el aviso
+      // solo se activa con interacción real.
+      const form = document.querySelector('.form-cotizacion');
+      let formularioModificado = false;
+
+      form.addEventListener('input', () => { formularioModificado = true; });
+      form.addEventListener('change', () => { formularioModificado = true; });
+      form.addEventListener('submit', () => { formularioModificado = false; });
+
+      window.addEventListener('beforeunload', (e) => {
+        if (!formularioModificado) return;
+        e.preventDefault();
+        e.returnValue = '';
+      });
+    })();
+  </script>
+{% endblock %}
