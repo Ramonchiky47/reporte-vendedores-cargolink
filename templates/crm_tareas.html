@@ -56,6 +56,9 @@
           </td>
         </tr>
         {% endfor %}
+        {% if not tareas %}
+        <tr><td colspan="6" style="text-align:center; color:#757575; white-space:normal;">Sin tareas registradas.</td></tr>
+        {% endif %}
       </tbody>
     </table>
   </div>

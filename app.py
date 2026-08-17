@@ -2025,13 +2025,7 @@ CRM_NAV = [
 ]
 
 # Datos de ejemplo para la vista de Tareas mientras se define la fuente de datos real.
-TAREAS_MOCK = [
-    {"id": "219261", "nombre": "Planchas Alejandrina", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-05", "actividad": "Cotizacion"},
-    {"id": "992289", "nombre": "Duda si tiene este control: AKB7...", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-06", "actividad": "Cotizacion"},
-    {"id": "849078", "nombre": "Cabo Azul", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-12", "actividad": "Garantias"},
-    {"id": "752756", "nombre": "Holiday Inn Sendero", "creado_en": "2026-08-11", "fecha_compromiso": "2026-08-12", "actividad": "Garantias"},
-    {"id": "694773", "nombre": "Maria Laura Tru", "creado_en": "2026-08-13", "fecha_compromiso": "2026-08-13", "actividad": "Cotizacion"},
-]
+TAREAS_MOCK = []
 
 
 def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300):
