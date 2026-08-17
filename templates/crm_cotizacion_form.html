@@ -53,6 +53,7 @@
     background: #fff; font: inherit; font-size: 0.88rem; cursor: pointer; color: #333;
   }
   .multi-select-btn:after { content: '▾'; float: right; color: #999; }
+  .campo-con-error { border-color: #dc2626 !important; }
   .multi-select-panel {
     position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
     background: #fff; border: 1px solid var(--borde); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
@@ -610,6 +611,64 @@
       } else {
         recalcularTotales();
       }
+    })();
+
+    (function () {
+      // Antes de enviar (botón Guardar o Enter en un campo de texto), valida
+      // los campos obligatorios que el navegador no cubre solo con
+      // "required" (Cliente es un checkbox custom, no un <select>/<input>
+      // nativo, y Fecha de vencimiento solo es obligatoria en modo "libre").
+      // Si falta algo, cancela el envío y avisa en vez de dejar que se
+      // pierda lo capturado con un error del servidor.
+      const form = document.querySelector('.form-cotizacion');
+      const clienteBtn = document.getElementById('cliente-btn');
+      const checkProspecto = document.getElementById('check-prospecto');
+      const inputProspecto = document.getElementById('cliente_prospecto');
+      const vencimientoModo = document.getElementById('vencimiento_modo');
+      const fechaVencimientoLibre = document.getElementById('fecha_vencimiento_libre');
+
+      function limpiarErrores() {
+        document.querySelectorAll('.campo-con-error').forEach((el) => el.classList.remove('campo-con-error'));
+        const aviso = document.getElementById('aviso-campos-faltantes');
+        if (aviso) aviso.remove();
+      }
+
+      function marcarError(el) {
+        if (el) el.classList.add('campo-con-error');
+      }
+
+      form.addEventListener('submit', (e) => {
+        limpiarErrores();
+        const faltantes = [];
+
+        const hayCliente = form.querySelectorAll('.check-cliente:checked').length > 0;
+        const esProspecto = checkProspecto && checkProspecto.checked;
+        if (esProspecto) {
+          if (!inputProspecto.value.trim()) {
+            faltantes.push('Nombre del prospecto');
+            marcarError(inputProspecto);
+          }
+        } else if (!hayCliente) {
+          faltantes.push('Cliente');
+          marcarError(clienteBtn);
+        }
+
+        if (vencimientoModo.value === 'libre' && !fechaVencimientoLibre.value) {
+          faltantes.push('Fecha de vencimiento');
+          marcarError(fechaVencimientoLibre);
+        }
+
+        if (faltantes.length) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          const aviso = document.createElement('div');
+          aviso.id = 'aviso-campos-faltantes';
+          aviso.className = 'flash';
+          aviso.textContent = 'No se guardará la cotización: falta capturar ' + faltantes.join(', ') + '.';
+          form.parentNode.insertBefore(aviso, form);
+          aviso.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
     })();
 
     (function () {
