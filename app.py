@@ -25,6 +25,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from markupsafe import Markup, escape
 from psycopg.rows import dict_row
 from xhtml2pdf import pisa
 
@@ -969,6 +970,15 @@ IMPORTACIONES_URL = (os.environ.get("IMPORTACIONES_URL") or "http://localhost:30
 @app.context_processor
 def inject_importaciones_url():
     return {"importaciones_url": IMPORTACIONES_URL}
+
+
+@app.template_filter("nl2br")
+def nl2br(texto):
+    """Convierte saltos de línea en <br>, escapando el resto del texto.
+    xhtml2pdf respeta <br> de forma confiable; CSS white-space:pre-line no."""
+    if not texto:
+        return ""
+    return Markup("<br>").join(escape(linea) for linea in str(texto).splitlines())
 
 
 def registrar_ingreso():

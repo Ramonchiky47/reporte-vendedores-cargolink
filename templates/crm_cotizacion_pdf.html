@@ -176,7 +176,7 @@
   {% endif %}
 
   <table class="barra-vino"><tr><td>DESCRIPCIÓN</td></tr></table>
-  <p class="descripcion-texto">{{ doc.descripcion or "" }}</p>
+  <p class="descripcion-texto">{{ doc.descripcion|nl2br }}</p>
 
   <table class="caja-notas">
     <tr>

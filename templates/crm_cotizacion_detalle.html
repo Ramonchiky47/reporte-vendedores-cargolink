@@ -70,7 +70,7 @@
       <p class="campo-valor">{{ doc.tiempo_traslado or "—" }} / {{ doc.via or "—" }}</p>
       {% if doc.descripcion %}
         <p class="campo-etiqueta">Descripción</p>
-        <p class="campo-valor">{{ doc.descripcion }}</p>
+        <p class="campo-valor">{{ doc.descripcion|nl2br }}</p>
       {% endif %}
     </div>
 

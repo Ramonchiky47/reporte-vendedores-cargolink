@@ -193,7 +193,7 @@
     {% endif %}
 
     <div class="barra-vino vacia">DESCRIPCIÓN</div>
-    <p class="descripcion-texto">{{ doc.descripcion or "" }}</p>
+    <p class="descripcion-texto">{{ doc.descripcion|nl2br }}</p>
 
     <div class="caja-notas">
       <p class="notas-titulo">SHIPPING NOTES / OBSERVACIONES</p>
