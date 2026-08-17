@@ -17,16 +17,20 @@
   }
   .barra-acciones .btn-imprimir { background: var(--vino); color: #fff; border-color: var(--vino); }
 
-  .encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.5rem; }
-  .logo { display: flex; align-items: center; gap: 0.5rem; }
-  .logo-badge {
-    width: 46px; height: 46px; border-radius: 10px; background: var(--vino); color: #fff;
-    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.95rem;
+  .encabezado {
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 2px solid var(--vino);
   }
-  .logo-texto { font-size: 0.62rem; color: var(--vino); font-weight: 700; letter-spacing: 0.04em; }
-  .empresa { flex: 1; text-align: center; }
-  .empresa h1 { margin: 0 0 0.3rem; font-size: 1.6rem; font-weight: 700; letter-spacing: 0.06em; }
-  .empresa p { margin: 0.1rem 0; font-size: 0.75rem; font-weight: 500; color: #444; letter-spacing: 0.01em; }
+  .marca { display: flex; align-items: center; gap: 0.85rem; }
+  .logo-badge {
+    width: 52px; height: 52px; border-radius: 12px; background: var(--vino); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.05rem;
+    letter-spacing: 0.02em; flex-shrink: 0;
+  }
+  .marca-nombre h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; color: #1a1a1a; }
+  .marca-nombre p { margin: 0.2rem 0 0; font-size: 0.68rem; font-weight: 600; color: var(--vino); letter-spacing: 0.06em; text-transform: uppercase; }
+  .direccion-empresa { text-align: right; font-size: 0.75rem; color: #555; line-height: 1.5; }
+  .direccion-empresa strong { color: #222; }
 
   .agradecimiento { text-align: center; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; margin: 1.2rem 0 0.6rem; color: #555; }
   .realizada-por { font-size: 0.85rem; margin-bottom: 0.6rem; }
@@ -99,17 +103,18 @@
 
   <div class="hoja">
     <div class="encabezado">
-      <div class="logo">
+      <div class="marca">
         <div class="logo-badge">AV2</div>
-        <div class="logo-texto">IN LOGISTICS<br>YOUR PEACE<br>IS OUR<br>RESPONSABILITY</div>
+        <div class="marca-nombre">
+          <h1>AV2 LOGISTICS</h1>
+          <p>In logistics, your peace is our responsibility</p>
+        </div>
       </div>
-      <div class="empresa">
-        <h1>AV2 LOGISTICS</h1>
-        <p>AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
-        <p>ZAPOPAN, JALISCO</p>
-        <p>R.F.C ALO171009TZ1</p>
+      <div class="direccion-empresa">
+        <strong>Av Universidad No. 1011, Col. Puerta de Hierro</strong><br>
+        CP 45116, Zapopan, Jalisco<br>
+        R.F.C ALO171009TZ1
       </div>
-      <div style="width:46px;"></div>
     </div>
 
     <p class="agradecimiento">AGRADECEMOS SU PREFERENCIA</p>

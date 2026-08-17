@@ -6,14 +6,17 @@
   @page { size: letter; margin: 2cm 2cm 2.2cm; }
   body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 7.5pt; }
   table { border-collapse: collapse; width: 100%; }
-  .tabla-encabezado td { vertical-align: top; border: none; padding: 0; }
+  .tabla-encabezado td { vertical-align: middle; border: none; padding: 0; }
+  table.logo-badge-tabla { width: 40px; }
   .logo-badge {
     width: 40px; height: 40px; border-radius: 8px; background-color: #7a1f2c; color: #ffffff;
-    text-align: center; font-weight: bold; font-size: 8.5pt;
+    text-align: center; vertical-align: middle; font-weight: bold; font-size: 8.5pt;
   }
-  .empresa { text-align: center; }
-  .empresa h1 { margin: 0 0 4px; font-size: 12.5pt; font-weight: bold; letter-spacing: 1.5px; }
-  .empresa p { margin: 1px 0; font-size: 6pt; font-weight: normal; color: #444444; }
+  .marca-nombre p.marca-h1 { margin: 0; font-size: 12pt; font-weight: bold; letter-spacing: 0.3px; color: #1a1a1a; }
+  .marca-nombre p.marca-slogan { margin: 2px 0 0; font-size: 5.3pt; font-weight: bold; letter-spacing: 0.5px; color: #7a1f2c; text-transform: uppercase; }
+  .direccion-empresa p { margin: 1px 0; font-size: 6pt; font-weight: normal; color: #444444; }
+  .direccion-empresa p.destacado { color: #222222; font-weight: bold; }
+  table.regla-vino td { border-bottom: 2px solid #7a1f2c; padding: 0; font-size: 1px; line-height: 1px; }
 
   table.agradecimiento-tabla { margin: 10px 0 6px; }
   table.agradecimiento-tabla td { border: none; padding: 0; text-align: center; }
@@ -71,16 +74,19 @@
 <body>
   <table class="tabla-encabezado">
     <tr>
-      <td style="width:60px;"><div class="logo-badge">AV2</div></td>
-      <td class="empresa">
-        <h1>AV2 LOGISTICS</h1>
-        <p>AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
-        <p>ZAPOPAN, JALISCO</p>
+      <td style="width:48px;"><table class="logo-badge-tabla"><tr><td class="logo-badge">AV2</td></tr></table></td>
+      <td class="marca-nombre">
+        <p class="marca-h1"><b>AV2 LOGISTICS</b></p>
+        <p class="marca-slogan">In logistics, your peace is our responsibility</p>
+      </td>
+      <td class="direccion-empresa" align="right">
+        <p class="destacado"><b>Av Universidad No. 1011, Col. Puerta de Hierro</b></p>
+        <p>CP 45116, Zapopan, Jalisco</p>
         <p>R.F.C ALO171009TZ1</p>
       </td>
-      <td style="width:60px;"></td>
     </tr>
   </table>
+  <table class="regla-vino"><tr><td>&nbsp;</td></tr></table>
 
   <table class="agradecimiento-tabla"><tr><td class="agradecimiento">AGRADECEMOS SU PREFERENCIA</td></tr></table>
 
