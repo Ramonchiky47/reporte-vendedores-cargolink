@@ -156,5 +156,19 @@
 
     inicializarMultiSelect('clientes', 'cliente', 'clientes');
     inicializarMultiSelect('grupos', 'grupo', 'grupos');
+
+    // Los contactos se capturan siempre en mayúsculas (teléfono y correo
+    // quedan fuera de esta regla, no siguen esa convención).
+    function forzarMayusculas(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', () => {
+        const inicio = el.selectionStart;
+        const fin = el.selectionEnd;
+        el.value = el.value.toUpperCase();
+        el.setSelectionRange(inicio, fin);
+      });
+    }
+    ['nombre', 'apellido', 'observaciones', 'grupo_nuevo'].forEach(forzarMayusculas);
   </script>
 {% endblock %}

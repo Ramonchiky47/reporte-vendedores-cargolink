@@ -2363,12 +2363,14 @@ def guardar_contacto_crm(contacto_id):
     """Crea o actualiza un contacto y reemplaza sus asociaciones de clientes
     y grupos por las que vengan en el formulario. Regresa None si guardó
     bien, o un mensaje de error si faltó el nombre."""
-    nombre = request.form.get("nombre", "").strip()
-    apellido = request.form.get("apellido", "").strip()
+    # Los contactos se capturan siempre en mayúsculas (salvo teléfono y
+    # correo, que no siguen esa convención).
+    nombre = request.form.get("nombre", "").strip().upper()
+    apellido = request.form.get("apellido", "").strip().upper()
     telefono = request.form.get("telefono", "").strip()
     correo = request.form.get("correo", "").strip()
-    observaciones = request.form.get("observaciones", "").strip()
-    grupo_nuevo = request.form.get("grupo_nuevo", "").strip()
+    observaciones = request.form.get("observaciones", "").strip().upper()
+    grupo_nuevo = request.form.get("grupo_nuevo", "").strip().upper()
     clientes_folios = {int(v) for v in request.form.getlist("clientes") if v.strip().lstrip("-").isdigit()}
     grupos_ids = {int(v) for v in request.form.getlist("grupos") if v.strip().isdigit()}
 
