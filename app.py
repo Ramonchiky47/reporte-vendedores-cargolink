@@ -328,6 +328,17 @@ def init_db():
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS contacto_id bigint references crm_contactos(id) on delete set null;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS tipo_ingreso_egreso_id bigint references crm_tipos_ingreso_egreso(id) on delete set null;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS tipo_ingreso_egreso_texto text;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS creado_por_user_id uuid;")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_firmas (
+            user_id uuid primary key,
+            nombre_firma text,
+            puesto text,
+            telefono text,
+            correo text,
+            updated_at timestamptz not null default now()
+        );
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_cotizacion_productos (
             id bigint generated always as identity primary key,
@@ -2524,6 +2535,14 @@ def obtener_lineas_cotizacion_crm(cotizacion_id):
     } for r in filas]
 
 
+FIRMA_DEFAULT = {
+    "nombre_firma": "Lic Armando Villanueva Silva",
+    "puesto": "Ejecutivo de Cuenta Monterrey",
+    "telefono": "+52 81 1778 7250",
+    "correo": "avillanueva@av2logistics.com",
+}
+
+
 def construir_documento_cotizacion_crm(cotizacion_id):
     """Junta toda la información de una cotización (cliente/prospecto,
     contacto, catálogos resueltos, líneas de producto con su total) para
@@ -2533,12 +2552,14 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         SELECT co.*, ac.razon_social AS cliente_nombre, ac.vendedor AS cliente_vendedor,
                ct.nombre AS contacto_nombre, ct.apellido AS contacto_apellido,
                ct.telefono AS contacto_telefono, ct.correo AS contacto_correo,
-               i.nombre AS incoterm, m.nombre AS modalidad
+               i.nombre AS incoterm, m.nombre AS modalidad,
+               f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         WHERE co.id = %s
     """, (cotizacion_id,)).fetchone()
     db.close()
@@ -2601,6 +2622,10 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         "descripcion": fila["descripcion"] or "",
         "lineas": lineas,
         "totales_moneda": totales_moneda,
+        "firma_nombre": fila["nombre_firma"] or FIRMA_DEFAULT["nombre_firma"],
+        "firma_puesto": fila["firma_puesto"] or FIRMA_DEFAULT["puesto"],
+        "firma_telefono": fila["firma_telefono"] or FIRMA_DEFAULT["telefono"],
+        "firma_correo": fila["firma_correo"] or FIRMA_DEFAULT["correo"],
     }
 
 
@@ -2794,6 +2819,7 @@ def guardar_cotizacion_crm(cotizacion_id):
 
     if cotizacion_id is None:
         id_cotizacion = generar_id_cotizacion(db)
+        creado_por_user_id = session.get("usuario_id") or None
         fila_nueva = db.execute("""
             INSERT INTO crm_cotizaciones (
                 id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
@@ -2801,8 +2827,8 @@ def guardar_cotizacion_crm(cotizacion_id):
                 origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
                 incoterm_id, modalidad_id,
                 estibable, tiempo_traslado, via, seguro_mercancia,
-                profit_estimado, tipo_cambio, descripcion
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                profit_estimado, tipo_cambio, descripcion, creado_por_user_id
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
@@ -2810,7 +2836,7 @@ def guardar_cotizacion_crm(cotizacion_id):
             origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
             incoterm_id, modalidad_id,
             estibable, tiempo_traslado, via, seguro_mercancia,
-            profit_estimado, tipo_cambio, descripcion,
+            profit_estimado, tipo_cambio, descripcion, creado_por_user_id,
         )).fetchone()
         cotizacion_id = fila_nueva["id"]
     else:
@@ -3276,6 +3302,46 @@ def permisos_actualizar_toggle(user_id):
     db.commit()
     db.close()
     return redirect(url_for("permisos_actualizar"))
+
+
+@app.route("/catalogos/firmas-cotizacion")
+@admin_required
+def firmas_cotizacion():
+    db = get_db()
+    filas = db.execute(
+        """
+        SELECT u.id, u.email, f.nombre_firma, f.puesto, f.telefono, f.correo
+        FROM auth.users u
+        LEFT JOIN public.crm_firmas f ON f.user_id = u.id
+        ORDER BY u.email
+        """
+    ).fetchall()
+    db.close()
+    return render_template("firmas_cotizacion.html", filas=filas)
+
+
+@app.route("/catalogos/firmas-cotizacion/<uuid:user_id>/guardar", methods=["POST"])
+@admin_required
+def firmas_cotizacion_guardar(user_id):
+    nombre_firma = request.form.get("nombre_firma", "").strip()[:120]
+    puesto = request.form.get("puesto", "").strip()[:120]
+    telefono = request.form.get("telefono", "").strip()[:40]
+    correo = request.form.get("correo", "").strip()[:120]
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO crm_firmas (user_id, nombre_firma, puesto, telefono, correo)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET
+            nombre_firma = EXCLUDED.nombre_firma, puesto = EXCLUDED.puesto,
+            telefono = EXCLUDED.telefono, correo = EXCLUDED.correo, updated_at = now()
+        """,
+        (str(user_id), nombre_firma, puesto, telefono, correo),
+    )
+    db.commit()
+    db.close()
+    flash("Firma guardada.")
+    return redirect(url_for("firmas_cotizacion"))
 
 
 def get_plazas_catalogo():

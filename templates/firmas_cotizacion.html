@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Firmas de Cotización{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<style>
+  .rejilla-firmas {
+    display: grid;
+    grid-template-columns: minmax(160px, 1.2fr) 1.4fr 1.4fr 1fr 1.4fr auto;
+    gap: .5rem .75rem;
+    align-items: center;
+  }
+  .rejilla-firmas .encabezado {
+    font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
+    color: var(--ink-3); padding-bottom: .4rem; border-bottom: 1px solid var(--border-strong);
+  }
+  .rejilla-firmas form.fila-firma { display: contents; }
+  .rejilla-firmas .fila-firma > * { padding: .35rem 0; border-bottom: 1px solid var(--border); }
+  .rejilla-firmas input { width: 100%; padding: .35rem .5rem; border: 1px solid var(--border-strong); border-radius: 6px; font: inherit; font-size: .82rem; }
+  .rejilla-firmas .correo-usuario { font-size: .85rem; white-space: nowrap; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>Firmas de Cotización</h2>
+      <p class="hint">
+        Nombre, puesto, teléfono y correo que aparecen al pie de las cotizaciones que cada usuario genera
+        (bloque "¿Tienes alguna pregunta? Ponte en contacto conmigo"). Mientras un usuario no tenga firma
+        capturada aquí, sus cotizaciones muestran una firma genérica por defecto.
+      </p>
+      {% if filas %}
+      <div class="rejilla-firmas">
+        <div class="encabezado">Usuario</div>
+        <div class="encabezado">Nombre para firmar</div>
+        <div class="encabezado">Puesto</div>
+        <div class="encabezado">Teléfono</div>
+        <div class="encabezado">Correo</div>
+        <div class="encabezado"></div>
+        {% for fila in filas %}
+        <form class="fila-firma" method="post" action="{{ url_for('firmas_cotizacion_guardar', user_id=fila.id) }}">
+          <div class="correo-usuario">{{ fila.email }}</div>
+          <div><input type="text" name="nombre_firma" maxlength="120" value="{{ fila.nombre_firma or '' }}" placeholder="Lic Nombre Apellido"></div>
+          <div><input type="text" name="puesto" maxlength="120" value="{{ fila.puesto or '' }}" placeholder="Ejecutivo de Cuenta"></div>
+          <div><input type="text" name="telefono" maxlength="40" value="{{ fila.telefono or '' }}" placeholder="+52 ..."></div>
+          <div><input type="text" name="correo" maxlength="120" value="{{ fila.correo or '' }}" placeholder="correo@av2logistics.com"></div>
+          <div><button class="btn small" type="submit">Guardar</button></div>
+        </form>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty">Todavía no hay usuarios registrados en el catálogo de accesos.</p>
+      {% endif %}
+    </div>
+{% endblock %}

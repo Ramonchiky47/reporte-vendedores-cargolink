@@ -218,10 +218,10 @@
 
     <div class="firma">
       <p class="pregunta">¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
-      <p class="nombre">Lic Armando Villanueva Silva</p>
-      <p>Ejecutivo de Cuenta Monterrey</p>
-      <p>Tel +52 81 1778 7250</p>
-      <p>Correo: avillanueva@av2logistics.com</p>
+      <p class="nombre">{{ doc.firma_nombre }}</p>
+      <p>{{ doc.firma_puesto }}</p>
+      <p>Tel {{ doc.firma_telefono }}</p>
+      <p>Correo: {{ doc.firma_correo }}</p>
     </div>
   </div>
 </body>
