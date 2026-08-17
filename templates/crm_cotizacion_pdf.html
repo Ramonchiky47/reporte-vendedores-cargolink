@@ -4,63 +4,63 @@
 <meta charset="utf-8">
 <style>
   @page { size: letter; margin: 2cm 2cm 2.2cm; }
-  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 9pt; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 7.5pt; }
   table { border-collapse: collapse; width: 100%; }
   .tabla-encabezado td { vertical-align: top; border: none; padding: 0; }
   .logo-badge {
     width: 40px; height: 40px; border-radius: 8px; background-color: #7a1f2c; color: #ffffff;
-    text-align: center; font-weight: bold; font-size: 10pt;
+    text-align: center; font-weight: bold; font-size: 8.5pt;
   }
   .empresa { text-align: center; }
-  .empresa h1 { margin: 0 0 4px; font-size: 14pt; font-weight: bold; letter-spacing: 1.5px; }
-  .empresa p { margin: 1px 0; font-size: 7.5pt; font-weight: normal; color: #444444; }
+  .empresa h1 { margin: 0 0 4px; font-size: 12.5pt; font-weight: bold; letter-spacing: 1.5px; }
+  .empresa p { margin: 1px 0; font-size: 6pt; font-weight: normal; color: #444444; }
 
   table.agradecimiento-tabla { margin: 10px 0 6px; }
   table.agradecimiento-tabla td { border: none; padding: 0; text-align: center; }
-  .agradecimiento { font-size: 8pt; font-weight: bold; color: #555555; }
-  .realizada-por { font-size: 9pt; margin-bottom: 6px; }
+  .agradecimiento { font-size: 6.5pt; font-weight: bold; color: #555555; }
+  .realizada-por { font-size: 7.5pt; margin-bottom: 6px; }
 
-  .barra-vino td { background-color: #7a1f2c; color: #ffffff; font-size: 9pt; font-weight: bold; padding: 6px 10px; border: none; }
+  .barra-vino td { background-color: #7a1f2c; color: #ffffff; font-size: 7.5pt; font-weight: bold; padding: 6px 10px; border: none; }
   .barra-vino-vacia td { background-color: #7a1f2c; padding: 6px 10px; border: none; }
 
-  .datos-cliente td { border: none; padding: 1px 0; font-size: 9pt; vertical-align: top; }
+  .datos-cliente td { border: none; padding: 1px 0; font-size: 7.5pt; vertical-align: top; }
 
   table.caja-titulo { background-color: #fbe3e2; border-radius: 6px; margin: 10px 0 12px; }
   table.caja-titulo > tr > td { padding: 14px 18px; border: none; }
-  .caja-titulo-nombre { font-size: 13pt; font-weight: bold; margin: 0 0 10px; letter-spacing: 0.3px; }
-  .caja-titulo p { margin: 1px 0; font-size: 8.5pt; }
+  .caja-titulo-nombre { font-size: 11.5pt; font-weight: bold; margin: 0 0 10px; letter-spacing: 0.3px; }
+  .caja-titulo p { margin: 1px 0; font-size: 7pt; }
   .caja-titulo .der { text-align: right; }
 
-  .saludo { font-size: 9pt; margin: 8px 0 10px; }
+  .saludo { font-size: 7.5pt; margin: 8px 0 10px; }
 
   table.rejilla-envio { table-layout: fixed; }
-  .rejilla-envio td { border-bottom: 1px solid #d0d0d0; padding: 4px 6px 6px 0; font-size: 8pt; vertical-align: top; width: 25%; }
-  .rejilla-envio .etiqueta { font-size: 6.5pt; letter-spacing: 0.5px; color: #555555; font-weight: bold; margin: 0 0 2px; }
-  .rejilla-envio .valor { font-size: 8pt; color: #222222; margin: 0; }
+  .rejilla-envio td { border-bottom: 1px solid #d0d0d0; padding: 4px 6px 6px 0; font-size: 6.5pt; vertical-align: top; width: 25%; }
+  .rejilla-envio .etiqueta { font-size: 5pt; letter-spacing: 0.5px; color: #555555; font-weight: bold; margin: 0 0 2px; }
+  .rejilla-envio .valor { font-size: 6.5pt; color: #222222; margin: 0; }
 
-  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 9pt; }
+  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 7.5pt; }
   table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; }
-  table.tabla-rate td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 8.5pt; }
+  table.tabla-rate td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 7pt; }
 
   table.tarjetas-totales { margin: 10px 0 6px; }
   table.tarjetas-totales > tr > td {
     border: 1px solid #d0d0d0; border-radius: 4px; padding: 8px 10px; vertical-align: top; width: 33%;
   }
-  .tarjeta-titulo { font-weight: bold; font-size: 9pt; margin: 0 0 5px; }
-  .tarjeta-fila { font-size: 8pt; color: #444444; margin: 1px 0; }
+  .tarjeta-titulo { font-weight: bold; font-size: 7.5pt; margin: 0 0 5px; }
+  .tarjeta-fila { font-size: 6.5pt; color: #444444; margin: 1px 0; }
   .tarjeta-fila-etq { width: 60%; }
   .tarjeta-fila-val { width: 40%; text-align: right; }
-  .tarjeta-total-etq { width: 60%; color: #7a1f2c; font-weight: bold; font-size: 8.5pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
-  .tarjeta-total-val { width: 40%; text-align: right; color: #7a1f2c; font-weight: bold; font-size: 8.5pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
+  .tarjeta-total-etq { width: 60%; color: #7a1f2c; font-weight: bold; font-size: 7pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
+  .tarjeta-total-val { width: 40%; text-align: right; color: #7a1f2c; font-weight: bold; font-size: 7pt; padding-top: 3px; border-top: 1px solid #d0d0d0; }
 
-  .descripcion-texto { font-size: 8.5pt; padding: 6px 2px 12px; }
+  .descripcion-texto { font-size: 7pt; padding: 6px 2px 12px; }
 
-  .notas-titulo { text-align: left; font-size: 8.5pt; font-weight: bold; letter-spacing: 0.5px; margin: 0 0 6px; }
-  .notas p { margin: 3px 0; font-size: 6.8pt; color: #333333; line-height: 1.4; }
+  .notas-titulo { text-align: left; font-size: 7pt; font-weight: bold; letter-spacing: 0.5px; margin: 0 0 6px; }
+  .notas p { margin: 3px 0; font-size: 5.3pt; color: #333333; line-height: 1.4; }
   table.caja-notas { border: 1px solid #d0d0d0; border-radius: 6px; margin: 10px 0; }
   table.caja-notas > tr > td { padding: 10px 14px; border: none; }
 
-  .firma { margin: 12px 0 4px; font-size: 8.5pt; color: #333333; }
+  .firma { margin: 12px 0 4px; font-size: 7pt; color: #333333; }
   .firma p { margin: 2px 0; color: #444444; }
   .firma .nombre { font-weight: bold; color: #222222; }
 </style>
