@@ -38,14 +38,17 @@
   .rejilla-envio .etiqueta { font-size: 5pt; letter-spacing: 0.5px; color: #555555; font-weight: bold; margin: 0 0 2px; }
   .rejilla-envio .valor { font-size: 6.5pt; color: #222222; margin: 0; }
 
-  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 7.5pt; }
-  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; }
+  table.tabla-rate { table-layout: fixed; }
+  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 7.5pt; width: 32%; }
+  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; width: 17%; }
   table.tabla-rate td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 7pt; }
 
-  table.tarjetas-totales { margin: 10px 0 6px; }
-  table.tarjetas-totales > tr > td {
+  table.tarjetas-totales { margin: 10px 0 6px; width: 100%; table-layout: fixed; }
+  .tarjeta-columna {
     border: 1px solid #d0d0d0; border-radius: 4px; padding: 8px 10px; vertical-align: top; width: 33%;
   }
+  .tarjeta-columna-vacia { border: none; width: 33%; }
+  .tarjeta-columna-tabla { width: 100%; table-layout: fixed; }
   .tarjeta-titulo { font-weight: bold; font-size: 7.5pt; margin: 0 0 5px; }
   .tarjeta-fila { font-size: 6.5pt; color: #444444; margin: 1px 0; }
   .tarjeta-fila-etq { width: 60%; }
@@ -158,16 +161,16 @@
   <table class="tarjetas-totales">
     <tr>
       {% for t in doc.totales_moneda %}
-      <td>
+      <td class="tarjeta-columna">
         <p class="tarjeta-titulo">{{ t.moneda }}</p>
-        <table>
+        <table class="tarjeta-columna-tabla">
           <tr><td class="tarjeta-fila tarjeta-fila-etq">Sub total</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.subtotal) }}</td></tr>
           <tr><td class="tarjeta-fila tarjeta-fila-etq">Impuesto</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.impuesto) }}</td></tr>
           <tr><td class="tarjeta-total-etq">Total</td><td class="tarjeta-total-val">${{ "{:,.2f}".format(t.total) }}</td></tr>
         </table>
       </td>
       {% endfor %}
-      {% for _ in range(3 - doc.totales_moneda|length) %}<td style="border:none;"></td>{% endfor %}
+      {% for _ in range(3 - doc.totales_moneda|length) %}<td class="tarjeta-columna-vacia"></td>{% endfor %}
     </tr>
   </table>
   {% endif %}

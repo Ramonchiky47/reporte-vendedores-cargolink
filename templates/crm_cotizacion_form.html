@@ -490,6 +490,10 @@
           // (linea_producto_id, linea_cantidad, linea_precio_unitario, ...) para todas
           // las filas siguientes. Basta con .hidden: un campo oculto ya no es interactuable.
           if (categoria === '__SIN_PRODUCTO__') {
+            // Un <select> sin ninguna <option> no se envía con el formulario
+            // (no hay valor que enviar), lo que desalinea igual que .disabled.
+            // Le dejamos una opción vacía para que siempre aporte un valor "".
+            selectNombre.innerHTML = '<option value=""></option>';
             selectNombre.hidden = true;
             inputTextoProducto.hidden = false;
             return;
