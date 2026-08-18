@@ -2711,8 +2711,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
 
     resumen_plaza = {}
     for f in booking_periodo:
-        resumen_plaza[f["plaza"]] = resumen_plaza.get(f["plaza"], 0) + f["venta"]
-    plazas_ranking = sorted(({"plaza": k, "venta": v} for k, v in resumen_plaza.items()), key=lambda p: -p["venta"])
+        resumen_plaza[f["plaza"]] = resumen_plaza.get(f["plaza"], 0) + f["profit"]
+    plazas_ranking = sorted(({"plaza": k, "profit": v} for k, v in resumen_plaza.items()), key=lambda p: -p["profit"])
 
     por_vencer, vencidas = [], []
     for f in filas_cot:

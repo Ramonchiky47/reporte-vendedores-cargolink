@@ -237,16 +237,16 @@
 
     <div class="tarjeta">
       <div class="tarjeta__cabecera">
-        <div><p class="tarjeta__titulo">Venta por plaza</p><p class="tarjeta__pista">Periodo elegido</p></div>
+        <div><p class="tarjeta__titulo">Profit por plaza</p><p class="tarjeta__pista">Periodo elegido</p></div>
       </div>
       {% if plazas_ranking %}
       <div class="lista-plazas">
-        {% set plaza_max = plazas_ranking|map(attribute='venta')|max %}
+        {% set plaza_max = plazas_ranking|map(attribute='profit')|max %}
         {% for p in plazas_ranking %}
         <div class="fila-plaza">
           <div class="fila-plaza__nombre" title="{{ p.plaza }}">{{ p.plaza }}</div>
-          <div class="fila-plaza__pista"><i style="width:{{ (p.venta / plaza_max * 100) if plaza_max else 0 }}%"></i></div>
-          <div class="fila-plaza__valor">${{ '{:,.0f}'.format(p.venta) }}</div>
+          <div class="fila-plaza__pista"><i style="width:{{ (p.profit / plaza_max * 100) if plaza_max else 0 }}%"></i></div>
+          <div class="fila-plaza__valor">${{ '{:,.0f}'.format(p.profit) }}</div>
         </div>
         {% endfor %}
       </div>
