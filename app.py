@@ -340,6 +340,12 @@ def init_db():
         );
     """)
     db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_plazas_habilitadas (
+            plaza text primary key,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS crm_cotizacion_productos (
             id bigint generated always as identity primary key,
             cotizacion_id bigint not null references crm_cotizaciones(id) on delete cascade,
@@ -1187,14 +1193,45 @@ def usuario_puede_ver_catalogos():
     return bool(session.get("puede_ver_catalogos"))
 
 
+def plazas_con_crm_habilitado():
+    """Plazas a las que Catálogos → CRM por Plaza les dio acceso a CRM
+    completo (todo usuario asignado a esa plaza en Visibilidad de Plazas
+    puede entrar, sin necesidad de un permiso individual)."""
+    db = get_db()
+    filas = db.execute("SELECT plaza FROM crm_plazas_habilitadas").fetchall()
+    db.close()
+    return {f["plaza"] for f in filas}
+
+
+def plazas_asignadas_usuario_sesion():
+    """Las plazas que Visibilidad de Plazas le asignó directamente al
+    usuario en sesión (sin importar la bandera 'todas_las_plazas'), para
+    decidir accesos que se otorgan por plaza, como CRM."""
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return set()
+    db = get_db()
+    filas = db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (usuario_id,)).fetchall()
+    db.close()
+    return {f["plaza"] for f in filas}
+
+
 def usuario_puede_ver_crm():
     """True = el usuario en sesión puede ver la pestaña CRM. Los
-    administradores siempre pueden; para el resto se usa el permiso
-    guardado en sesión al hacer login (app_user_permissions.puede_ver_crm),
-    otorgado desde Catálogos → Permisos de Usuario."""
+    administradores siempre pueden. Para el resto, hay dos caminos que se
+    combinan (basta con uno): el permiso individual guardado en sesión al
+    hacer login (app_user_permissions.puede_ver_crm, otorgado desde
+    Catálogos → Permisos de Usuario), o que alguna de sus plazas asignadas
+    (Catálogos → Visibilidad de Plazas) tenga CRM habilitado por plaza
+    (Catálogos → CRM por Plaza)."""
     if session.get("es_admin"):
         return True
-    return bool(session.get("puede_ver_crm"))
+    if session.get("puede_ver_crm"):
+        return True
+    plazas_habilitadas = plazas_con_crm_habilitado()
+    if not plazas_habilitadas:
+        return False
+    return bool(plazas_asignadas_usuario_sesion() & plazas_habilitadas)
 
 
 def primera_pagina_permitida():
@@ -3626,6 +3663,31 @@ def firmas_cotizacion_guardar(user_id):
     db.close()
     flash("Firma guardada.")
     return redirect(url_for("firmas_cotizacion"))
+
+
+@app.route("/catalogos/crm-plazas")
+@admin_required
+def crm_plazas():
+    habilitadas = plazas_con_crm_habilitado()
+    filas = [{"plaza": p, "habilitada": p in habilitadas} for p in get_plazas_catalogo()]
+    return render_template("crm_plazas.html", filas=filas)
+
+
+@app.route("/catalogos/crm-plazas/toggle", methods=["POST"])
+@admin_required
+def crm_plazas_toggle():
+    plaza = request.form.get("plaza", "").strip()
+    if not plaza:
+        flash("Plaza inválida.")
+        return redirect(url_for("crm_plazas"))
+    db = get_db()
+    if request.form.get("valor") == "1":
+        db.execute("INSERT INTO crm_plazas_habilitadas (plaza) VALUES (%s) ON CONFLICT (plaza) DO NOTHING", (plaza,))
+    else:
+        db.execute("DELETE FROM crm_plazas_habilitadas WHERE plaza = %s", (plaza,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_plazas"))
 
 
 def get_plazas_catalogo():

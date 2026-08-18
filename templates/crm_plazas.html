@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · CRM por Plaza{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<style>
+  .permiso-pill {
+    display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .7rem;
+    border-radius: 999px; border: 1px solid var(--border-strong); background: none; cursor: pointer;
+    font-size: .78rem; font-weight: 600; color: var(--ink-3);
+  }
+  .permiso-pill.activo { background: var(--ok-wash); border-color: var(--ok); color: var(--ok); }
+  .permiso-pill:hover { border-color: var(--accent); }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>CRM por Plaza</h2>
+      <p class="hint">
+        Otorga CRM a toda una plaza de un jalón: si la marcas aquí, cualquier usuario asignado a esa plaza
+        en Catálogos → Visibilidad de Plazas puede entrar a CRM, sin necesidad de darle el permiso individual.
+        El permiso individual (Catálogos → Permisos de Usuario → casilla "CRM") sigue funcionando aparte,
+        para dar acceso suelto a alguien fuera de una plaza habilitada aquí. Los administradores siempre
+        tienen acceso. Dentro de CRM, cada usuario sigue viendo solo los datos de sus propias plazas.
+      </p>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Plaza</th><th>CRM</th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.plaza }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('crm_plazas_toggle') }}">
+                <input type="hidden" name="plaza" value="{{ fila.plaza }}">
+                <input type="hidden" name="valor" value="{{ '0' if fila.habilitada else '1' }}">
+                <button class="permiso-pill{{ ' activo' if fila.habilitada else '' }}" type="submit">
+                  {{ "✓" if fila.habilitada else "＋" }} CRM habilitado
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay plazas en el catálogo de vendedores/desarrolladores.</p>
+      {% endif %}
+    </div>
+{% endblock %}
