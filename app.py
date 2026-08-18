@@ -2556,9 +2556,11 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     db = get_db()
     vendedores_catalogo = db.execute("SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor").fetchall()
     plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in vendedores_catalogo}
+    desarrolladores_catalogo = db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador").fetchall()
+    plaza_por_desarrollador = {normalizar(r["desarrollador"]): r["plaza"] for r in desarrolladores_catalogo}
 
     bookings = db.execute(
-        "SELECT vendedor, fecha, venta, profit FROM reporte_bookings "
+        "SELECT vendedor, ejecutivo, fecha, venta, profit FROM reporte_bookings "
         "WHERE fecha >= %s AND fecha < (%s::date + interval '1 day')",
         (ventana_inicio.isoformat(), ventana_fin.isoformat()),
     ).fetchall()
@@ -2592,8 +2594,13 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
-        filas_booking.append({"d": d, "vendedor": vendedor, "plaza": plaza,
-                               "venta": float(r["venta"] or 0), "profit": float(r["profit"] or 0)})
+        ejecutivo = normalizar(r["ejecutivo"]) or None
+        filas_booking.append({
+            "d": d, "vendedor": vendedor, "plaza": plaza,
+            "ejecutivo": r["ejecutivo"] if ejecutivo else None,
+            "plaza_desarrollador": plaza_por_desarrollador.get(ejecutivo, "#N/D") if ejecutivo else None,
+            "venta": float(r["venta"] or 0), "profit": float(r["profit"] or 0),
+        })
 
     filas_cot = []
     for r in cotizaciones:
@@ -2661,9 +2668,30 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     resumen_vendedor = {}
     for f in booking_periodo:
         key = normalizar(f["vendedor"])
-        fila = resumen_vendedor.setdefault(key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "cotizaciones": 0})
+        fila = resumen_vendedor.setdefault(key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0})
         fila["bookings"] += 1
         fila["venta"] += f["venta"]
+        fila["profit"] += f["profit"]
+
+    # Actividad por desarrollador: mismo patrón que Comisiones — se agrupa
+    # por reporte_bookings.ejecutivo (no por vendedor). El permiso de plaza
+    # ya se aplicó arriba usando la plaza del VENDEDOR (regla existente en
+    # Comisiones: el desarrollador no basta para decidir visibilidad), así
+    # que aquí solo agrupamos lo que ya pasó ese filtro.
+    resumen_desarrollador = {}
+    for f in booking_periodo:
+        if not f["ejecutivo"]:
+            continue
+        key = normalizar(f["ejecutivo"])
+        fila = resumen_desarrollador.setdefault(key, {"nombre": f["ejecutivo"], "plaza": f["plaza_desarrollador"], "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0})
+        fila["bookings"] += 1
+        fila["venta"] += f["venta"]
+        fila["profit"] += f["profit"]
+
+    # Las cotizaciones se cruzan por nombre contra quien ya aparece en Vendedor
+    # o en Desarrollador (para no duplicar a la misma persona en las dos
+    # tablas); solo si no coincide con ninguna de las dos cae como fila
+    # aparte en Vendedor, para que su actividad no quede invisible.
     cot_por_identidad = {}
     for f in cot_periodo:
         if not f["identidad"]:
@@ -2673,9 +2701,13 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     for key, datos in cot_por_identidad.items():
         if key in resumen_vendedor:
             resumen_vendedor[key]["cotizaciones"] = datos["n"]
+        elif key in resumen_desarrollador:
+            resumen_desarrollador[key]["cotizaciones"] = datos["n"]
         else:
-            resumen_vendedor[key] = {"nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "cotizaciones": datos["n"]}
-    ranking = sorted(resumen_vendedor.values(), key=lambda r: (-r["venta"], -r["cotizaciones"]))
+            resumen_vendedor[key] = {"nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": datos["n"]}
+
+    ranking = sorted(resumen_vendedor.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
+    ranking_desarrolladores = sorted(resumen_desarrollador.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
 
     resumen_plaza = {}
     for f in booking_periodo:
@@ -2706,6 +2738,7 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         "kpis": kpis,
         "serie": serie,
         "ranking": ranking[:12],
+        "ranking_desarrolladores": ranking_desarrolladores[:12],
         "plazas_ranking": plazas_ranking,
         "por_vencer": por_vencer[:8],
         "vencidas": vencidas[:8],
