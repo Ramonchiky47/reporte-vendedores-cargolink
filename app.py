@@ -14,7 +14,7 @@ import os
 import random
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -2508,6 +2508,217 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
     return resultado
 
 
+TITULOS_RE = re.compile(r"^(LIC|ING|MTRO|MTRA|DR|DRA|C\.P|CP)\.?\s+", re.IGNORECASE)
+
+
+def quitar_titulo(nombre):
+    """'Lic. Marielbis Camacaro' -> 'Marielbis Camacaro', para poder cruzar
+    el nombre de una firma con el nombre de vendedor del catálogo."""
+    return TITULOS_RE.sub("", (nombre or "").strip())
+
+
+ETIQUETA_PERIODO_ANTERIOR = {
+    "hoy": "ayer", "semana": "la semana pasada", "mes": "el mes pasado", "personalizado": "el periodo anterior",
+}
+
+
+def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=None):
+    """Regresa (fecha_inicio, fecha_fin) como date para el periodo elegido
+    en CRM → Inicio. 'personalizado' usa las fechas que venga del filtro,
+    saneadas a un rango válido (inicio <= fin)."""
+    if periodo == "hoy":
+        return hoy, hoy
+    if periodo == "semana":
+        return hoy - timedelta(days=hoy.weekday()), hoy
+    if periodo == "personalizado" and fecha_inicio_custom and fecha_fin_custom:
+        ini, fin = fecha_inicio_custom, fecha_fin_custom
+        return (ini, fin) if ini <= fin else (fin, ini)
+    return hoy.replace(day=1), hoy
+
+
+def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None):
+    """Dashboard de CRM → Inicio: actividad de cotización (crm_cotizaciones)
+    y de cierre (reporte_bookings) del periodo elegido, comparada contra el
+    mismo tramo del periodo anterior; más una tendencia diaria fija de los
+    últimos 30 días y alertas de vencimiento. Respeta las mismas
+    plazas_permitidas que el resto del CRM, y además Plaza/Vendedor del
+    filtro. El cruce cotización↔vendedor es por nombre (firma capturada, o
+    si no hay, un nombre derivado del correo de login) — es un cruce por
+    mejor esfuerzo, no una relación garantizada en la base."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    dias_periodo = (fecha_fin - fecha_inicio).days + 1
+    fecha_fin_anterior = fecha_inicio - timedelta(days=1)
+    fecha_inicio_anterior = fecha_fin_anterior - timedelta(days=dias_periodo - 1)
+    inicio_tendencia = hoy - timedelta(days=29)
+    ventana_inicio = min(fecha_inicio_anterior, inicio_tendencia)
+    ventana_fin = max(fecha_fin, hoy)
+
+    db = get_db()
+    vendedores_catalogo = db.execute("SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor").fetchall()
+    plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in vendedores_catalogo}
+
+    bookings = db.execute(
+        "SELECT vendedor, fecha, venta, profit FROM reporte_bookings "
+        "WHERE fecha >= %s AND fecha < (%s::date + interval '1 day')",
+        (ventana_inicio.isoformat(), ventana_fin.isoformat()),
+    ).fetchall()
+
+    cotizaciones = db.execute("""
+        SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
+               co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
+               ac.vendedor AS cliente_vendedor, ac.razon_social,
+               f.nombre_firma, cu.email AS creador_correo
+        FROM crm_cotizaciones co
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+    """).fetchall()
+    db.close()
+
+    plaza_filtro = plaza_filtro or ""
+    vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
+
+    filas_booking = []
+    for r in bookings:
+        fecha = r["fecha"]
+        if fecha is None:
+            continue
+        d = fecha.astimezone(TZ_LOCAL).date()
+        vendedor = r["vendedor"] or "#N/D"
+        plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+            continue
+        filas_booking.append({"d": d, "vendedor": vendedor, "plaza": plaza,
+                               "venta": float(r["venta"] or 0), "profit": float(r["profit"] or 0)})
+
+    filas_cot = []
+    for r in cotizaciones:
+        d = r["fecha_creacion"]
+        if d is None:
+            continue
+        if r["cliente_folio"] is not None:
+            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+        else:
+            plaza = None
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        identidad = normalizar(identidad_mostrar)
+        if vendedor_filtro_norm and identidad != vendedor_filtro_norm:
+            continue
+        filas_cot.append({
+            "d": d, "id": r["id"], "id_cotizacion": r["id_cotizacion"],
+            "cliente": r["razon_social"] or r["cliente_prospecto"] or "Prospecto",
+            "nombre_cotizacion": r["nombre_cotizacion"] or "",
+            "fecha_vencimiento": r["fecha_vencimiento"],
+            "identidad": identidad, "identidad_mostrar": identidad_mostrar or "#N/D",
+        })
+
+    def en_rango(filas, ini, fin):
+        return [f for f in filas if ini <= f["d"] <= fin]
+
+    booking_periodo = en_rango(filas_booking, fecha_inicio, fecha_fin)
+    booking_anterior = en_rango(filas_booking, fecha_inicio_anterior, fecha_fin_anterior)
+    booking_tendencia = en_rango(filas_booking, inicio_tendencia, hoy)
+    cot_periodo = en_rango(filas_cot, fecha_inicio, fecha_fin)
+    cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
+    cot_tendencia = en_rango(filas_cot, inicio_tendencia, hoy)
+
+    def delta_pct(actual, anterior):
+        if not anterior:
+            return None
+        return (actual - anterior) / anterior * 100
+
+    venta_periodo = sum(f["venta"] for f in booking_periodo)
+    venta_anterior = sum(f["venta"] for f in booking_anterior)
+    profit_periodo = sum(f["profit"] for f in booking_periodo)
+    profit_anterior = sum(f["profit"] for f in booking_anterior)
+
+    kpis = {
+        "cotizaciones": len(cot_periodo), "cotizaciones_delta": delta_pct(len(cot_periodo), len(cot_anterior)),
+        "cotizaciones_anterior": len(cot_anterior),
+        "bookings": len(booking_periodo), "bookings_delta": delta_pct(len(booking_periodo), len(booking_anterior)),
+        "bookings_anterior": len(booking_anterior),
+        "venta": venta_periodo, "venta_delta": delta_pct(venta_periodo, venta_anterior), "venta_anterior": venta_anterior,
+        "profit": profit_periodo, "profit_delta": delta_pct(profit_periodo, profit_anterior), "profit_anterior": profit_anterior,
+        "ticket_promedio": (venta_periodo / len(booking_periodo)) if booking_periodo else 0,
+    }
+
+    dias = [inicio_tendencia + timedelta(days=i) for i in range(30)]
+    venta_por_dia, cot_por_dia = {}, {}
+    for f in booking_tendencia:
+        venta_por_dia[f["d"]] = venta_por_dia.get(f["d"], 0) + f["venta"]
+    for f in cot_tendencia:
+        cot_por_dia[f["d"]] = cot_por_dia.get(f["d"], 0) + 1
+    serie = [{"fecha": d.strftime("%d/%m"), "venta": round(venta_por_dia.get(d, 0)), "cotizaciones": cot_por_dia.get(d, 0)} for d in dias]
+
+    resumen_vendedor = {}
+    for f in booking_periodo:
+        key = normalizar(f["vendedor"])
+        fila = resumen_vendedor.setdefault(key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "cotizaciones": 0})
+        fila["bookings"] += 1
+        fila["venta"] += f["venta"]
+    cot_por_identidad = {}
+    for f in cot_periodo:
+        if not f["identidad"]:
+            continue
+        cot_por_identidad.setdefault(f["identidad"], {"nombre": f["identidad_mostrar"], "n": 0})
+        cot_por_identidad[f["identidad"]]["n"] += 1
+    for key, datos in cot_por_identidad.items():
+        if key in resumen_vendedor:
+            resumen_vendedor[key]["cotizaciones"] = datos["n"]
+        else:
+            resumen_vendedor[key] = {"nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "cotizaciones": datos["n"]}
+    ranking = sorted(resumen_vendedor.values(), key=lambda r: (-r["venta"], -r["cotizaciones"]))
+
+    resumen_plaza = {}
+    for f in booking_periodo:
+        resumen_plaza[f["plaza"]] = resumen_plaza.get(f["plaza"], 0) + f["venta"]
+    plazas_ranking = sorted(({"plaza": k, "venta": v} for k, v in resumen_plaza.items()), key=lambda p: -p["venta"])
+
+    por_vencer, vencidas = [], []
+    for f in filas_cot:
+        fv = f["fecha_vencimiento"]
+        if fv is None:
+            continue
+        if fv < hoy:
+            vencidas.append(f)
+        elif fv <= hoy + timedelta(days=7):
+            por_vencer.append({**f, "dias": (fv - hoy).days})
+    por_vencer.sort(key=lambda f: f["fecha_vencimiento"])
+    vencidas.sort(key=lambda f: f["fecha_vencimiento"])
+
+    todas_las_plazas = {p for p in plaza_por_vendedor.values() if p}
+    plazas_opciones = sorted(todas_las_plazas if plazas_permitidas is None else todas_las_plazas & plazas_permitidas)
+    vendedores_opciones = sorted({
+        r["vendedor"] for r in vendedores_catalogo
+        if r["vendedor"] and (plazas_permitidas is None or r["plaza"] in plazas_permitidas)
+        and (not plaza_filtro or r["plaza"] == plaza_filtro)
+    })
+
+    return {
+        "kpis": kpis,
+        "serie": serie,
+        "ranking": ranking[:12],
+        "plazas_ranking": plazas_ranking,
+        "por_vencer": por_vencer[:8],
+        "vencidas": vencidas[:8],
+        "plazas_opciones": plazas_opciones,
+        "vendedores_opciones": vendedores_opciones,
+        "fecha_inicio_larga": fecha_larga_es(fecha_inicio),
+        "fecha_fin_larga": fecha_larga_es(fecha_fin),
+        "fecha_inicio_anterior_larga": fecha_larga_es(fecha_inicio_anterior),
+        "fecha_fin_anterior_larga": fecha_larga_es(fecha_fin_anterior),
+        "etiqueta_anterior": ETIQUETA_PERIODO_ANTERIOR.get(periodo, "el periodo anterior"),
+    }
+
+
 def obtener_lineas_cotizacion_crm(cotizacion_id):
     db = get_db()
     filas = db.execute("""
@@ -2950,7 +3161,7 @@ def agrupar_nav_crm(slug_activo):
 @app.route("/crm")
 @crm_required
 def crm():
-    return redirect(url_for("crm_seccion", slug="tareas"))
+    return redirect(url_for("crm_seccion", slug="inicio"))
 
 
 @app.route("/crm/<slug>")
@@ -2961,6 +3172,28 @@ def crm_seccion(slug):
         return redirect(url_for("crm_seccion", slug="tareas"))
 
     nav_groups = agrupar_nav_crm(slug)
+    if slug == "inicio":
+        hoy = datetime.now(TZ_LOCAL).date()
+        periodo = request.args.get("periodo", "mes")
+        if periodo not in ("hoy", "semana", "mes", "personalizado"):
+            periodo = "mes"
+        fecha_inicio_custom = fecha_valida_o_vacia(request.args.get("fecha_inicio", ""))
+        fecha_fin_custom = fecha_valida_o_vacia(request.args.get("fecha_fin", ""))
+        fecha_inicio, fecha_fin = rango_periodo_crm(
+            periodo, hoy,
+            date.fromisoformat(fecha_inicio_custom) if fecha_inicio_custom else None,
+            date.fromisoformat(fecha_fin_custom) if fecha_fin_custom else None,
+        )
+        plaza_filtro = request.args.get("plaza", "").strip()
+        vendedor_filtro = request.args.get("vendedor", "").strip()
+        datos = construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario())
+        return render_template(
+            "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
+            periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
+            plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
+            serie_json=json_para_js(datos["serie"]), **datos,
+        )
+
     if slug == "tareas":
         hoy = datetime.now(TZ_LOCAL).date().isoformat()
         tareas = [{**t, "vencida": t["fecha_compromiso"] < hoy} for t in TAREAS_MOCK]

@@ -1,0 +1,414 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  :root {
+    --s-blue: #2a78d6; --s-orange: #eb6834;
+    --warning: #c98500; --warning-wash: #fef3de;
+    --critical-wash: #fbe6e6;
+    --good-wash: #e8f6e8;
+  }
+  .barra-filtros {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    background: #fff; border: 1px solid var(--borde); border-radius: 10px;
+    padding: 0.5rem; box-shadow: 0 1px 2px rgba(20,16,10,0.04); margin-bottom: 1.2rem;
+  }
+  .segmentado { display: flex; background: var(--fondo-suave); border-radius: 7px; padding: 3px; gap: 2px; }
+  .segmentado button {
+    border: none; background: transparent; padding: 0.4rem 0.8rem; border-radius: 5px; font: inherit;
+    font-size: 0.8rem; font-weight: 600; color: #555; cursor: pointer;
+  }
+  .segmentado button.activo { background: var(--peligro); color: #fff; }
+  .barra-filtros select {
+    border: 1px solid var(--borde); background: #fff; color: #222;
+    border-radius: 7px; padding: 0.42rem 0.7rem; font: inherit; font-size: 0.8rem; cursor: pointer;
+  }
+  .caja-personalizado { display: flex; align-items: center; gap: 0.4rem; }
+  .caja-personalizado input { border: 1px solid var(--borde); border-radius: 7px; padding: 0.38rem 0.5rem; font: inherit; font-size: 0.8rem; }
+  .caja-personalizado button { border: none; border-radius: 7px; padding: 0.4rem 0.8rem; background: var(--peligro); color: #fff; font: inherit; font-size: 0.8rem; cursor: pointer; }
+  .filtro-spacer { flex: 1; }
+  .filtro-nota { font-size: 0.74rem; color: #888; padding-right: 0.3rem; }
+
+  .fila-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.85rem; margin-bottom: 1.2rem; }
+  @media (max-width: 1150px) { .fila-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .kpi { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: 0 1px 2px rgba(20,16,10,0.04); display: flex; flex-direction: column; gap: 0.35rem; }
+  .kpi.destacado { border-color: var(--peligro); background: linear-gradient(180deg, #fbe3e2, #fff 65%); }
+  .kpi__etiqueta { font-size: 0.7rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .kpi__valor { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .kpi__delta { font-size: 0.75rem; font-weight: 600; }
+  .kpi__delta.pos { color: var(--exito); }
+  .kpi__delta.neg { color: var(--peligro); }
+  .kpi__delta.neutro { color: #888; font-weight: 500; }
+
+  .tarjeta { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 1.1rem 1.2rem 1.3rem; box-shadow: 0 1px 2px rgba(20,16,10,0.04); }
+  .tarjeta__cabecera { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
+  .tarjeta__titulo { font-size: 0.95rem; font-weight: 700; margin: 0; }
+  .tarjeta__pista { font-size: 0.76rem; color: #888; margin: 0.15rem 0 0; max-width: 640px; }
+  .leyenda { display: flex; gap: 1rem; font-size: 0.74rem; color: #555; flex-shrink: 0; }
+  .leyenda span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .leyenda i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+  .fila-tendencias { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.2rem; }
+  .fila-dos-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 0.9rem; margin-bottom: 1.2rem; align-items: start; }
+  @media (max-width: 980px) { .fila-dos-col { grid-template-columns: 1fr; } }
+
+  table.ranking { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  table.ranking th { text-align: left; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; font-weight: 700; padding: 0 0.5rem 0.5rem; border-bottom: 1px solid var(--borde); }
+  table.ranking th.num, table.ranking td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.ranking td { padding: 0.55rem 0.5rem; border-bottom: 1px solid var(--borde); vertical-align: middle; }
+  table.ranking tr:last-child td { border-bottom: none; }
+  .persona { display: flex; align-items: center; gap: 0.55rem; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--fondo-suave); border: 1px solid var(--borde); display: flex; align-items: center; justify-content: center; font-size: 0.66rem; font-weight: 700; color: #555; flex-shrink: 0; }
+  .persona__nombre { font-weight: 600; }
+  .persona__plaza { font-size: 0.72rem; color: #888; }
+  .barra-mini { height: 5px; border-radius: 3px; background: var(--fondo-suave); margin-top: 0.3rem; overflow: hidden; width: 100%; }
+  .barra-mini i { display: block; height: 100%; background: var(--s-blue); border-radius: 3px; }
+  .chip-cot { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; padding: 0.1rem 0.4rem; border-radius: 20px; font-size: 0.74rem; font-weight: 700; }
+  .chip-cot.con-datos { background: #fbe3e2; color: var(--peligro); }
+  .chip-cot.sin-datos { color: #aaa; font-weight: 500; }
+
+  .lista-plazas { display: flex; flex-direction: column; gap: 0.55rem; }
+  .fila-plaza { display: grid; grid-template-columns: 118px 1fr auto; align-items: center; gap: 0.6rem; }
+  .fila-plaza__nombre { font-size: 0.78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fila-plaza__pista { height: 16px; background: var(--fondo-suave); border-radius: 4px; overflow: hidden; }
+  .fila-plaza__pista i { display: block; height: 100%; background: var(--s-blue); border-radius: 4px; }
+  .fila-plaza__valor { font-size: 0.78rem; font-variant-numeric: tabular-nums; color: #555; white-space: nowrap; }
+
+  .fila-alertas { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+  @media (max-width: 980px) { .fila-alertas { grid-template-columns: 1fr; } }
+  .item-alerta { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.2rem; border-bottom: 1px solid var(--borde); cursor: pointer; }
+  .item-alerta:last-child { border-bottom: none; }
+  .item-alerta:hover { background: var(--fondo-suave); }
+  .rayita { width: 4px; align-self: stretch; border-radius: 3px; flex-shrink: 0; }
+  .rayita.warning { background: var(--warning); }
+  .rayita.critical { background: var(--peligro); }
+  .item-alerta__cuerpo { flex: 1; min-width: 0; }
+  .item-alerta__titulo { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-alerta__sub { font-size: 0.74rem; color: #888; }
+  .badge-estado { font-size: 0.68rem; font-weight: 700; padding: 0.2rem 0.5rem; border-radius: 20px; white-space: nowrap; }
+  .badge-estado.warning { background: var(--warning-wash); color: var(--warning); }
+  .badge-estado.critical { background: var(--critical-wash); color: var(--peligro); }
+  .estado-vacio { text-align: center; padding: 1.6rem 1rem; color: #888; font-size: 0.82rem; }
+  .estado-vacio strong { display: block; color: var(--exito); font-size: 0.95rem; margin-bottom: 0.2rem; }
+
+  .chart-wrap { position: relative; }
+  svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart-grid line { stroke: var(--borde); stroke-width: 1; }
+  .chart-axis text { fill: #999; font-size: 9.5px; font-family: system-ui, sans-serif; }
+  .chart-area { fill: url(#gradVenta); }
+  .chart-line { fill: none; stroke: var(--s-blue); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .chart-dot { fill: #fff; stroke: var(--s-blue); stroke-width: 2; }
+  .chart-bar { fill: var(--s-orange); }
+  .chart-bar-bg { fill: var(--fondo-suave); }
+  .hover-line { stroke: #d0cdc4; stroke-width: 1; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: #1a1917; color: #f5f5f5;
+    padding: 0.4rem 0.6rem; border-radius: 7px; font-size: 0.74rem; line-height: 1.4;
+    transform: translate(-50%, -115%); white-space: nowrap; opacity: 0; transition: opacity 0.08s;
+    font-variant-numeric: tabular-nums; z-index: 5;
+  }
+  .tooltip strong { display: block; font-size: 0.78rem; margin-bottom: 0.1rem; }
+  .hit { fill: transparent; }
+  .nota-metodologia { margin-top: 1.4rem; font-size: 0.76rem; color: #888; line-height: 1.6; border-top: 1px solid var(--borde); padding-top: 1rem; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Inicio</h2>
+  <p class="pista">Pulso diario del embudo: actividad de cotización y cierre, por usuario y por plaza.</p>
+
+  <form class="barra-filtros" method="get" id="form-filtros">
+    <input type="hidden" name="periodo" id="input-periodo" value="{{ periodo }}">
+    <div class="segmentado">
+      <button type="button" data-periodo="hoy" class="{{ 'activo' if periodo == 'hoy' else '' }}">Hoy</button>
+      <button type="button" data-periodo="semana" class="{{ 'activo' if periodo == 'semana' else '' }}">Semana</button>
+      <button type="button" data-periodo="mes" class="{{ 'activo' if periodo == 'mes' else '' }}">Mes</button>
+      <button type="button" data-periodo="personalizado" class="{{ 'activo' if periodo == 'personalizado' else '' }}">Personalizado</button>
+    </div>
+    <select name="plaza" onchange="this.form.submit()">
+      <option value="">Todas las plazas</option>
+      {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
+    </select>
+    <select name="vendedor" onchange="this.form.submit()">
+      <option value="">Todos los vendedores</option>
+      {% for v in vendedores_opciones %}<option value="{{ v }}" {{ 'selected' if vendedor_filtro == v else '' }}>{{ v }}</option>{% endfor %}
+    </select>
+    <div class="caja-personalizado" id="caja-personalizado" {{ 'hidden' if periodo != 'personalizado' else '' }}>
+      <input type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
+      <input type="date" name="fecha_fin" value="{{ fecha_fin }}">
+      <button type="submit">Aplicar</button>
+    </div>
+    <div class="filtro-spacer"></div>
+    <div class="filtro-nota">Del {{ fecha_inicio_larga }} al {{ fecha_fin_larga }}, vs. {{ etiqueta_anterior }} ({{ fecha_inicio_anterior_larga }}–{{ fecha_fin_anterior_larga }})</div>
+  </form>
+
+  {% macro delta(valor, anterior, etiqueta, es_pct=true) %}
+    {% if valor is none %}
+      <div class="kpi__delta neutro">{{ anterior }} {{ etiqueta }}</div>
+    {% else %}
+      <div class="kpi__delta {{ 'pos' if valor >= 0 else 'neg' }}">{{ '↑' if valor >= 0 else '↓' }} {{ '%.1f'|format(valor|abs) }}% · {{ anterior }} {{ etiqueta }}</div>
+    {% endif %}
+  {% endmacro %}
+
+  <div class="fila-kpis">
+    <div class="kpi destacado">
+      <div class="kpi__etiqueta">Cotizaciones creadas</div>
+      <div class="kpi__valor">{{ kpis.cotizaciones }}</div>
+      {{ delta(kpis.cotizaciones_delta, kpis.cotizaciones_anterior, etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Bookings cerrados</div>
+      <div class="kpi__valor">{{ kpis.bookings }}</div>
+      {{ delta(kpis.bookings_delta, kpis.bookings_anterior, etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Venta cerrada</div>
+      <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.venta) }}</div>
+      {{ delta(kpis.venta_delta, '${:,.0f}'.format(kpis.venta_anterior), etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Profit</div>
+      <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.profit) }}</div>
+      {{ delta(kpis.profit_delta, '${:,.0f}'.format(kpis.profit_anterior), etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Ticket promedio</div>
+      <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.ticket_promedio) }}</div>
+      <div class="kpi__delta neutro">Por booking, periodo elegido</div>
+    </div>
+  </div>
+
+  <div class="fila-tendencias">
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div>
+          <p class="tarjeta__titulo">Venta diaria</p>
+          <p class="tarjeta__pista">Últimos 30 días · reporte_bookings</p>
+        </div>
+        <div class="leyenda"><span><i style="background:var(--s-blue)"></i>Venta ($)</span></div>
+      </div>
+      <div class="chart-wrap" id="wrap-venta">
+        <svg class="chart" id="chart-venta" viewBox="0 0 900 190" preserveAspectRatio="none"></svg>
+        <div class="tooltip" id="tip-venta"></div>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div>
+          <p class="tarjeta__titulo">Cotizaciones creadas por día</p>
+          <p class="tarjeta__pista">Últimos 30 días · crm_cotizaciones</p>
+        </div>
+        <div class="leyenda"><span><i style="background:var(--s-orange)"></i>Cotizaciones</span></div>
+      </div>
+      <div class="chart-wrap" id="wrap-cot">
+        <svg class="chart" id="chart-cot" viewBox="0 0 900 90" preserveAspectRatio="none"></svg>
+        <div class="tooltip" id="tip-cot"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fila-dos-col">
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div>
+          <p class="tarjeta__titulo">Actividad por usuario</p>
+          <p class="tarjeta__pista">Periodo elegido · ordenado por venta. Cotizaciones se cruza por nombre (firma o correo de login), es un cruce por mejor esfuerzo.</p>
+        </div>
+      </div>
+      {% if ranking %}
+      <table class="ranking">
+        <thead><tr><th>Vendedor</th><th class="num">Bookings</th><th class="num">Venta</th><th class="num">Cotizaciones</th></tr></thead>
+        <tbody>
+          {% set venta_max = ranking|map(attribute='venta')|max %}
+          {% for r in ranking %}
+          <tr>
+            <td><div class="persona">
+              <div class="avatar">{{ (r.nombre.split(' ')[:2]|map('first')|join(''))|upper }}</div>
+              <div><div class="persona__nombre">{{ r.nombre }}</div><div class="persona__plaza">{{ r.plaza }}</div></div>
+            </div></td>
+            <td class="num">{{ r.bookings }}</td>
+            <td class="num">${{ '{:,.0f}'.format(r.venta) }}<div class="barra-mini"><i style="width:{{ (r.venta / venta_max * 100) if venta_max else 0 }}%"></i></div></td>
+            <td class="num"><span class="chip-cot {{ 'con-datos' if r.cotizaciones > 0 else 'sin-datos' }}">{{ r.cotizaciones if r.cotizaciones > 0 else '—' }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="aviso-vacio">Sin actividad en este periodo/filtro.</p>
+      {% endif %}
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div><p class="tarjeta__titulo">Venta por plaza</p><p class="tarjeta__pista">Periodo elegido</p></div>
+      </div>
+      {% if plazas_ranking %}
+      <div class="lista-plazas">
+        {% set plaza_max = plazas_ranking|map(attribute='venta')|max %}
+        {% for p in plazas_ranking %}
+        <div class="fila-plaza">
+          <div class="fila-plaza__nombre" title="{{ p.plaza }}">{{ p.plaza }}</div>
+          <div class="fila-plaza__pista"><i style="width:{{ (p.venta / plaza_max * 100) if plaza_max else 0 }}%"></i></div>
+          <div class="fila-plaza__valor">${{ '{:,.0f}'.format(p.venta) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="aviso-vacio">Sin actividad en este periodo/filtro.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="fila-alertas">
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div><p class="tarjeta__titulo">Por vencer en 7 días</p><p class="tarjeta__pista">Cotizaciones activas que necesitan seguimiento</p></div>
+      </div>
+      {% if por_vencer %}
+        {% for c in por_vencer %}
+        <div class="item-alerta" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+          <div class="rayita warning"></div>
+          <div class="item-alerta__cuerpo">
+            <div class="item-alerta__titulo">{{ c.cliente }}</div>
+            <div class="item-alerta__sub">{{ c.id_cotizacion }} · vence {{ c.fecha_vencimiento.strftime('%d %b') }}</div>
+          </div>
+          <span class="badge-estado warning">{{ c.dias }} día{{ 's' if c.dias != 1 else '' }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="estado-vacio"><strong>Sin pendientes</strong>Nada por vencer en los próximos 7 días.</div>
+      {% endif %}
+    </div>
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div><p class="tarjeta__titulo">Vencidas sin cierre</p><p class="tarjeta__pista">Cotizaciones que pasaron su fecha límite</p></div>
+      </div>
+      {% if vencidas %}
+        {% for c in vencidas %}
+        <div class="item-alerta" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+          <div class="rayita critical"></div>
+          <div class="item-alerta__cuerpo">
+            <div class="item-alerta__titulo">{{ c.cliente }}</div>
+            <div class="item-alerta__sub">{{ c.id_cotizacion }} · venció {{ c.fecha_vencimiento.strftime('%d %b') }}</div>
+          </div>
+          <span class="badge-estado critical">Vencida</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="estado-vacio"><strong>Sin pendientes</strong>Ninguna cotización vencida ahora mismo.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <p class="nota-metodologia">
+    Los KPIs y el ranking usan el periodo elegido arriba, comparado contra {{ etiqueta_anterior }} ({{ fecha_inicio_anterior_larga }}–{{ fecha_fin_anterior_larga }}).
+    Las gráficas de tendencia y las alertas de vencimiento son independientes del periodo: siempre muestran los últimos 30 días / los próximos 7 días desde hoy.
+    Todo respeta las plazas que tu usuario puede ver.
+  </p>
+{% endblock %}
+{% block extra_script %}
+  <script>
+    document.querySelectorAll('[data-periodo]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.getElementById('input-periodo').value = btn.dataset.periodo;
+        if (btn.dataset.periodo === 'personalizado') {
+          document.getElementById('caja-personalizado').hidden = false;
+        } else {
+          document.getElementById('form-filtros').submit();
+        }
+      });
+    });
+
+    var serieDiaria = {{ serie_json|safe }};
+
+    function money(n) { return "$" + Math.round(n).toLocaleString("es-MX"); }
+
+    (function () {
+      var svg = document.getElementById("chart-venta");
+      var tip = document.getElementById("tip-venta");
+      var wrap = document.getElementById("wrap-venta");
+      var W = 900, H = 190, padL = 8, padR = 8, padT = 10, padB = 22;
+      var n = serieDiaria.length;
+      var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.venta; }))) * 1.12;
+      var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
+      var y = function (v) { return H - padB - (v / maxV) * (H - padT - padB); };
+      var ns = "http://www.w3.org/2000/svg";
+      function el(tag, attrs) { var e = document.createElementNS(ns, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+      var defs = el("defs", {});
+      var grad = el("linearGradient", { id: "gradVenta", x1: "0", y1: "0", x2: "0", y2: "1" });
+      grad.appendChild(el("stop", { offset: "0%", "stop-color": "#2a78d6", "stop-opacity": "0.22" }));
+      grad.appendChild(el("stop", { offset: "100%", "stop-color": "#2a78d6", "stop-opacity": "0" }));
+      defs.appendChild(grad);
+      svg.appendChild(defs);
+
+      var gridG = el("g", { class: "chart-grid" });
+      [0.25, 0.5, 0.75, 1].forEach(function (f) { gridG.appendChild(el("line", { x1: padL, x2: W - padR, y1: y(maxV * f), y2: y(maxV * f) })); });
+      svg.appendChild(gridG);
+
+      var pathD = "M" + serieDiaria.map(function (d, i) { return x(i) + "," + y(d.venta); }).join(" L");
+      svg.appendChild(el("path", { d: pathD + " L" + x(n - 1) + "," + y(0) + " L" + x(0) + "," + y(0) + " Z", class: "chart-area" }));
+      svg.appendChild(el("path", { d: pathD, class: "chart-line" }));
+
+      var axisG = el("g", { class: "chart-axis" });
+      serieDiaria.forEach(function (d, i) {
+        if (i % 4 === 0 || i === n - 1) { var t = el("text", { x: x(i), y: H - 6, "text-anchor": "middle" }); t.textContent = d.fecha; axisG.appendChild(t); }
+      });
+      svg.appendChild(axisG);
+
+      var hoverLine = el("line", { class: "hover-line", y1: padT, y2: H - padB, x1: -10, x2: -10, opacity: 0 });
+      var hoverDot = el("circle", { class: "chart-dot", r: 4, cx: -10, cy: -10, opacity: 0 });
+      svg.appendChild(hoverLine); svg.appendChild(hoverDot);
+      svg.appendChild(el("rect", { class: "hit", x: 0, y: 0, width: W, height: H }));
+
+      svg.addEventListener("mousemove", function (e) {
+        var rect = svg.getBoundingClientRect();
+        var relX = (e.clientX - rect.left) / rect.width * W;
+        var i = Math.max(0, Math.min(n - 1, Math.round(((relX - padL) / (W - padL - padR)) * (n - 1))));
+        var d = serieDiaria[i];
+        hoverLine.setAttribute("x1", x(i)); hoverLine.setAttribute("x2", x(i));
+        hoverDot.setAttribute("cx", x(i)); hoverDot.setAttribute("cy", y(d.venta));
+        hoverLine.setAttribute("opacity", 1); hoverDot.setAttribute("opacity", 1);
+        var wrapRect = wrap.getBoundingClientRect();
+        tip.style.left = (rect.left - wrapRect.left + (x(i) / W) * rect.width) + "px";
+        tip.style.top = (rect.top - wrapRect.top + (y(d.venta) / H) * rect.height) + "px";
+        tip.innerHTML = "<strong>" + money(d.venta) + "</strong>" + d.fecha;
+        tip.style.opacity = 1;
+      });
+      svg.addEventListener("mouseleave", function () { tip.style.opacity = 0; hoverLine.setAttribute("opacity", 0); hoverDot.setAttribute("opacity", 0); });
+    })();
+
+    (function () {
+      var svg = document.getElementById("chart-cot");
+      var tip = document.getElementById("tip-cot");
+      var wrap = document.getElementById("wrap-cot");
+      var W = 900, H = 90, padL = 8, padR = 8, padT = 10, padB = 22;
+      var n = serieDiaria.length;
+      var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.cotizaciones; }))) * 1.35;
+      var bw = ((W - padL - padR) / n) * 0.55;
+      var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
+      var y = function (v) { return H - padB - (v / maxV) * (H - padT - padB); };
+      var ns = "http://www.w3.org/2000/svg";
+      function el(tag, attrs) { var e = document.createElementNS(ns, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
+
+      var axisG = el("g", { class: "chart-axis" });
+      serieDiaria.forEach(function (d, i) {
+        svg.appendChild(el("rect", { class: "chart-bar-bg", x: x(i) - bw / 2, y: padT, width: bw, height: y(0) - padT, rx: 2 }));
+        if (d.cotizaciones > 0) svg.appendChild(el("rect", { class: "chart-bar", x: x(i) - bw / 2, y: y(d.cotizaciones), width: bw, height: Math.max(y(0) - y(d.cotizaciones), 3), rx: 2 }));
+        if (i % 4 === 0 || i === n - 1) { var t = el("text", { x: x(i), y: H - 6, "text-anchor": "middle" }); t.textContent = d.fecha; axisG.appendChild(t); }
+      });
+      svg.appendChild(axisG);
+      svg.appendChild(el("rect", { class: "hit", x: 0, y: 0, width: W, height: H }));
+
+      svg.addEventListener("mousemove", function (e) {
+        var rect = svg.getBoundingClientRect();
+        var relX = (e.clientX - rect.left) / rect.width * W;
+        var i = Math.max(0, Math.min(n - 1, Math.round(((relX - padL) / (W - padL - padR)) * (n - 1))));
+        var d = serieDiaria[i];
+        var wrapRect = wrap.getBoundingClientRect();
+        tip.style.left = (rect.left - wrapRect.left + (x(i) / W) * rect.width) + "px";
+        tip.style.top = (rect.top - wrapRect.top + (y(d.cotizaciones) / H) * rect.height) + "px";
+        tip.innerHTML = "<strong>" + d.cotizaciones + " cotización" + (d.cotizaciones === 1 ? "" : "es") + "</strong>" + d.fecha;
+        tip.style.opacity = 1;
+      });
+      svg.addEventListener("mouseleave", function () { tip.style.opacity = 0; });
+    })();
+  </script>
+{% endblock %}
