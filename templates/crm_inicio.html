@@ -244,53 +244,33 @@
 
     <div class="tarjeta">
       <div class="tarjeta__cabecera">
-        <div><p class="tarjeta__titulo">Profit por plaza</p><p class="tarjeta__pista">Periodo elegido</p></div>
-      </div>
-      {% if plazas_ranking %}
-      <div class="lista-plazas">
-        {% set plaza_max = plazas_ranking|map(attribute='profit')|max %}
-        {% for p in plazas_ranking %}
-        <div class="fila-plaza">
-          <div class="fila-plaza__nombre" title="{{ p.plaza }}">{{ p.plaza }}</div>
-          <div class="fila-plaza__pista"><i style="width:{{ (p.profit / plaza_max * 100) if plaza_max else 0 }}%"></i></div>
-          <div class="fila-plaza__valor">${{ '{:,.0f}'.format(p.profit) }}</div>
+        <div>
+          <p class="tarjeta__titulo">Actividad por desarrollador</p>
+          <p class="tarjeta__pista">Periodo elegido · ordenado por profit (reporte_bookings.ejecutivo, mismo criterio que Comisiones). Cotizaciones se cruza por nombre, es un cruce por mejor esfuerzo.</p>
         </div>
-        {% endfor %}
       </div>
+      {% if ranking_desarrolladores %}
+      <table class="ranking">
+        <thead><tr><th>Desarrollador</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th></tr></thead>
+        <tbody>
+          {% set profit_max_d = ranking_desarrolladores|map(attribute='profit')|max %}
+          {% for r in ranking_desarrolladores %}
+          <tr>
+            <td><div class="persona">
+              <div class="avatar">{{ (r.nombre.split(' ')[:2]|map('first')|join(''))|upper }}</div>
+              <div><div class="persona__nombre">{{ r.nombre }}</div><div class="persona__plaza">{{ r.plaza }}</div></div>
+            </div></td>
+            <td class="num">{{ r.bookings }}</td>
+            <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max_d * 100) if profit_max_d else 0 }}%"></i></div></td>
+            <td class="num"><span class="chip-cot {{ 'con-datos' if r.cotizaciones > 0 else 'sin-datos' }}">{{ r.cotizaciones if r.cotizaciones > 0 else '—' }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
       {% else %}
       <p class="aviso-vacio">Sin actividad en este periodo/filtro.</p>
       {% endif %}
     </div>
-  </div>
-
-  <div class="tarjeta" style="margin-bottom: 1.2rem;">
-    <div class="tarjeta__cabecera">
-      <div>
-        <p class="tarjeta__titulo">Actividad por desarrollador</p>
-        <p class="tarjeta__pista">Periodo elegido · ordenado por profit (reporte_bookings.ejecutivo, mismo criterio que Comisiones). Cotizaciones se cruza por nombre, es un cruce por mejor esfuerzo.</p>
-      </div>
-    </div>
-    {% if ranking_desarrolladores %}
-    <table class="ranking">
-      <thead><tr><th>Desarrollador</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th></tr></thead>
-      <tbody>
-        {% set profit_max_d = ranking_desarrolladores|map(attribute='profit')|max %}
-        {% for r in ranking_desarrolladores %}
-        <tr>
-          <td><div class="persona">
-            <div class="avatar">{{ (r.nombre.split(' ')[:2]|map('first')|join(''))|upper }}</div>
-            <div><div class="persona__nombre">{{ r.nombre }}</div><div class="persona__plaza">{{ r.plaza }}</div></div>
-          </div></td>
-          <td class="num">{{ r.bookings }}</td>
-          <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max_d * 100) if profit_max_d else 0 }}%"></i></div></td>
-          <td class="num"><span class="chip-cot {{ 'con-datos' if r.cotizaciones > 0 else 'sin-datos' }}">{{ r.cotizaciones if r.cotizaciones > 0 else '—' }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="aviso-vacio">Sin actividad en este periodo/filtro.</p>
-    {% endif %}
   </div>
 
   <div class="fila-alertas">
