@@ -2560,7 +2560,7 @@ def quitar_titulo(nombre):
 
 
 ETIQUETA_PERIODO_ANTERIOR = {
-    "hoy": "ayer", "semana": "la semana pasada", "mes": "el mes pasado", "personalizado": "el periodo anterior",
+    "hoy": "hace una semana", "semana": "la semana pasada", "mes": "el mes pasado", "personalizado": "el periodo anterior",
 }
 
 
@@ -2599,6 +2599,14 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         ultimo_dia_mes_ant = calendar.monthrange(anio_ant, mes_ant)[1]
         fecha_inicio_anterior = date(anio_ant, mes_ant, 1)
         fecha_fin_anterior = date(anio_ant, mes_ant, min(fecha_fin.day, ultimo_dia_mes_ant))
+    elif periodo in ("hoy", "semana"):
+        # Se compara contra el mismo tramo de la semana pasada (exactamente
+        # 7 días antes), no contra los días inmediatamente anteriores: así
+        # "Hoy" se compara contra el mismo día de la semana anterior, y la
+        # semana laboral (lunes-viernes) contra la semana laboral previa,
+        # sin cruzar al fin de semana.
+        fecha_inicio_anterior = fecha_inicio - timedelta(days=7)
+        fecha_fin_anterior = fecha_fin - timedelta(days=7)
     else:
         fecha_fin_anterior = fecha_inicio - timedelta(days=1)
         fecha_inicio_anterior = fecha_fin_anterior - timedelta(days=dias_periodo - 1)
@@ -2792,11 +2800,11 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     por_vencer, vencidas = [], []
     for f in filas_cot:
         fv = f["fecha_vencimiento"]
-        if fv is None:
+        if fv is None or f["ganada_desde"] is not None or f["perdida_desde"] is not None:
             continue
         if fv < hoy:
             vencidas.append(f)
-        elif fv <= hoy + timedelta(days=7):
+        elif fv <= hoy + timedelta(days=14):
             por_vencer.append({**f, "dias": (fv - hoy).days})
     por_vencer.sort(key=lambda f: f["fecha_vencimiento"])
     vencidas.sort(key=lambda f: f["fecha_vencimiento"])

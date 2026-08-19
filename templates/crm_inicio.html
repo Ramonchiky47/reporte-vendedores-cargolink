@@ -296,7 +296,7 @@
   <div class="fila-alertas">
     <div class="tarjeta">
       <div class="tarjeta__cabecera">
-        <div><p class="tarjeta__titulo">Por vencer en 7 días</p><p class="tarjeta__pista">Cotizaciones activas que necesitan seguimiento</p></div>
+        <div><p class="tarjeta__titulo">Por vencer en 14 días</p><p class="tarjeta__pista">Cotizaciones activas que necesitan seguimiento</p></div>
       </div>
       {% if por_vencer %}
         {% for c in por_vencer %}
@@ -310,7 +310,7 @@
         </div>
         {% endfor %}
       {% else %}
-        <div class="estado-vacio"><strong>Sin pendientes</strong>Nada por vencer en los próximos 7 días.</div>
+        <div class="estado-vacio"><strong>Sin pendientes</strong>Nada por vencer en los próximos 14 días.</div>
       {% endif %}
     </div>
     <div class="tarjeta">
@@ -336,7 +336,7 @@
 
   <p class="nota-metodologia">
     Los KPIs y el ranking usan el periodo elegido arriba, comparado contra {{ etiqueta_anterior }} ({{ fecha_inicio_anterior_larga }}–{{ fecha_fin_anterior_larga }}).
-    Las gráficas de tendencia y las alertas de vencimiento son independientes del periodo: siempre muestran los últimos 30 días / los próximos 7 días desde hoy.
+    Las gráficas de tendencia y las alertas de vencimiento son independientes del periodo: siempre muestran los últimos 30 días / los próximos 14 días desde hoy.
     Todo respeta las plazas que tu usuario puede ver.
   </p>
 {% endblock %}
