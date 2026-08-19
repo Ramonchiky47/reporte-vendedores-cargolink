@@ -29,6 +29,17 @@
   .btn-marcar-perdida { background: #991b1b; color: #fff; }
   .fila-accion button:disabled { background: #ccc; cursor: not-allowed; }
 
+  .lista-checks-bookings {
+    max-height: 220px; overflow-y: auto; border: 1px solid var(--borde); border-radius: 6px;
+    background: #fff; padding: 0.3rem 0.6rem; margin-bottom: 0.7rem;
+  }
+  .check-booking {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.1rem; font-size: 0.85rem;
+    cursor: pointer; border-bottom: 1px solid var(--borde);
+  }
+  .check-booking:last-child { border-bottom: none; }
+  .check-booking input { margin: 0; }
+
   .lista-bookings-aplicados { list-style: none; margin: 0 0 1.2rem; padding: 0; }
   .lista-bookings-aplicados li {
     display: flex; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; border-bottom: 1px solid var(--borde); font-size: 0.85rem;
@@ -88,20 +99,22 @@
 
   {% if doc.estatus != 'perdida' %}
   <div class="caja-accion">
-    <h4>Aplicar a un booking del cliente</h4>
-    <form method="post" action="{{ url_for('crm_cotizacion_aplicar_booking', cotizacion_id=cotizacion_id) }}" class="fila-accion" id="form-aplicar-booking" onsubmit="return confirm('¿Aplicar esta cotización al booking seleccionado? Quedará (o seguirá) como Ganada.');">
-      <select name="booking_referencia" id="select-booking" {{ 'disabled' if not doc.bookings_disponibles else '' }}>
-        {% if doc.bookings_disponibles %}
-          <option value="">-- Selecciona un booking del cliente --</option>
-          {% for b in doc.bookings_disponibles %}
-            <option value="{{ b.referencia }}">{{ b.referencia }} · {{ b.fecha }} · ${{ '{:,.2f}'.format(b.venta) }}</option>
-          {% endfor %}
-        {% else %}
-          <option value="">Sin bookings disponibles de este cliente</option>
-        {% endif %}
-      </select>
+    <h4>Aplicar a bookings del cliente</h4>
+    {% if doc.bookings_disponibles %}
+    <form method="post" action="{{ url_for('crm_cotizacion_aplicar_booking', cotizacion_id=cotizacion_id) }}" id="form-aplicar-booking" onsubmit="return confirm('¿Aplicar esta cotización a los bookings seleccionados? Quedará (o seguirá) como Ganada.');">
+      <div class="lista-checks-bookings">
+        {% for b in doc.bookings_disponibles %}
+          <label class="check-booking">
+            <input type="checkbox" name="booking_referencia" value="{{ b.referencia }}">
+            {{ b.referencia }} · {{ b.fecha }} · ${{ '{:,.2f}'.format(b.venta) }}
+          </label>
+        {% endfor %}
+      </div>
       <button type="submit" class="btn-aplicar-booking" id="btn-aplicar-booking" disabled>Aplicar</button>
     </form>
+    {% else %}
+      <p class="pendiente">Sin bookings disponibles de este cliente.</p>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -196,10 +209,12 @@
 {% block extra_script %}
   <script>
     (function () {
-      const selectBooking = document.getElementById('select-booking');
+      const checksBooking = document.querySelectorAll('input[name="booking_referencia"]');
       const btnBooking = document.getElementById('btn-aplicar-booking');
-      if (selectBooking && btnBooking) {
-        selectBooking.addEventListener('change', () => { btnBooking.disabled = !selectBooking.value; });
+      if (checksBooking.length && btnBooking) {
+        checksBooking.forEach((cb) => cb.addEventListener('change', () => {
+          btnBooking.disabled = !Array.from(checksBooking).some((c) => c.checked);
+        }));
       }
       const selectMotivo = document.getElementById('select-motivo-perdida');
       const btnPerdida = document.getElementById('btn-marcar-perdida');

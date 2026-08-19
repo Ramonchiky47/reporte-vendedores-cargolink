@@ -3558,12 +3558,12 @@ def crm_cotizacion_detalle(cotizacion_id):
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
 @crm_required
 def crm_cotizacion_aplicar_booking(cotizacion_id):
-    """Liga un booking real a la cotización: la marca como Ganada (basta
-    con tener uno o varios bookings aplicados). Se puede seguir aplicando
-    más bookings después, pero no si ya está Perdida."""
-    referencia = request.form.get("booking_referencia", "").strip()
-    if not referencia:
-        flash("Selecciona un booking antes de aplicar.")
+    """Liga uno o varios bookings reales a la cotización: la marca como
+    Ganada (basta con tener ≥1 booking aplicado). Se puede seguir
+    aplicando más bookings después, pero no si ya está Perdida."""
+    referencias = [r.strip() for r in request.form.getlist("booking_referencia") if r.strip()]
+    if not referencias:
+        flash("Selecciona al menos un booking antes de aplicar.")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db = get_db()
@@ -3577,25 +3577,32 @@ def crm_cotizacion_aplicar_booking(cotizacion_id):
         flash("Esta cotización está marcada como Perdida; no se le pueden aplicar bookings.")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
-    booking = db.execute("SELECT referencia FROM reporte_bookings WHERE referencia = %s", (referencia,)).fetchone()
-    if booking is None:
-        db.close()
-        flash("Ese booking no existe.")
-        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
-
-    try:
-        db.execute(
-            "INSERT INTO crm_cotizacion_bookings (cotizacion_id, booking_referencia) VALUES (%s, %s)",
-            (cotizacion_id, referencia),
-        )
-        db.commit()
-    except psycopg.errors.UniqueViolation:
-        db.rollback()
-        flash("Ese booking ya está aplicado a otra cotización.")
-        db.close()
-        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+    aplicados, ya_tomados, no_existen = [], [], []
+    for referencia in referencias:
+        booking = db.execute("SELECT referencia FROM reporte_bookings WHERE referencia = %s", (referencia,)).fetchone()
+        if booking is None:
+            no_existen.append(referencia)
+            continue
+        try:
+            db.execute(
+                "INSERT INTO crm_cotizacion_bookings (cotizacion_id, booking_referencia) VALUES (%s, %s)",
+                (cotizacion_id, referencia),
+            )
+            db.commit()
+            aplicados.append(referencia)
+        except psycopg.errors.UniqueViolation:
+            db.rollback()
+            ya_tomados.append(referencia)
     db.close()
-    flash(f"Cotización marcada como Ganada, aplicada al booking {referencia}.")
+
+    mensajes = []
+    if aplicados:
+        mensajes.append(f"Aplicados {len(aplicados)} booking(s): {', '.join(aplicados)}.")
+    if ya_tomados:
+        mensajes.append(f"Ya estaban aplicados a otra cotización: {', '.join(ya_tomados)}.")
+    if no_existen:
+        mensajes.append(f"No existen: {', '.join(no_existen)}.")
+    flash(" ".join(mensajes) if mensajes else "No se aplicó ningún booking.")
     return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
 
