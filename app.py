@@ -2617,7 +2617,7 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
         LEFT JOIN (
-            SELECT cotizacion_id, MIN(aplicado_en)::date AS ganada_desde
+            SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
             FROM crm_cotizacion_bookings GROUP BY cotizacion_id
         ) cb ON cb.cotizacion_id = co.id
     """).fetchall()
@@ -2671,7 +2671,7 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             "nombre_cotizacion": r["nombre_cotizacion"] or "",
             "fecha_vencimiento": r["fecha_vencimiento"],
             "identidad": identidad, "identidad_mostrar": identidad_mostrar or "#N/D",
-            "ganada_desde": r["ganada_desde"],
+            "ganada_desde": r["ganada_desde"].astimezone(TZ_LOCAL).date() if r["ganada_desde"] else None,
             "perdida_desde": r["perdida_en"].astimezone(TZ_LOCAL).date() if r["estatus"] == "perdida" and r["perdida_en"] else None,
         })
 
