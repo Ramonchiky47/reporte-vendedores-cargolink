@@ -1946,42 +1946,6 @@ def reportes_por_vendedor():
     return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
-@app.route("/reportes/clientes-asignados")
-@reportes_required
-def reportes_clientes_asignados():
-    db = get_db()
-
-    plaza_por_vendedor = {}
-    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
-        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
-
-    filas_clientes = db.execute(
-        "SELECT folio, razon_social, vendedor, tipo_cliente, cant_booking, fecha_ultimo_booking "
-        "FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY vendedor, razon_social"
-    ).fetchall()
-    db.close()
-
-    plazas_permitidas = plazas_permitidas_usuario()
-    filas = []
-    for r in filas_clientes:
-        vkey = normalizar(r["vendedor"])
-        plaza = plaza_por_vendedor.get(vkey, "#N/D")
-        if plazas_permitidas is not None and plaza not in plazas_permitidas:
-            continue
-        filas.append({
-            "folio": r["folio"],
-            "razonSocial": r["razon_social"],
-            "vendedor": r["vendedor"],
-            "plaza": plaza,
-            "tipoCliente": r["tipo_cliente"] or "",
-            "cantBooking": r["cant_booking"],
-            "fechaUltimoBooking": r["fecha_ultimo_booking"].strftime("%Y-%m-%d") if r["fecha_ultimo_booking"] else "",
-        })
-
-    datos_json = json.dumps(filas).replace("</", "<\\/")
-    return render_template("reportes_clientes_asignados.html", datos_json=datos_json, hay_datos=len(filas) > 0)
-
-
 @app.route("/reportes/clientes-mensual")
 @reportes_required
 def reportes_clientes_mensual():
