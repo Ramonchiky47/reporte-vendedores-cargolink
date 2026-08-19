@@ -251,7 +251,14 @@
     window.scrollTo({ top: 0 });
   }
 
-  document.getElementById("rp-volver-lista").addEventListener("click", (e) => {
+  const linkVolver = document.getElementById("rp-volver-lista");
+  const URL_CLIENTES_MENSUAL = "{{ url_for('reportes_clientes_mensual') }}";
+
+  linkVolver.addEventListener("click", (e) => {
+    // Si se llegó por deep link desde "Cant Booking / Profit mensual por
+    // cliente", el link ya apunta para allá (navegación normal del <a>,
+    // no hay nada que interceptar). Si no, es solo volver a la lista local.
+    if (linkVolver.dataset.destino === "mensual") return;
     e.preventDefault();
     vistaDetalle.classList.add("rp-oculto");
     vistaLista.classList.remove("rp-oculto");
@@ -263,13 +270,19 @@
   // Deep link desde otros reportes: /reportes/por-cliente?cliente=NOMBRE
   // abre el detalle directo (match sin distinguir mayúsculas/minúsculas,
   // porque el nombre puede venir de asignacion_de_clientes.razon_social
-  // con distinto casing que reporte_bookings.cliente_servicio).
+  // con distinto casing que reporte_bookings.cliente_servicio). El "volver"
+  // debe regresar a esa pantalla de origen, no a la lista de este reporte.
   const clienteParam = new URLSearchParams(window.location.search).get("cliente");
   if (clienteParam) {
     const encontrado = clientesOrdenados.find(
       (c) => c.cliente.toLowerCase() === clienteParam.toLowerCase(),
     );
-    if (encontrado) abrirDetalle(encontrado.cliente);
+    if (encontrado) {
+      abrirDetalle(encontrado.cliente);
+      linkVolver.href = URL_CLIENTES_MENSUAL;
+      linkVolver.textContent = "← Cant Booking / Profit mensual por cliente";
+      linkVolver.dataset.destino = "mensual";
+    }
   }
 
   function exportarTablaCSV(tablaId, nombreArchivo) {
