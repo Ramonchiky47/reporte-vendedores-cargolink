@@ -1,0 +1,171 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-solicitud { max-width: 820px; }
+  .form-solicitud label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin: 1rem 0 0.3rem; }
+  .form-solicitud input[type="text"], .form-solicitud input[type="number"],
+  .form-solicitud textarea, .form-solicitud select {
+    width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem;
+  }
+  .form-solicitud textarea { resize: vertical; min-height: 90px; }
+  .fila-2 { display: flex; gap: 1rem; }
+  .fila-2 > div { flex: 1; }
+  .fila-3 { display: flex; gap: 1rem; }
+  .fila-3 > div { flex: 1; }
+  .pista-campo { color: #999; font-size: 0.75rem; margin: 0.25rem 0 0; }
+  .separador-seccion { margin: 1.6rem 0 0.4rem; padding-top: 1rem; border-top: 1px solid var(--borde); font-size: 0.78rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; }
+  .id-cotizacion { font-size: 0.8rem; color: #999; margin-bottom: 0.5rem; }
+  .id-cotizacion strong { color: #333; font-size: 1.05rem; }
+  .acciones-form-cotizacion { display: flex; gap: 0.6rem; margin-top: 1.5rem; }
+  .acciones-form-cotizacion button, .acciones-form-cotizacion a {
+    padding: 0.55rem 1.1rem; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn-guardar { background: #1565c0; color: #fff; font-weight: 600; }
+  .btn-cancelar { background: #e0e0e0; color: #333; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" style="display:inline-block; margin-bottom:1rem; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
+     href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=cotizacion.id) }}">&larr; Cotización</a>
+
+  <h2>Solicitud a Pricing · Marítimo / Aéreo</h2>
+  <p class="id-cotizacion">Cotización asociada: <strong>{{ cotizacion.id_cotizacion }}</strong>{{ ' · ' + cotizacion.nombre_cotizacion if cotizacion.nombre_cotizacion else '' }}. La referencia de la solicitud se genera automáticamente al guardar.</p>
+
+  <form class="form-solicitud" method="post">
+    <div class="fila-2">
+      <div>
+        <label for="importacion_exportacion">Importación o Exportación</label>
+        <select id="importacion_exportacion" name="importacion_exportacion">
+          <option value="">Selecciona</option>
+          <option value="Importación">Importación</option>
+          <option value="Exportación">Exportación</option>
+        </select>
+      </div>
+      <div>
+        <label for="tipo_embarque">Tipo de Embarque</label>
+        <select id="tipo_embarque" name="tipo_embarque">
+          <option value="">Selecciona</option>
+          <option value="Marítimo">Marítimo</option>
+          <option value="Aéreo">Aéreo</option>
+        </select>
+      </div>
+    </div>
+
+    <label for="incoterm_id">Incoterm</label>
+    <select id="incoterm_id" name="incoterm_id">
+      <option value="">Selecciona</option>
+      {% for i in incoterms %}
+      <option value="{{ i.id }}">{{ i.nombre }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="separador-seccion">Origen y destino</div>
+    <div class="fila-2">
+      <div>
+        <label for="pais_origen">País de Origen</label>
+        <input type="text" id="pais_origen" name="pais_origen" maxlength="50">
+      </div>
+      <div>
+        <label for="pais_destino">País de Destino</label>
+        <input type="text" id="pais_destino" name="pais_destino" maxlength="50">
+      </div>
+    </div>
+    <label for="lugar_recoleccion">Lugar de recolección / Pick up Place</label>
+    <input type="text" id="lugar_recoleccion" name="lugar_recoleccion" maxlength="50">
+
+    <div class="fila-2">
+      <div>
+        <label for="puerto_carga">Puerto de Carga - Aeropuerto de Salida / POL - AOL</label>
+        <input type="text" id="puerto_carga" name="puerto_carga" maxlength="50">
+      </div>
+      <div>
+        <label for="puerto_descarga">Puerto de Descarga - Aeropuerto de Arribo / POD - AOD</label>
+        <input type="text" id="puerto_descarga" name="puerto_descarga" maxlength="50">
+      </div>
+    </div>
+    <label for="lugar_entrega">Lugar de Entrega / Place of Delivery</label>
+    <input type="text" id="lugar_entrega" name="lugar_entrega" maxlength="50">
+
+    <div class="separador-seccion">Naviera / aerolínea y carga</div>
+    <label for="naviera_aerolinea">Naviera-Aerolínea / Carrier</label>
+    <input type="text" id="naviera_aerolinea" name="naviera_aerolinea" maxlength="50">
+
+    <div class="fila-2">
+      <div>
+        <label for="fcl_numero_tipo_contenedores">(FCL) Número y Tipo de Contenedores</label>
+        <input type="text" id="fcl_numero_tipo_contenedores" name="fcl_numero_tipo_contenedores" maxlength="50">
+      </div>
+      <div>
+        <label for="fcl_dias_libres_requeridos">(FCL) Días libres requeridos / Free Time required</label>
+        <input type="number" id="fcl_dias_libres_requeridos" name="fcl_dias_libres_requeridos" min="0">
+      </div>
+    </div>
+
+    <label for="producto">Producto</label>
+    <input type="text" id="producto" name="producto" maxlength="50">
+
+    <label for="lcl_air_dimensiones">LCL or AIR — Dimensiones por pieza y peso por pieza</label>
+    <input type="text" id="lcl_air_dimensiones" name="lcl_air_dimensiones" maxlength="50">
+
+    <div class="fila-3">
+      <div>
+        <label for="estibable">¿Estibable?</label>
+        <select id="estibable" name="estibable">
+          <option value="">Selecciona</option>
+          <option value="si">Sí</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div>
+        <label for="requiere_inbond_usa">Requiere servicio INBOND - USA</label>
+        <select id="requiere_inbond_usa" name="requiere_inbond_usa">
+          <option value="">Selecciona</option>
+          <option value="si">Sí</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+    </div>
+    <div class="fila-3">
+      <div>
+        <label for="hazmat">¿Hazmat?</label>
+        <select id="hazmat" name="hazmat">
+          <option value="">Selecciona</option>
+          <option value="si">Sí</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div>
+        <label for="carga_reefer">¿Carga Reefer?</label>
+        <select id="carga_reefer" name="carga_reefer">
+          <option value="">Selecciona</option>
+          <option value="si">Sí</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div>
+        <label for="temperatura">Temperatura</label>
+        <input type="text" id="temperatura" name="temperatura" maxlength="50">
+      </div>
+    </div>
+
+    <div class="separador-seccion">Requerimientos y material</div>
+    <label for="requerimientos_especiales">Requerimientos especiales</label>
+    <input type="text" id="requerimientos_especiales" name="requerimientos_especiales" maxlength="50">
+
+    <label for="agente_a_cotizar">Indicar Agente a cotizar</label>
+    <input type="text" id="agente_a_cotizar" name="agente_a_cotizar" maxlength="50">
+
+    <label for="descripcion_material">Descripción del material</label>
+    <input type="text" id="descripcion_material" name="descripcion_material" maxlength="50">
+
+    <label for="propiedad">Propiedad</label>
+    <input type="text" id="propiedad" name="propiedad" maxlength="50">
+    <p class="pista-campo">Catálogo de valores pendiente de definir; por ahora es texto libre.</p>
+
+    <label for="anexos_notas">Anexar diagramas, fotos, packing list y/o especificaciones técnicas. MSDS o DGD (HAZ MAT)</label>
+    <textarea id="anexos_notas" name="anexos_notas" placeholder="Notas, links o referencias a los archivos"></textarea>
+
+    <div class="acciones-form-cotizacion">
+      <button type="submit" class="btn-guardar">Enviar a Pricing</button>
+      <a class="btn-cancelar" href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=cotizacion.id) }}">Cancelar</a>
+    </div>
+  </form>
+{% endblock %}

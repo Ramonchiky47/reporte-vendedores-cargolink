@@ -20,6 +20,10 @@
 
   .caja-accion { border: 1px solid var(--borde); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem; background: #fafafa; }
   .caja-accion h4 { margin: 0 0 0.6rem; font-size: 0.725rem; }
+  .btn-nueva-solicitud { display: inline-block; padding: 0.4rem 0.8rem; background: #1565c0; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.725rem; font-weight: 600; margin-bottom: 0.6rem; }
+  .lista-solicitudes-pricing { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+  .lista-solicitudes-pricing li { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.78rem; padding: 0.35rem 0; border-bottom: 1px solid var(--borde); }
+  .lista-solicitudes-pricing li:last-child { border-bottom: none; }
   .detalle-aplicar-booking summary {
     font-size: 0.725rem; font-weight: 700; cursor: pointer; color: #222; list-style: revert;
   }
@@ -99,6 +103,20 @@
   {% if doc.estatus == 'perdida' and doc.comentario_perdida %}
     <p class="comentario-perdida-texto">{{ doc.comentario_perdida }}</p>
   {% endif %}
+
+  <div class="caja-accion">
+    <h4>Solicitudes a Pricing</h4>
+    <a class="btn-nueva-solicitud" href="{{ url_for('crm_solicitud_maritimo_nueva', cotizacion_id=cotizacion_id) }}">+ Nueva solicitud Marítimo / Aéreo</a>
+    {% if doc.solicitudes_maritimo %}
+    <ul class="lista-solicitudes-pricing">
+      {% for s in doc.solicitudes_maritimo %}
+      <li><span>{{ s.referencia }} · {{ s.tipo_embarque or "—" }} · {{ s.fecha_creacion }}</span><span>{{ s.estado }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+      <p class="pendiente">Todavía no hay solicitudes enviadas.</p>
+    {% endif %}
+  </div>
 
   {% if doc.bookings_aplicados %}
   <div class="caja-accion">

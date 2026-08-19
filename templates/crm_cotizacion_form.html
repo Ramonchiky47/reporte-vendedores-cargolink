@@ -84,22 +84,29 @@
     font-size: 0.82rem; font-weight: 600; cursor: pointer;
   }
   .btn-solicitar-info:hover { background: #e3f2fd; }
+  .btn-solicitar-info:disabled { color: #999; border-color: #ccc; cursor: not-allowed; background: #f5f5f5; }
+  .btn-solicitar-info:disabled:hover { background: #f5f5f5; }
 {% endblock %}
 {% block crm_content %}
   <div class="fila-encabezado-cotizacion">
     <a class="btn-atras" style="display:inline-block; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
        href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
 
-    {% if not cotizacion %}
     <div class="caja-solicitar-info">
       <div class="caja-solicitar-info__titulo">Solicitar información a Pricing</div>
       <div class="caja-solicitar-info__botones">
-        <button type="button" class="btn-solicitar-info">Marítimo / Aéreo</button>
-        <button type="button" class="btn-solicitar-info">Terrestre Nacional</button>
-        <button type="button" class="btn-solicitar-info">Terrestre Internacional</button>
+        {% if cotizacion %}
+        <a class="btn-solicitar-info" href="{{ url_for('crm_solicitud_maritimo_nueva', cotizacion_id=cotizacion.id) }}">Marítimo / Aéreo</a>
+        {% else %}
+        <button type="button" class="btn-solicitar-info" disabled title="Guarda la cotización primero">Marítimo / Aéreo</button>
+        {% endif %}
+        <button type="button" class="btn-solicitar-info" disabled title="Próximamente">Terrestre Nacional</button>
+        <button type="button" class="btn-solicitar-info" disabled title="Próximamente">Terrestre Internacional</button>
       </div>
+      {% if not cotizacion %}
+      <p class="pista-campo" style="margin:0;">Guarda la cotización para habilitar "Marítimo / Aéreo".</p>
+      {% endif %}
     </div>
-    {% endif %}
   </div>
 
   <h2>{{ titulo_pagina }}</h2>

@@ -2990,6 +2990,11 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         WHERE cb.cotizacion_id = %s ORDER BY cb.aplicado_en
     """, (cotizacion_id,)).fetchall()
     motivos_perdida = db.execute("SELECT id, nombre FROM crm_motivos_perdida ORDER BY nombre").fetchall()
+    solicitudes_maritimo = db.execute("""
+        SELECT referencia, tipo_embarque, estado, fecha_creacion, creado_por
+        FROM crm_solicitudes_maritimo_aereo
+        WHERE cotizacion_id = %s ORDER BY creado_en DESC
+    """, (cotizacion_id,)).fetchall()
     db.close()
 
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
@@ -3081,6 +3086,11 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         ],
         "bookings_disponibles": bookings_disponibles,
         "motivos_perdida": [{"id": m["id"], "nombre": m["nombre"]} for m in motivos_perdida],
+        "solicitudes_maritimo": [
+            {"referencia": s["referencia"], "tipo_embarque": s["tipo_embarque"] or "",
+             "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or ""}
+            for s in solicitudes_maritimo
+        ],
     }
 
 
@@ -3636,6 +3646,67 @@ def crm_cotizacion_detalle(cotizacion_id):
         "crm_cotizacion_detalle.html", nav_groups=nav_groups,
         titulo_pagina=documento["nombre_cotizacion"] or f"Cotización {documento['id_cotizacion']}",
         doc=documento, cotizacion_id=cotizacion_id,
+    )
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/solicitud-maritimo/nueva", methods=["GET", "POST"])
+@crm_required
+def crm_solicitud_maritimo_nueva(cotizacion_id):
+    db = get_db()
+    cotizacion = db.execute(
+        "SELECT id, id_cotizacion, nombre_cotizacion FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
+    ).fetchone()
+    if cotizacion is None:
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        def campo(nombre, limite=50):
+            return (request.form.get(nombre, "") or "").strip()[:limite] or None
+
+        def si_no(nombre):
+            v = request.form.get(nombre)
+            return True if v == "si" else (False if v == "no" else None)
+
+        dias_libres_raw = request.form.get("fcl_dias_libres_requeridos", "").strip()
+        dias_libres = int(dias_libres_raw) if dias_libres_raw.isdigit() else None
+        incoterm_id_raw = request.form.get("incoterm_id", "").strip()
+        incoterm_id = int(incoterm_id_raw) if incoterm_id_raw else None
+
+        referencia = generar_referencia_solicitud_maritimo(db)
+        db.execute("""
+            INSERT INTO crm_solicitudes_maritimo_aereo (
+                referencia, cotizacion_id, creado_por, importacion_exportacion, incoterm_id,
+                tipo_embarque, pais_origen, pais_destino, lugar_recoleccion, puerto_carga,
+                puerto_descarga, lugar_entrega, naviera_aerolinea, fcl_numero_tipo_contenedores,
+                fcl_dias_libres_requeridos, producto, lcl_air_dimensiones, estibable,
+                requiere_inbond_usa, hazmat, carga_reefer, temperatura, requerimientos_especiales,
+                agente_a_cotizar, descripcion_material, anexos_notas, propiedad
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            referencia, cotizacion_id, session.get("usuario", ""),
+            campo("importacion_exportacion"), incoterm_id,
+            campo("tipo_embarque"), campo("pais_origen"), campo("pais_destino"),
+            campo("lugar_recoleccion"), campo("puerto_carga"), campo("puerto_descarga"),
+            campo("lugar_entrega"), campo("naviera_aerolinea"), campo("fcl_numero_tipo_contenedores"),
+            dias_libres, campo("producto"), campo("lcl_air_dimensiones"),
+            si_no("estibable"), si_no("requiere_inbond_usa"), si_no("hazmat") or False, si_no("carga_reefer"),
+            campo("temperatura"), campo("requerimientos_especiales"), campo("agente_a_cotizar"),
+            campo("descripcion_material"), (request.form.get("anexos_notas", "") or "").strip() or None,
+            campo("propiedad"),
+        ))
+        db.commit()
+        db.close()
+        flash(f"Solicitud {referencia} enviada a Pricing.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    incoterms = db.execute("SELECT id, nombre FROM crm_incoterms ORDER BY nombre").fetchall()
+    db.close()
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_solicitud_maritimo_form.html", nav_groups=nav_groups,
+        titulo_pagina="Solicitud a Pricing · Marítimo / Aéreo",
+        cotizacion=cotizacion, incoterms=incoterms,
     )
 
 
