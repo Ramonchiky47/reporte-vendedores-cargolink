@@ -7,6 +7,7 @@ persistente ni de subprocesos — la descarga de CargoLink corre inline y los
 resultados se guardan directo en la base de datos.
 """
 
+import calendar
 import csv
 import io
 import json
@@ -2588,8 +2589,19 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     mejor esfuerzo, no una relación garantizada en la base."""
     hoy = datetime.now(TZ_LOCAL).date()
     dias_periodo = (fecha_fin - fecha_inicio).days + 1
-    fecha_fin_anterior = fecha_inicio - timedelta(days=1)
-    fecha_inicio_anterior = fecha_fin_anterior - timedelta(days=dias_periodo - 1)
+    if periodo == "mes":
+        # "Mes a la fecha" se compara contra el mismo tramo de días del mes
+        # calendario anterior (1-18 ago vs 1-18 jul), no contra una ventana
+        # genérica de N días inmediatamente antes: esa ventana cruzaría a
+        # mitad de julio y no correspondería a ningún periodo real.
+        anio_ant = fecha_inicio.year if fecha_inicio.month > 1 else fecha_inicio.year - 1
+        mes_ant = fecha_inicio.month - 1 if fecha_inicio.month > 1 else 12
+        ultimo_dia_mes_ant = calendar.monthrange(anio_ant, mes_ant)[1]
+        fecha_inicio_anterior = date(anio_ant, mes_ant, 1)
+        fecha_fin_anterior = date(anio_ant, mes_ant, min(fecha_fin.day, ultimo_dia_mes_ant))
+    else:
+        fecha_fin_anterior = fecha_inicio - timedelta(days=1)
+        fecha_inicio_anterior = fecha_fin_anterior - timedelta(days=dias_periodo - 1)
     inicio_tendencia = hoy - timedelta(days=29)
     ventana_inicio = min(fecha_inicio_anterior, inicio_tendencia)
     ventana_fin = max(fecha_fin, hoy)
