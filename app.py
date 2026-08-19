@@ -1061,37 +1061,19 @@ def nl2br(texto):
 
 
 def registrar_ingreso():
-    """Guarda un renglón en registro_ingresos la primera vez que una
-    sesión recién autenticada toca una vista protegida (una fila por
-    login, no por cada página que visite). Se engancha en los decoradores
-    en vez de en /login para que funcione sin importar qué mecanismo de
-    autenticación esté activo. Nunca debe tumbar la vista por un problema
-    de logging."""
-    if session.get("ingreso_registrado"):
+    """Guarda un renglón en registro_ingresos una vez por día calendario
+    por sesión (no una vez por cada página que visite, pero tampoco solo
+    una vez por sesión): las sesiones no expiran solas, así que alguien
+    que no cierra el navegador puede seguir usando la app días después
+    sin volver a loguearse — si solo registráramos una vez por sesión,
+    esa actividad real nunca aparecería en Actividad de Usuarios. Se
+    engancha en los decoradores en vez de en /login para que funcione
+    sin importar qué mecanismo de autenticación esté activo. Nunca debe
+    tumbar la vista por un problema de logging."""
+    hoy = datetime.now(TZ_LOCAL).date().isoformat()
+    if session.get("ingreso_registrado") == hoy:
         return
-    session["ingreso_registrado"] = True
-    try:
-        db = get_db()
-        db.execute(
-            "INSERT INTO registro_ingresos (usuario_id, usuario) VALUES (%s, %s)",
-            (session.get("usuario_id"), session.get("usuario") or "?"),
-        )
-        db.commit()
-        db.close()
-    except Exception as e:
-        print(f"Aviso: no se pudo registrar el ingreso ({e}).")
-
-
-def registrar_ingreso():
-    """Guarda un renglón en registro_ingresos la primera vez que una
-    sesión recién autenticada toca una vista protegida (una fila por
-    login, no por cada página que visite). Se engancha en los decoradores
-    en vez de en /login para que funcione sin importar qué mecanismo de
-    autenticación esté activo. Nunca debe tumbar la vista por un problema
-    de logging."""
-    if session.get("ingreso_registrado"):
-        return
-    session["ingreso_registrado"] = True
+    session["ingreso_registrado"] = hoy
     try:
         db = get_db()
         db.execute(
