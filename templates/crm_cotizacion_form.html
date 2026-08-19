@@ -74,10 +74,33 @@
   .multi-select-lista input[type="checkbox"] { margin: 0; }
   .multi-select-acciones { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
   .btn-aplicar-multiselect { padding: 0.35rem 0.9rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+
+  .fila-encabezado-cotizacion { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .caja-solicitar-info { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+  .caja-solicitar-info__titulo { font-size: 0.75rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; }
+  .caja-solicitar-info__botones { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+  .btn-solicitar-info {
+    padding: 0.45rem 0.8rem; background: #fff; color: #1565c0; border: 1px solid #1565c0; border-radius: 6px;
+    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-solicitar-info:hover { background: #e3f2fd; }
 {% endblock %}
 {% block crm_content %}
-  <a class="btn-atras" style="display:inline-block; margin-bottom:1rem; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
-     href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
+  <div class="fila-encabezado-cotizacion">
+    <a class="btn-atras" style="display:inline-block; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
+       href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
+
+    {% if not cotizacion %}
+    <div class="caja-solicitar-info">
+      <div class="caja-solicitar-info__titulo">Solicitar información a Pricing</div>
+      <div class="caja-solicitar-info__botones">
+        <button type="button" class="btn-solicitar-info">Marítimo / Aéreo</button>
+        <button type="button" class="btn-solicitar-info">Terrestre Nacional</button>
+        <button type="button" class="btn-solicitar-info">Terrestre Internacional</button>
+      </div>
+    </div>
+    {% endif %}
+  </div>
 
   <h2>{{ titulo_pagina }}</h2>
   {% if cotizacion %}
