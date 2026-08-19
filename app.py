@@ -356,6 +356,42 @@ def init_db():
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_crm_cotizacion_bookings_cotizacion ON crm_cotizacion_bookings (cotizacion_id);")
     db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_maritimo_aereo (
+            id bigint generated always as identity primary key,
+            referencia text not null unique,
+            cotizacion_id bigint references crm_cotizaciones(id) on delete set null,
+            creado_por text,
+            importacion_exportacion text,
+            incoterm_id bigint references crm_incoterms(id) on delete set null,
+            tipo_embarque text,
+            pais_origen text,
+            pais_destino text,
+            lugar_recoleccion text,
+            puerto_carga text,
+            puerto_descarga text,
+            lugar_entrega text,
+            naviera_aerolinea text,
+            fcl_numero_tipo_contenedores text,
+            fcl_dias_libres_requeridos integer,
+            producto text,
+            lcl_air_dimensiones text,
+            estibable boolean,
+            requiere_inbond_usa boolean,
+            hazmat boolean not null default false,
+            carga_reefer boolean,
+            temperatura text,
+            requerimientos_especiales text,
+            agente_a_cotizar text,
+            descripcion_material text,
+            anexos_notas text,
+            fecha_creacion date not null default current_date,
+            estado text not null default 'Solicitud',
+            propiedad text,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_crm_solicitudes_maritimo_aereo_cotizacion ON crm_solicitudes_maritimo_aereo (cotizacion_id);")
+    db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
             nombre_firma text,
@@ -2457,6 +2493,16 @@ def generar_id_cotizacion(db):
         if not db.execute("SELECT 1 FROM crm_cotizaciones WHERE id_cotizacion = %s", (candidato,)).fetchone():
             return candidato
     raise RuntimeError("No se pudo generar un ID de cotización único.")
+
+
+def generar_referencia_solicitud_maritimo(db):
+    """Referencia secuencial 'COT-5000', 'COT-5001', ... para
+    crm_solicitudes_maritimo_aereo (arranca en 5000)."""
+    fila = db.execute(
+        "SELECT referencia FROM crm_solicitudes_maritimo_aereo ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    siguiente = int(fila["referencia"].split("-")[-1]) + 1 if fila and fila["referencia"] else 5000
+    return f"COT-{siguiente}"
 
 
 def construir_cotizaciones_crm(plazas_permitidas=None):
