@@ -260,6 +260,18 @@
   buscador.addEventListener("input", () => renderLista(buscador.value));
   renderLista("");
 
+  // Deep link desde otros reportes: /reportes/por-cliente?cliente=NOMBRE
+  // abre el detalle directo (match sin distinguir mayúsculas/minúsculas,
+  // porque el nombre puede venir de asignacion_de_clientes.razon_social
+  // con distinto casing que reporte_bookings.cliente_servicio).
+  const clienteParam = new URLSearchParams(window.location.search).get("cliente");
+  if (clienteParam) {
+    const encontrado = clientesOrdenados.find(
+      (c) => c.cliente.toLowerCase() === clienteParam.toLowerCase(),
+    );
+    if (encontrado) abrirDetalle(encontrado.cliente);
+  }
+
   function exportarTablaCSV(tablaId, nombreArchivo) {
     const tabla = document.getElementById(tablaId);
     const filas = tabla ? tabla.querySelectorAll("tr") : [];

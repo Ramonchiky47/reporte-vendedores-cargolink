@@ -122,6 +122,7 @@
 <script>
 (function () {
   const TODOS = JSON.parse(document.getElementById("datos-clientes-mensual").textContent);
+  const URL_REPORTE_CLIENTE = "{{ url_for('reportes_por_cliente') }}";
   const MESES_ABR = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 
   function fmtMoneda(n) {
@@ -227,7 +228,7 @@
     tbody.innerHTML = ordenadas.map((c) => `
       <tr>
         <td>${escaparHtml(String(c.folio))}</td>
-        <td>${escaparHtml(c.razonSocial)}</td>
+        <td><a href="${URL_REPORTE_CLIENTE}?cliente=${encodeURIComponent(c.razonSocial)}">${escaparHtml(c.razonSocial)}</a></td>
         ${c[porMesKey].map((v, i) => {
           const clase = c.otroVendedorPorMes[i] ? "otro-vendedor" : (c.cantPorMes[i] === 0 ? "sin-venta-mes" : "");
           return `<td class="${clase}">${v ? fmt(v) : "—"}</td>`;
