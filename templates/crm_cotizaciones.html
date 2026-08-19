@@ -23,7 +23,13 @@
   .btn-editar { background: #ef6c00; }
   .btn-borrar { background: #c0392b; }
   .acciones-encabezado { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .fila-filtros-cot { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
   .buscador-cotizaciones input { padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; min-width: 280px; }
+  .filtro-estatus-cot { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+  .filtro-estatus-cot label {
+    display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: #333; cursor: pointer;
+  }
+  .filtro-estatus-cot input { margin: 0; }
   .btn-agregar { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
   tbody tr { cursor: pointer; }
   tbody tr:hover td { background: #f5f5f5; }
@@ -37,6 +43,16 @@
       <input type="text" id="buscador-cotizaciones" autocomplete="off" placeholder="Buscar por ID, origen, destino, incoterm..." />
     </div>
     <a class="btn-agregar" href="{{ url_for('crm_cotizacion_nueva') }}">+ Agregar cotización</a>
+  </div>
+
+  <div class="fila-filtros-cot">
+    <span class="pista" style="margin: 0;">Estatus:</span>
+    <div class="filtro-estatus-cot" id="filtro-estatus-cot">
+      <label><input type="checkbox" value="vigente" checked> Vigente</label>
+      <label><input type="checkbox" value="vencido" checked> Vencido</label>
+      <label><input type="checkbox" value="ganada"> Ganada</label>
+      <label><input type="checkbox" value="perdida"> Perdida</label>
+    </div>
   </div>
 
   {% if cotizaciones %}
@@ -65,7 +81,7 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
           <td>
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
@@ -107,19 +123,28 @@
   <script>
     (function () {
       const input = document.getElementById('buscador-cotizaciones');
-      if (!input) return;
       const filas = Array.from(document.querySelectorAll('#tabla-cotizaciones-cuerpo tr'));
       const contador = document.getElementById('contador-cotizaciones-visibles');
-      input.addEventListener('input', () => {
+      const checksEstatus = Array.from(document.querySelectorAll('#filtro-estatus-cot input[type="checkbox"]'));
+      if (!input || !contador) return;
+
+      function aplicarFiltros() {
         const termino = input.value.trim().toLowerCase();
+        const estatusActivos = new Set(checksEstatus.filter((c) => c.checked).map((c) => c.value));
         let visibles = 0;
         filas.forEach((fila) => {
-          const coincide = !termino || fila.textContent.toLowerCase().includes(termino);
+          const coincideTexto = !termino || fila.textContent.toLowerCase().includes(termino);
+          const coincideEstatus = estatusActivos.has(fila.dataset.estatus);
+          const coincide = coincideTexto && coincideEstatus;
           fila.hidden = !coincide;
           if (coincide) visibles += 1;
         });
         contador.textContent = visibles;
-      });
+      }
+
+      input.addEventListener('input', aplicarFiltros);
+      checksEstatus.forEach((c) => c.addEventListener('change', aplicarFiltros));
+      aplicarFiltros();
     })();
   </script>
 {% endblock %}

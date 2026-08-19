@@ -344,6 +344,7 @@ def init_db():
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS estatus text not null default 'vigente';")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS motivo_perdida_id bigint references crm_motivos_perdida(id) on delete set null;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS perdida_en timestamptz;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS comentario_perdida text;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_cotizacion_bookings (
             id bigint generated always as identity primary key,
@@ -2608,12 +2609,17 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     cotizaciones = db.execute("""
         SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
                co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
+               co.estatus, co.perdida_en, cb.ganada_desde,
                ac.vendedor AS cliente_vendedor, ac.razon_social,
                f.nombre_firma, cu.email AS creador_correo
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN (
+            SELECT cotizacion_id, MIN(aplicado_en)::date AS ganada_desde
+            FROM crm_cotizacion_bookings GROUP BY cotizacion_id
+        ) cb ON cb.cotizacion_id = co.id
     """).fetchall()
     db.close()
 
@@ -2665,10 +2671,15 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             "nombre_cotizacion": r["nombre_cotizacion"] or "",
             "fecha_vencimiento": r["fecha_vencimiento"],
             "identidad": identidad, "identidad_mostrar": identidad_mostrar or "#N/D",
+            "ganada_desde": r["ganada_desde"],
+            "perdida_desde": r["perdida_en"].astimezone(TZ_LOCAL).date() if r["estatus"] == "perdida" and r["perdida_en"] else None,
         })
 
     def en_rango(filas, ini, fin):
         return [f for f in filas if ini <= f["d"] <= fin]
+
+    def en_rango_campo(filas, campo, ini, fin):
+        return [f for f in filas if f[campo] is not None and ini <= f[campo] <= fin]
 
     booking_periodo = en_rango(filas_booking, fecha_inicio, fecha_fin)
     booking_anterior = en_rango(filas_booking, fecha_inicio_anterior, fecha_fin_anterior)
@@ -2676,6 +2687,15 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     cot_periodo = en_rango(filas_cot, fecha_inicio, fecha_fin)
     cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
     cot_tendencia = en_rango(filas_cot, inicio_tendencia, hoy)
+
+    # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
+    # aplicado / cuándo se marcó perdida), no por cuándo se creó la
+    # cotización — es una métrica de "actividad de cierre" del periodo,
+    # igual que Venta/Profit ya lo son para bookings.
+    ganadas_periodo = en_rango_campo(filas_cot, "ganada_desde", fecha_inicio, fecha_fin)
+    ganadas_anterior = en_rango_campo(filas_cot, "ganada_desde", fecha_inicio_anterior, fecha_fin_anterior)
+    perdidas_periodo = en_rango_campo(filas_cot, "perdida_desde", fecha_inicio, fecha_fin)
+    perdidas_anterior = en_rango_campo(filas_cot, "perdida_desde", fecha_inicio_anterior, fecha_fin_anterior)
 
     def delta_pct(actual, anterior):
         if not anterior:
@@ -2690,6 +2710,10 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     kpis = {
         "cotizaciones": len(cot_periodo), "cotizaciones_delta": delta_pct(len(cot_periodo), len(cot_anterior)),
         "cotizaciones_anterior": len(cot_anterior),
+        "ganadas": len(ganadas_periodo), "ganadas_delta": delta_pct(len(ganadas_periodo), len(ganadas_anterior)),
+        "ganadas_anterior": len(ganadas_anterior),
+        "perdidas": len(perdidas_periodo), "perdidas_delta": delta_pct(len(perdidas_periodo), len(perdidas_anterior)),
+        "perdidas_anterior": len(perdidas_anterior),
         "bookings": len(booking_periodo), "bookings_delta": delta_pct(len(booking_periodo), len(booking_anterior)),
         "bookings_anterior": len(booking_anterior),
         "venta": venta_periodo, "venta_delta": delta_pct(venta_periodo, venta_anterior), "venta_anterior": venta_anterior,
@@ -2988,6 +3012,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         "firma_correo": fila["firma_correo"] or fila["creador_correo"] or FIRMA_DEFAULT["correo"],
         "estatus": estatus,
         "motivo_perdida_nombre": fila["motivo_perdida_nombre"] or "",
+        "comentario_perdida": fila["comentario_perdida"] or "",
         "perdida_en": fila["perdida_en"],
         "bookings_aplicados": [
             {"referencia": b["referencia"],
@@ -3614,6 +3639,7 @@ def crm_cotizacion_marcar_perdida(cotizacion_id):
     ganados — una cotización ganada no se puede volver a perder."""
     motivo_id_raw = request.form.get("motivo_perdida_id", "").strip()
     motivo_id = int(motivo_id_raw) if motivo_id_raw.isdigit() else None
+    comentario = request.form.get("comentario_perdida", "").strip()[:2000]
     if motivo_id is None:
         flash("Selecciona un motivo antes de marcar la cotización como Perdida.")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
@@ -3638,8 +3664,8 @@ def crm_cotizacion_marcar_perdida(cotizacion_id):
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db.execute(
-        "UPDATE crm_cotizaciones SET estatus = 'perdida', motivo_perdida_id = %s, perdida_en = now() WHERE id = %s",
-        (motivo_id, cotizacion_id),
+        "UPDATE crm_cotizaciones SET estatus = 'perdida', motivo_perdida_id = %s, comentario_perdida = %s, perdida_en = now() WHERE id = %s",
+        (motivo_id, comentario or None, cotizacion_id),
     )
     db.commit()
     db.close()
