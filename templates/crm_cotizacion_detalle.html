@@ -27,7 +27,8 @@
   }
   .btn-aplicar-booking { background: #2e7d32; color: #fff; }
   .btn-marcar-perdida { background: #991b1b; color: #fff; }
-  .fila-accion button:disabled { background: #ccc; cursor: not-allowed; }
+  .btn-cancelar-booking { background: #e0e0e0; color: #333; }
+  .fila-accion button:disabled { background: #ccc; cursor: not-allowed; color: #888; }
 
   .lista-checks-bookings {
     max-height: 220px; overflow-y: auto; border: 1px solid var(--borde); border-radius: 6px;
@@ -110,7 +111,10 @@
           </label>
         {% endfor %}
       </div>
-      <button type="submit" class="btn-aplicar-booking" id="btn-aplicar-booking" disabled>Aplicar</button>
+      <div class="fila-accion">
+        <button type="submit" class="btn-aplicar-booking" id="btn-aplicar-booking" disabled>Aplicar</button>
+        <button type="button" class="btn-cancelar-booking" id="btn-cancelar-booking" disabled>Cancelar</button>
+      </div>
     </form>
     {% else %}
       <p class="pendiente">Sin bookings disponibles de este cliente.</p>
@@ -211,10 +215,20 @@
     (function () {
       const checksBooking = document.querySelectorAll('input[name="booking_referencia"]');
       const btnBooking = document.getElementById('btn-aplicar-booking');
+      const btnCancelarBooking = document.getElementById('btn-cancelar-booking');
       if (checksBooking.length && btnBooking) {
-        checksBooking.forEach((cb) => cb.addEventListener('change', () => {
-          btnBooking.disabled = !Array.from(checksBooking).some((c) => c.checked);
-        }));
+        const actualizarBotones = () => {
+          const hayMarcados = Array.from(checksBooking).some((c) => c.checked);
+          btnBooking.disabled = !hayMarcados;
+          if (btnCancelarBooking) btnCancelarBooking.disabled = !hayMarcados;
+        };
+        checksBooking.forEach((cb) => cb.addEventListener('change', actualizarBotones));
+        if (btnCancelarBooking) {
+          btnCancelarBooking.addEventListener('click', () => {
+            checksBooking.forEach((cb) => { cb.checked = false; });
+            actualizarBotones();
+          });
+        }
       }
       const selectMotivo = document.getElementById('select-motivo-perdida');
       const btnPerdida = document.getElementById('btn-marcar-perdida');
