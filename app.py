@@ -330,6 +330,30 @@ def init_db():
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS tipo_ingreso_egreso_texto text;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS creado_por_user_id uuid;")
     db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_motivos_perdida (
+            id bigint generated always as identity primary key,
+            nombre text not null unique,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    # Estatus de una cotización: 'vigente' y 'perdida' se guardan en esta
+    # columna (perdida es la única acción manual real); "vencido" se
+    # calcula al vuelo comparando fecha_vencimiento con hoy, y "ganada" se
+    # calcula según si tiene renglones en crm_cotizacion_bookings — nunca
+    # se guarda "ganada" ni "vencido" aquí.
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS estatus text not null default 'vigente';")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS motivo_perdida_id bigint references crm_motivos_perdida(id) on delete set null;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS perdida_en timestamptz;")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_cotizacion_bookings (
+            id bigint generated always as identity primary key,
+            cotizacion_id bigint not null references crm_cotizaciones(id) on delete cascade,
+            booking_referencia text not null unique,
+            aplicado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_crm_cotizacion_bookings_cotizacion ON crm_cotizacion_bookings (cotizacion_id);")
+    db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
             nombre_firma text,
@@ -2023,6 +2047,7 @@ CRM_NAV = [
     {"grupo": "Catálogos", "texto": "Grupo", "slug": "grupo"},
     {"grupo": "Catálogos", "texto": "Contactos", "slug": "contactos"},
     {"grupo": "Catálogos", "texto": "Productos", "slug": "productos"},
+    {"grupo": "Catálogos", "texto": "Motivos de Pérdida", "slug": "motivos-perdida"},
     {"grupo": "Catálogos", "texto": "Estatus", "slug": "estatus"},
     {"grupo": "Catálogos", "texto": "Estado de la República", "slug": "estado-republica"},
     {"grupo": "Catálogos", "texto": "Etapa del Negocio", "slug": "etapa-negocio"},
@@ -2449,7 +2474,7 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
                co.origen, co.destino, co.hazmat, co.hazmat_clase, co.hazmat_un_imo,
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
-               co.profit_estimado, co.tipo_cambio, co.descripcion
+               co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
@@ -2470,7 +2495,12 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
             "impuesto": float(r["impuesto"] or 0),
             "total": float(r["subtotal"]) + float(r["impuesto"] or 0),
         }
+
+    cotizaciones_con_booking = {
+        r["cotizacion_id"] for r in db.execute("SELECT DISTINCT cotizacion_id FROM crm_cotizacion_bookings")
+    }
     db.close()
+    hoy = datetime.now(TZ_LOCAL).date()
 
     resultado = []
     for r in filas:
@@ -2508,6 +2538,7 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
             "profit_estimado": float(r["profit_estimado"]) if r["profit_estimado"] is not None else None,
             "tipo_cambio": float(r["tipo_cambio"]) if r["tipo_cambio"] is not None else None,
             "descripcion": r["descripcion"] or "",
+            "estatus": calcular_estatus_cotizacion(r["estatus"], r["fecha_vencimiento"], r["id"] in cotizaciones_con_booking, hoy),
             "totales_moneda": totales_por_moneda.get(r["id"], {}),
             "gran_total_texto": " / ".join(
                 f"{moneda} ${datos['total']:,.2f}"
@@ -2801,6 +2832,48 @@ FIRMA_DEFAULT = {
 }
 
 
+def calcular_estatus_cotizacion(estatus_guardado, fecha_vencimiento, tiene_bookings, hoy=None):
+    """El estatus visible de una cotización combina lo guardado con lo que
+    se puede derivar: Ganada gana sobre todo (tiene ≥1 booking aplicado,
+    sin importar si ya venció o se había marcado perdida por error);
+    Perdida es la única acción manual real (crm_cotizaciones.estatus);
+    Vencido/Vigente se calculan comparando fecha_vencimiento con hoy —
+    nunca se guardan en la base."""
+    if tiene_bookings:
+        return "ganada"
+    if estatus_guardado == "perdida":
+        return "perdida"
+    hoy = hoy or datetime.now(TZ_LOCAL).date()
+    if fecha_vencimiento and fecha_vencimiento < hoy:
+        return "vencido"
+    return "vigente"
+
+
+def obtener_bookings_disponibles_cliente(cliente_nombre):
+    """Bookings reales (reporte_bookings) del cliente de esta cotización,
+    casados por nombre (mismo criterio que 'tiene_booking' en Clientes),
+    para el selector "Aplicar a booking" en el detalle. Excluye bookings
+    que ya están aplicados a CUALQUIER cotización (la restricción unique
+    de crm_cotizacion_bookings.booking_referencia ya lo impediría, esto
+    solo evita ofrecerlo de entrada en el selector)."""
+    if not cliente_nombre:
+        return []
+    db = get_db()
+    filas = db.execute("""
+        SELECT rb.referencia, rb.fecha, rb.venta
+        FROM reporte_bookings rb
+        WHERE upper(trim(rb.cliente_servicio)) = upper(trim(%s))
+          AND NOT EXISTS (SELECT 1 FROM crm_cotizacion_bookings cb WHERE cb.booking_referencia = rb.referencia)
+        ORDER BY rb.fecha DESC LIMIT 200
+    """, (cliente_nombre,)).fetchall()
+    db.close()
+    return [
+        {"referencia": r["referencia"], "fecha": r["fecha"].strftime("%Y-%m-%d") if r["fecha"] else "",
+         "venta": float(r["venta"] or 0)}
+        for r in filas if r["referencia"]
+    ]
+
+
 def construir_documento_cotizacion_crm(cotizacion_id):
     """Junta toda la información de una cotización (cliente/prospecto,
     contacto, catálogos resueltos, líneas de producto con su total) para
@@ -2812,7 +2885,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
                ct.telefono AS contacto_telefono, ct.correo AS contacto_correo,
                i.nombre AS incoterm, m.nombre AS modalidad,
                f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo,
-               cu.email AS creador_correo
+               cu.email AS creador_correo, mp.nombre AS motivo_perdida_nombre
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
@@ -2820,11 +2893,21 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN crm_motivos_perdida mp ON mp.id = co.motivo_perdida_id
         WHERE co.id = %s
     """, (cotizacion_id,)).fetchone()
-    db.close()
     if fila is None:
+        db.close()
         return None
+
+    bookings_aplicados = db.execute("""
+        SELECT cb.booking_referencia AS referencia, cb.aplicado_en, rb.fecha, rb.venta
+        FROM crm_cotizacion_bookings cb
+        LEFT JOIN reporte_bookings rb ON rb.referencia = cb.booking_referencia
+        WHERE cb.cotizacion_id = %s ORDER BY cb.aplicado_en
+    """, (cotizacion_id,)).fetchall()
+    motivos_perdida = db.execute("SELECT id, nombre FROM crm_motivos_perdida ORDER BY nombre").fetchall()
+    db.close()
 
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
     # al cliente: usa la firma capturada si existe, si no deriva un nombre
@@ -2838,6 +2921,12 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     else:
         cliente_nombre = fila["cliente_prospecto"] or "Prospecto"
     vendedor = nombre_creador or (fila["cliente_vendedor"] or "") if fila["cliente_folio"] is not None else nombre_creador
+
+    estatus = calcular_estatus_cotizacion(fila["estatus"], fila["fecha_vencimiento"], bool(bookings_aplicados))
+    # Se puede seguir aplicando más bookings a una cotización ya Ganada
+    # (varios embarques de un mismo cliente cuentan para la misma
+    # cotización); solo se bloquea si está Perdida.
+    bookings_disponibles = [] if estatus == "perdida" else obtener_bookings_disponibles_cliente(cliente_nombre)
 
     lineas_crudas = obtener_lineas_cotizacion_crm(cotizacion_id)
     lineas = []
@@ -2897,6 +2986,17 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         "firma_puesto": fila["firma_puesto"] or (FIRMA_DEFAULT["puesto"] if not fila["creador_correo"] else ""),
         "firma_telefono": fila["firma_telefono"] or (FIRMA_DEFAULT["telefono"] if not fila["creador_correo"] else ""),
         "firma_correo": fila["firma_correo"] or fila["creador_correo"] or FIRMA_DEFAULT["correo"],
+        "estatus": estatus,
+        "motivo_perdida_nombre": fila["motivo_perdida_nombre"] or "",
+        "perdida_en": fila["perdida_en"],
+        "bookings_aplicados": [
+            {"referencia": b["referencia"],
+             "fecha": b["fecha"].strftime("%Y-%m-%d") if b["fecha"] else "",
+             "venta": float(b["venta"]) if b["venta"] is not None else None}
+            for b in bookings_aplicados
+        ],
+        "bookings_disponibles": bookings_disponibles,
+        "motivos_perdida": [{"id": m["id"], "nombre": m["nombre"]} for m in motivos_perdida],
     }
 
 
@@ -2940,8 +3040,8 @@ def clonar_cotizacion_crm(cotizacion_id):
 
     db.execute("""
         INSERT INTO crm_cotizacion_productos
-            (cotizacion_id, producto_id, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden)
-        SELECT %s, producto_id, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden
+            (cotizacion_id, producto_id, producto_texto, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden)
+        SELECT %s, producto_id, producto_texto, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden
         FROM crm_cotizacion_productos WHERE cotizacion_id = %s
     """, (nuevo_id, cotizacion_id))
 
@@ -3393,18 +3493,26 @@ def crm_cotizacion_nueva():
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/editar", methods=["GET", "POST"])
 @crm_required
 def crm_cotizacion_editar(cotizacion_id):
+    db = get_db()
+    cotizacion = db.execute("SELECT * FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    if cotizacion is None:
+        db.close()
+        return "No encontrado", 404
+    tiene_bookings = db.execute(
+        "SELECT 1 FROM crm_cotizacion_bookings WHERE cotizacion_id = %s LIMIT 1", (cotizacion_id,)
+    ).fetchone() is not None
+    db.close()
+    estatus_actual = calcular_estatus_cotizacion(cotizacion["estatus"], cotizacion["fecha_vencimiento"], tiene_bookings)
+    if estatus_actual in ("ganada", "perdida"):
+        flash(f"Esta cotización ya está {estatus_actual} y no se puede editar. Puedes clonarla para crear una nueva.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
     if request.method == "POST":
         error = guardar_cotizacion_crm(cotizacion_id)
         if error:
             flash(error)
         else:
             return redirect(url_for("crm_seccion", slug="cotizaciones"))
-
-    db = get_db()
-    cotizacion = db.execute("SELECT * FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
-    db.close()
-    if cotizacion is None:
-        return "No encontrado", 404
 
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
@@ -3445,6 +3553,91 @@ def crm_cotizacion_detalle(cotizacion_id):
         titulo_pagina=documento["nombre_cotizacion"] or f"Cotización {documento['id_cotizacion']}",
         doc=documento, cotizacion_id=cotizacion_id,
     )
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
+@crm_required
+def crm_cotizacion_aplicar_booking(cotizacion_id):
+    """Liga un booking real a la cotización: la marca como Ganada (basta
+    con tener uno o varios bookings aplicados). Se puede seguir aplicando
+    más bookings después, pero no si ya está Perdida."""
+    referencia = request.form.get("booking_referencia", "").strip()
+    if not referencia:
+        flash("Selecciona un booking antes de aplicar.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    db = get_db()
+    cotizacion = db.execute("SELECT estatus FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    if cotizacion is None:
+        db.close()
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    if cotizacion["estatus"] == "perdida":
+        db.close()
+        flash("Esta cotización está marcada como Perdida; no se le pueden aplicar bookings.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    booking = db.execute("SELECT referencia FROM reporte_bookings WHERE referencia = %s", (referencia,)).fetchone()
+    if booking is None:
+        db.close()
+        flash("Ese booking no existe.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    try:
+        db.execute(
+            "INSERT INTO crm_cotizacion_bookings (cotizacion_id, booking_referencia) VALUES (%s, %s)",
+            (cotizacion_id, referencia),
+        )
+        db.commit()
+    except psycopg.errors.UniqueViolation:
+        db.rollback()
+        flash("Ese booking ya está aplicado a otra cotización.")
+        db.close()
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+    db.close()
+    flash(f"Cotización marcada como Ganada, aplicada al booking {referencia}.")
+    return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/marcar-perdida", methods=["POST"])
+@crm_required
+def crm_cotizacion_marcar_perdida(cotizacion_id):
+    """Marca la cotización como Perdida; exige un motivo del catálogo
+    (Catálogos → Motivos de Pérdida). No aplica si ya tiene bookings
+    ganados — una cotización ganada no se puede volver a perder."""
+    motivo_id_raw = request.form.get("motivo_perdida_id", "").strip()
+    motivo_id = int(motivo_id_raw) if motivo_id_raw.isdigit() else None
+    if motivo_id is None:
+        flash("Selecciona un motivo antes de marcar la cotización como Perdida.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    db = get_db()
+    cotizacion = db.execute("SELECT id FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    if cotizacion is None:
+        db.close()
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    tiene_bookings = db.execute(
+        "SELECT 1 FROM crm_cotizacion_bookings WHERE cotizacion_id = %s LIMIT 1", (cotizacion_id,)
+    ).fetchone() is not None
+    if tiene_bookings:
+        db.close()
+        flash("Esta cotización ya está Ganada; no se puede marcar como Perdida.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+    motivo = db.execute("SELECT id FROM crm_motivos_perdida WHERE id = %s", (motivo_id,)).fetchone()
+    if motivo is None:
+        db.close()
+        flash("Ese motivo no existe.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    db.execute(
+        "UPDATE crm_cotizaciones SET estatus = 'perdida', motivo_perdida_id = %s, perdida_en = now() WHERE id = %s",
+        (motivo_id, cotizacion_id),
+    )
+    db.commit()
+    db.close()
+    flash("Cotización marcada como Perdida.")
+    return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/clonar", methods=["POST"])
@@ -3532,6 +3725,40 @@ def crm_producto_eliminar(producto_id):
     db.commit()
     db.close()
     return redirect(url_for("crm_productos"))
+
+
+@app.route("/crm/motivos-perdida", methods=["GET", "POST"])
+@crm_required
+def crm_motivos_perdida():
+    """Catálogo de motivos por los que se puede perder una cotización;
+    obligatorio para poder marcarla como Perdida (CRM → Cotizaciones)."""
+    db = get_db()
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip().upper()
+        if not nombre:
+            flash("El nombre es obligatorio.")
+        else:
+            db.execute(
+                "INSERT INTO crm_motivos_perdida (nombre) VALUES (%s) ON CONFLICT (nombre) DO NOTHING", (nombre,)
+            )
+            db.commit()
+        db.close()
+        return redirect(url_for("crm_motivos_perdida"))
+
+    filas = db.execute("SELECT id, nombre FROM crm_motivos_perdida ORDER BY nombre").fetchall()
+    db.close()
+    nav_groups = agrupar_nav_crm("motivos-perdida")
+    return render_template("crm_motivos_perdida.html", nav_groups=nav_groups, titulo_pagina="Motivos de Pérdida", motivos=filas)
+
+
+@app.route("/crm/motivos-perdida/<int:motivo_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_motivo_perdida_eliminar(motivo_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_motivos_perdida WHERE id = %s", (motivo_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_motivos_perdida"))
 
 
 @app.route("/catalogos")

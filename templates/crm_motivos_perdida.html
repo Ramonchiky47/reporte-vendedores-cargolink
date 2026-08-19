@@ -1,0 +1,43 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-agregar-producto { display: flex; gap: 0.5rem; margin-bottom: 1rem; max-width: 420px; }
+  .form-agregar-producto input { flex: 1; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem; }
+  .form-agregar-producto button { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; max-width: 560px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; }
+  .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: #c0392b; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Motivos de Pérdida</h2>
+  <p class="pista">Catálogo de motivos que puede elegir quien marca una cotización como Perdida (CRM → Cotizaciones). No se puede marcar Perdida sin elegir un motivo de esta lista.</p>
+
+  <form class="form-agregar-producto" method="post">
+    <input type="text" name="nombre" placeholder="Nombre del motivo" required>
+    <button type="submit">+ Agregar</button>
+  </form>
+
+  {% if motivos %}
+  <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Motivo</th><th>Acciones</th></tr></thead>
+      <tbody>
+        {% for m in motivos %}
+        <tr>
+          <td>{{ m.nombre }}</td>
+          <td>
+            <form method="post" action="{{ url_for('crm_motivo_perdida_eliminar', motivo_id=m.id) }}" onsubmit="return confirm('¿Borrar este motivo? Las cotizaciones que ya lo usan lo perderán.');">
+              <button type="submit" class="btn-borrar">Borrar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay motivos en el catálogo.</p>
+  {% endif %}
+{% endblock %}

@@ -11,6 +11,13 @@
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.75rem; }
   .badge-si { background: #dcfce7; color: #166534; }
   .badge-no { background: #f1f1f1; color: #757575; }
+  .badge-estatus { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700; }
+  .badge-estatus.vigente { background: #e3f2fd; color: #1565c0; }
+  .badge-estatus.vencido { background: #fff3e0; color: #e65100; }
+  .badge-estatus.ganada { background: #dcfce7; color: #166534; }
+  .badge-estatus.perdida { background: #fee2e2; color: #991b1b; }
+  tbody tr.fila-ganada td { background: #f0fdf4; }
+  tbody tr.fila-ganada:hover td { background: #dcfce7; }
   td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
   .btn-editar, .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; text-decoration: none; display: inline-block; }
   .btn-editar { background: #ef6c00; }
@@ -38,6 +45,7 @@
     <table class="tabla-ordenable">
       <thead>
         <tr>
+          <th data-campo="estatus">Estatus</th>
           <th data-campo="nombre_cotizacion">Nombre</th>
           <th data-campo="cliente">Cliente</th>
           <th data-campo="contacto">Contacto</th>
@@ -57,7 +65,12 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+          <td>
+            <span class="badge-estatus {{ c.estatus }}">
+              {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
+            </span>
+          </td>
           <td>{{ c.nombre_cotizacion }}</td>
           <td>{{ c.cliente }}</td>
           <td>{{ c.contacto }}</td>
@@ -73,7 +86,9 @@
           <td>{{ c.gran_total_texto }}</td>
           <td class="num">{{ "${:,.2f}".format(c.profit_estimado) if c.profit_estimado is not none else "" }}</td>
           <td class="acciones" onclick="event.stopPropagation();">
-            <a class="btn-editar" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=c.id) }}">Editar</a>
+            {% if c.estatus not in ('ganada', 'perdida') %}
+              <a class="btn-editar" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=c.id) }}">Editar</a>
+            {% endif %}
             <a class="btn-editar" style="background:#555;" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=c.id) }}">PDF</a>
             <form method="post" action="{{ url_for('crm_cotizacion_eliminar', cotizacion_id=c.id) }}" onsubmit="return confirm('¿Borrar esta cotización? Esta acción no se puede deshacer.');">
               <button type="submit" class="btn-borrar">Borrar</button>
