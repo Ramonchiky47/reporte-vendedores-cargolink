@@ -20,6 +20,11 @@
 
   .caja-accion { border: 1px solid var(--borde); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem; background: #fafafa; }
   .caja-accion h4 { margin: 0 0 0.6rem; font-size: 0.85rem; }
+  .detalle-aplicar-booking summary {
+    font-size: 0.85rem; font-weight: 700; cursor: pointer; color: #222; list-style: revert;
+  }
+  .detalle-aplicar-booking[open] summary { margin-bottom: 0.6rem; }
+  .detalle-aplicar-booking summary::-webkit-details-marker { margin-right: 0.3rem; }
   .fila-accion { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .fila-accion select {
     padding: 0.5rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem;
@@ -99,8 +104,8 @@
   {% endif %}
 
   {% if doc.estatus != 'perdida' %}
-  <div class="caja-accion">
-    <h4>Aplicar a bookings del cliente</h4>
+  <details class="caja-accion detalle-aplicar-booking">
+    <summary>Aplicar a bookings del cliente</summary>
     {% if doc.bookings_disponibles %}
     <form method="post" action="{{ url_for('crm_cotizacion_aplicar_booking', cotizacion_id=cotizacion_id) }}" id="form-aplicar-booking" onsubmit="return confirm('¿Aplicar esta cotización a los bookings seleccionados? Quedará (o seguirá) como Ganada.');">
       <div class="lista-checks-bookings">
@@ -119,7 +124,7 @@
     {% else %}
       <p class="pendiente">Sin bookings disponibles de este cliente.</p>
     {% endif %}
-  </div>
+  </details>
   {% endif %}
 
   {% if doc.estatus in ('vigente', 'vencido') %}
