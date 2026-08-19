@@ -2718,7 +2718,6 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         "bookings_anterior": len(booking_anterior),
         "venta": venta_periodo, "venta_delta": delta_pct(venta_periodo, venta_anterior), "venta_anterior": venta_anterior,
         "profit": profit_periodo, "profit_delta": delta_pct(profit_periodo, profit_anterior), "profit_anterior": profit_anterior,
-        "ticket_promedio": (venta_periodo / len(booking_periodo)) if booking_periodo else 0,
     }
 
     dias = [inicio_tendencia + timedelta(days=i) for i in range(30)]

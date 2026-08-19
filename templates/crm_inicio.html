@@ -179,11 +179,6 @@
       <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.profit) }}</div>
       {{ delta(kpis.profit_delta, '${:,.0f}'.format(kpis.profit_anterior), etiqueta_anterior) }}
     </div>
-    <div class="kpi">
-      <div class="kpi__etiqueta">Ticket promedio</div>
-      <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.ticket_promedio) }}</div>
-      <div class="kpi__delta neutro">Por booking, periodo elegido</div>
-    </div>
   </div>
 
   <div class="fila-tendencias">
