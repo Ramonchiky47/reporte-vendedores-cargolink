@@ -1946,6 +1946,14 @@ def reportes_por_vendedor():
     return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
+@app.route("/reportes/por-cliente")
+@reportes_required
+def reportes_por_cliente():
+    filas = construir_filas_reportes(plazas_permitidas_usuario())
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_por_cliente.html", datos_json=datos_json, hay_datos=len(filas) > 0)
+
+
 @app.route("/reportes/clientes-mensual")
 @reportes_required
 def reportes_clientes_mensual():

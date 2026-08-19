@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Reporte por Cliente{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+  }
+  main { max-width: 1120px; }
+
+  .rp-volver { font-size: .82rem; color: var(--rp-ink-2); text-decoration: none; display: inline-block; margin-bottom: .75rem; }
+  .rp-volver:hover { text-decoration: underline; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.25rem 0 0; }
+  .rp-oculto { display: none !important; }
+
+  .rp-buscador-clientes { max-width: 340px; margin-bottom: .9rem; }
+  .rp-buscador-clientes input {
+    width: 100%; padding: .55rem .7rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: .9rem;
+  }
+  .rp-contador-clientes { font-size: .78rem; color: var(--rp-ink-3); margin: -.5rem 0 .8rem; }
+
+  #rp-tabla-clientes-lista tbody tr { cursor: pointer; }
+  #rp-tabla-clientes-lista tbody tr:hover td { background: #f8fafc; }
+  #rp-tabla-clientes-lista td:not(:first-child), #rp-tabla-clientes-lista th:not(:first-child) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+
+  .rp-tabla-scroll {
+    max-width: 100%; max-height: 70vh; overflow-x: auto; overflow-y: auto;
+    border: 1px solid var(--rp-grid); border-radius: 8px;
+  }
+  .rp-tabla-scroll table { width: auto; min-width: 100%; font-size: .75rem; }
+  .rp-tabla-scroll thead th { position: sticky; top: 0; z-index: 1; }
+  .rp-tabla-scroll td, .rp-tabla-scroll th { white-space: nowrap; }
+  .rp-tabla-scroll td:first-child, .rp-tabla-scroll th:first-child {
+    position: sticky; left: 0; z-index: 2; background: #f8fafc; box-shadow: 1px 0 0 var(--rp-grid);
+  }
+  .rp-tabla-scroll thead th:first-child { z-index: 3; }
+  .rp-tabla-scroll td:not(:first-child), .rp-tabla-scroll th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .rp-tabla-scroll::-webkit-scrollbar { height: 12px; width: 12px; }
+  .rp-tabla-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #f1f5f9; }
+  .rp-tabla-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+  .rp-tabla-scroll { scrollbar-color: #94a3b8 #f1f5f9; scrollbar-width: auto; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <div class="card">
+    <p class="empty">Todavía no hay datos para este reporte. Genera un reporte primero en "Reporte" o "Dashboard".</p>
+  </div>
+{% else %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+
+  <div class="card" id="rp-vista-lista">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Reporte por Cliente</h2>
+        <p class="sub">Elige un cliente para ver su venta, profit, margen y bookings — mensual, de enero a la fecha.</p>
+      </div>
+    </div>
+    <div class="rp-buscador-clientes">
+      <input type="text" id="rp-buscar-cliente" autocomplete="off" placeholder="Buscar cliente...">
+    </div>
+    <p class="rp-contador-clientes"><span id="rp-contador-visibles"></span> cliente(s).</p>
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-clientes-lista">
+        <thead><tr><th>Cliente</th><th>Cant Booking</th><th>Venta</th><th>Profit</th></tr></thead>
+        <tbody id="rp-tabla-clientes-lista-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card rp-oculto" id="rp-vista-detalle">
+    <div class="rp-tabla-header">
+      <div>
+        <a class="rp-volver" href="#" id="rp-volver-lista" style="margin-bottom:.3rem; display:inline-block;">&larr; Todos los clientes</a>
+        <h2 id="rp-cliente-nombre"></h2>
+        <p class="sub">Venta, profit, margen y bookings — mensual, de enero a la fecha.</p>
+      </div>
+      {% if puede_exportar %}<button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>{% endif %}
+    </div>
+
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-cliente-detalle">
+        <thead><tr id="rp-tabla-cliente-detalle-head"></tr></thead>
+        <tbody id="rp-tabla-cliente-detalle-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script id="datos-reportes" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-reportes").textContent);
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ---- Reporte por Cliente: mismo dato y mismo pivote mensual que
+  // Reporte por vendedor (construir_filas_reportes), pero agrupado por
+  // cliente en vez de por vendedor, con una lista de clientes como
+  // pantalla previa al detalle. ----
+  const METRICAS = [
+    { key: "venta", label: "Venta", fmt: fmtMoneda },
+    { key: "profit", label: "Profit", fmt: fmtMoneda },
+    { key: "margen", label: "Margen", fmt: (v) => Math.round(v * 100) + "%" },
+    { key: "cant", label: "Cant Booking", fmt: fmtEntero },
+    { key: "cantCustomer", label: "Booking ingresados por Customer", fmt: fmtEntero },
+    { key: "cantAV2Customer", label: "Booking ingresados por AV2 Vendedor", fmt: fmtEntero },
+    { key: "cantPropio", label: "Cliente propio", fmt: fmtEntero },
+    { key: "cantAgente", label: "Agente extranjero", fmt: fmtEntero },
+  ];
+
+  const anioActual = TODOS.reduce((max, f) => (f.mes > max ? f.mes : max), "0000-00").slice(0, 4);
+  const FILAS_ANIO = TODOS.filter((f) => f.mes.startsWith(anioActual));
+  const MESES = Array.from(new Set(FILAS_ANIO.map((f) => f.mes))).sort();
+
+  function pivotearPorMes(filas) {
+    const porMes = new Map();
+    MESES.forEach((m) => porMes.set(m, {
+      venta: 0, profit: 0, cant: 0,
+      cantPropio: 0, cantAgente: 0, cantCustomer: 0, cantAV2Customer: 0,
+      porTipoServicio: new Map(),
+    }));
+    for (const f of filas) {
+      const acc = porMes.get(f.mes);
+      acc.venta += f.venta;
+      acc.profit += f.profit;
+      acc.cant += 1;
+      if (f.tipo === "CLIENTE PROPIO") acc.cantPropio += 1;
+      else if (f.tipo === "AGENTE EXTRANJERO") acc.cantAgente += 1;
+      if (f.ejecutivo === "AV2 CUSTOMER") acc.cantAV2Customer += 1;
+      else if (f.ejecutivo) acc.cantCustomer += 1;
+      const tServ = f.tipoServicio || "Sin tipo";
+      acc.porTipoServicio.set(tServ, (acc.porTipoServicio.get(tServ) || 0) + 1);
+    }
+    const resultado = {};
+    for (const [mes, acc] of porMes) {
+      resultado[mes] = {
+        venta: acc.venta,
+        profit: acc.profit,
+        margen: acc.venta ? acc.profit / acc.venta : 0,
+        cant: acc.cant,
+        cantPropio: acc.cantPropio,
+        cantAgente: acc.cantAgente,
+        cantCustomer: acc.cantCustomer,
+        cantAV2Customer: acc.cantAV2Customer,
+        porTipoServicio: acc.porTipoServicio,
+      };
+    }
+    return resultado;
+  }
+
+  // ---- Lista de clientes (totales del año en curso, para ordenar) ----
+  const totalesPorCliente = new Map();
+  for (const f of FILAS_ANIO) {
+    if (!totalesPorCliente.has(f.cliente)) {
+      totalesPorCliente.set(f.cliente, { cliente: f.cliente, cant: 0, venta: 0, profit: 0 });
+    }
+    const acc = totalesPorCliente.get(f.cliente);
+    acc.cant += 1;
+    acc.venta += f.venta;
+    acc.profit += f.profit;
+  }
+  const clientesOrdenados = Array.from(totalesPorCliente.values()).sort((a, b) => b.venta - a.venta);
+
+  const vistaLista = document.getElementById("rp-vista-lista");
+  const vistaDetalle = document.getElementById("rp-vista-detalle");
+  const cuerpoLista = document.getElementById("rp-tabla-clientes-lista-body");
+  const contadorVisibles = document.getElementById("rp-contador-visibles");
+  const buscador = document.getElementById("rp-buscar-cliente");
+
+  function renderLista(filtro) {
+    const termino = (filtro || "").trim().toLowerCase();
+    const visibles = clientesOrdenados.filter((c) => !termino || c.cliente.toLowerCase().includes(termino));
+    contadorVisibles.textContent = visibles.length;
+    cuerpoLista.innerHTML = visibles.map((c) => `
+      <tr data-cliente="${escaparHtml(c.cliente)}">
+        <td>${escaparHtml(c.cliente)}</td>
+        <td>${fmtEntero(c.cant)}</td>
+        <td>${fmtMoneda(c.venta)}</td>
+        <td>${fmtMoneda(c.profit)}</td>
+      </tr>
+    `).join("");
+    cuerpoLista.querySelectorAll("tr").forEach((fila) => {
+      fila.addEventListener("click", () => abrirDetalle(fila.dataset.cliente));
+    });
+  }
+
+  function renderDetalle(cliente) {
+    const filas = FILAS_ANIO.filter((f) => f.cliente === cliente);
+    const pivote = pivotearPorMes(filas);
+
+    document.getElementById("rp-cliente-nombre").textContent = cliente;
+
+    const thead = document.getElementById("rp-tabla-cliente-detalle-head");
+    thead.innerHTML = "<th>Métrica</th>" + MESES.map((m) => `<th>${escaparHtml(m)}</th>`).join("");
+
+    const tbody = document.getElementById("rp-tabla-cliente-detalle-body");
+    if (filas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="${MESES.length + 1}" class="empty">Sin datos para este cliente.</td></tr>`;
+      return;
+    }
+
+    const totalPorTipoServicio = new Map();
+    for (const mes of MESES) {
+      for (const [tipo, cant] of pivote[mes].porTipoServicio) {
+        totalPorTipoServicio.set(tipo, (totalPorTipoServicio.get(tipo) || 0) + cant);
+      }
+    }
+    const tiposServicioOrdenados = Array.from(totalPorTipoServicio.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([tipo]) => tipo);
+
+    const filasMetricas = METRICAS.map((metrica) => `
+      <tr>
+        <td>${metrica.label}</td>
+        ${MESES.map((m) => `<td>${metrica.fmt(pivote[m][metrica.key])}</td>`).join("")}
+      </tr>
+    `).join("");
+
+    const filasTipoServicio = tiposServicioOrdenados.map((tipo) => `
+      <tr>
+        <td>Tipo de servicio: ${escaparHtml(tipo)}</td>
+        ${MESES.map((m) => `<td>${fmtEntero(pivote[m].porTipoServicio.get(tipo) || 0)}</td>`).join("")}
+      </tr>
+    `).join("");
+
+    tbody.innerHTML = filasMetricas + filasTipoServicio;
+  }
+
+  function abrirDetalle(cliente) {
+    renderDetalle(cliente);
+    vistaLista.classList.add("rp-oculto");
+    vistaDetalle.classList.remove("rp-oculto");
+    window.scrollTo({ top: 0 });
+  }
+
+  document.getElementById("rp-volver-lista").addEventListener("click", (e) => {
+    e.preventDefault();
+    vistaDetalle.classList.add("rp-oculto");
+    vistaLista.classList.remove("rp-oculto");
+  });
+
+  buscador.addEventListener("input", () => renderLista(buscador.value));
+  renderLista("");
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${c.textContent.replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(",");
+    });
+    const csv = "﻿" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const btnExportar = document.getElementById("rp-exportar-tabla");
+  if (btnExportar) {
+    btnExportar.addEventListener("click", () => {
+      const nombreCliente = document.getElementById("rp-cliente-nombre").textContent.replace(/[^a-z0-9]+/gi, "_");
+      exportarTablaCSV("rp-tabla-cliente-detalle", `Reporte_por_cliente_${nombreCliente}_${new Date().toISOString().slice(0, 10)}.csv`);
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}
