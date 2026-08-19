@@ -165,5 +165,9 @@
     document.querySelectorAll('table.tabla-ordenable').forEach(inicializarOrdenamiento);
   </script>
   {% block extra_script %}{% endblock %}
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
