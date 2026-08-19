@@ -11,6 +11,7 @@
       </p>
       <p><a href="{{ url_for('catalogo_presupuesto_plantilla') }}">Descargar plantilla .xlsx</a></p>
       <form method="post" action="{{ url_for('catalogo_presupuesto_carga_masiva') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row">
           <div class="field">
             <label for="archivo">Archivo (.csv o .xlsx)</label>

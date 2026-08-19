@@ -42,6 +42,7 @@
               <div class="permisos-lista">
                 {% for campo, etiqueta in permisos_lista %}
                 <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="campo" value="{{ campo }}">
                   <input type="hidden" name="valor" value="{{ '0' if fila[campo] else '1' }}">
                   <button class="permiso-pill{{ ' activo' if fila[campo] else '' }}" type="submit">

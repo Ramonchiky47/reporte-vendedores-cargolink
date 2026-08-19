@@ -18,6 +18,7 @@ function formatearMiles(input) {
       <h2>Editar presupuesto</h2>
       <p class="hint">Indica al menos un Vendedor o un Desarrollador (puedes dejar el otro en blanco).</p>
       <form method="post" action="{{ url_for('catalogo_presupuesto_editar', fila_id=fila.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row">
           <div class="field">
             <label for="mes">Mes</label>

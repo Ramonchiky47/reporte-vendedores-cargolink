@@ -48,6 +48,7 @@
   <h2>{{ titulo_pagina }}</h2>
 
   <form class="form-contacto" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fila-2">
       <div>
         <label for="nombre">Nombre *</label>

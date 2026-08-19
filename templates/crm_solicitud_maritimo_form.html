@@ -30,6 +30,7 @@
   <p class="id-cotizacion">Cotización asociada: <strong>{{ cotizacion.id_cotizacion }}</strong>{{ ' · ' + cotizacion.nombre_cotizacion if cotizacion.nombre_cotizacion else '' }}. La referencia de la solicitud se genera automáticamente al guardar.</p>
 
   <form class="form-solicitud" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fila-2">
       <div>
         <label for="importacion_exportacion">Importación o Exportación</label>

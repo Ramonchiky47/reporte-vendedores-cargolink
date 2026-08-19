@@ -33,6 +33,7 @@
             <td>{{ fila.plaza }}</td>
             <td>
               <form class="inline" method="post" action="{{ url_for('crm_plazas_toggle') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="plaza" value="{{ fila.plaza }}">
                 <input type="hidden" name="valor" value="{{ '0' if fila.habilitada else '1' }}">
                 <button class="permiso-pill{{ ' activo' if fila.habilitada else '' }}" type="submit">

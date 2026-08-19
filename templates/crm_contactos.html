@@ -75,6 +75,7 @@
           <td class="acciones" onclick="event.stopPropagation();">
             <a class="btn-editar" href="{{ url_for('crm_contacto_editar', contacto_id=c.id) }}">Editar</a>
             <form method="post" action="{{ url_for('crm_contacto_eliminar', contacto_id=c.id) }}" onsubmit="return confirm('¿Borrar este contacto? Esta acción no se puede deshacer.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-borrar">Borrar</button>
             </form>
           </td>

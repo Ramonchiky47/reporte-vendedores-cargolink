@@ -25,6 +25,7 @@
   <p class="pista">Mismo catálogo que "Tipo Ingreso/Egreso" en Cotizaciones — importado de CargoLink (Catálogos → Tipo ingreso/egreso). El nombre que agregues aquí aparece también ahí.</p>
 
   <form class="form-agregar-producto" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="nombre" placeholder="Nombre del producto" required>
     <button type="submit">+ Agregar</button>
   </form>
@@ -64,6 +65,7 @@
           <td>{% if p.bloqueado %}<span class="badge badge-bloqueado">Bloqueado</span>{% endif %}</td>
           <td>
             <form method="post" action="{{ url_for('crm_producto_eliminar', producto_id=p.id) }}" onsubmit="return confirm('¿Borrar este producto? Esta acción no se puede deshacer.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-borrar">Borrar</button>
             </form>
           </td>

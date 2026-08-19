@@ -5,6 +5,7 @@
     <div class="card">
       <h2>Nuevo desarrollador</h2>
       <form method="post" action="{{ url_for('catalogo_desarrolladores') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row">
           <div class="field">
             <label for="desarrollador">Desarrollador</label>
@@ -34,6 +35,7 @@
             <td class="actions">
               <a class="btn small secondary" href="{{ url_for('catalogo_desarrolladores_editar', fila_id=fila.id) }}">Editar</a>
               <form class="inline" method="post" action="{{ url_for('catalogo_desarrolladores_eliminar', fila_id=fila.id) }}" onsubmit="return confirm('¿Eliminar este desarrollador?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="small danger" type="submit">Eliminar</button>
               </form>
             </td>

@@ -16,6 +16,7 @@
       <p class="hint">Marca las plazas que este usuario puede ver en Dashboard y Reportes, o "Todas las plazas" para no restringirlo. Mientras no se le asigne nada, no ve ninguna.</p>
 
       <form method="post" action="{{ url_for('visibilidad_plazas_editar', user_id=usuario.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field checkbox">
           <label><input type="checkbox" id="vp-todas" name="todas_las_plazas" {% if sin_restriccion %}checked{% endif %}> Todas las plazas</label>
         </div>

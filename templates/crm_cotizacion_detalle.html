@@ -90,6 +90,7 @@
       <a class="btn-editar-cot" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=cotizacion_id) }}">Editar</a>
     {% endif %}
     <form method="post" action="{{ url_for('crm_cotizacion_clonar', cotizacion_id=cotizacion_id) }}" onsubmit="return confirm('¿Clonar esta cotización? Se creará una copia nueva con su propio ID.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn-clonar">Clonar</button>
     </form>
     <a class="btn-visualizar" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id) }}" target="_blank">Visualizar</a>
@@ -134,6 +135,7 @@
     <summary>Aplicar a bookings del cliente</summary>
     {% if doc.bookings_disponibles %}
     <form method="post" action="{{ url_for('crm_cotizacion_aplicar_booking', cotizacion_id=cotizacion_id) }}" id="form-aplicar-booking" onsubmit="return confirm('¿Aplicar esta cotización a los bookings seleccionados? Quedará (o seguirá) como Ganada.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="lista-checks-bookings">
         {% for b in doc.bookings_disponibles %}
           <label class="check-booking">
@@ -158,6 +160,7 @@
     <h4>Marcar como perdida</h4>
     {% if doc.motivos_perdida %}
     <form method="post" action="{{ url_for('crm_cotizacion_marcar_perdida', cotizacion_id=cotizacion_id) }}" onsubmit="return confirm('¿Marcar esta cotización como Perdida? Ya no se podrá editar.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="fila-accion" style="margin-bottom: 0.6rem;">
         <select name="motivo_perdida_id" id="select-motivo-perdida" required>
           <option value="">-- Selecciona un motivo --</option>

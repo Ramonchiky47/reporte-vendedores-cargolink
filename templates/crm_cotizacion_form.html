@@ -117,6 +117,7 @@
   {% endif %}
 
   <form class="form-cotizacion" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="nombre_cotizacion">Nombre de la cotización</label>
     <input type="text" id="nombre_cotizacion" name="nombre_cotizacion" maxlength="60"
            value="{{ cotizacion.nombre_cotizacion if cotizacion and cotizacion.nombre_cotizacion else '' }}">

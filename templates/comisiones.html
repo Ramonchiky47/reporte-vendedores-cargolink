@@ -158,6 +158,7 @@
       <div class="com-cargar-form" id="com-cargar-form" style="display:none;">
         <p class="hint">Trae el detalle de un folio de Egresos → Liquidación de vendedores y lo guarda en esta app.</p>
         <form method="post" action="{{ url_for('comisiones_cargar') }}" class="row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="field" style="max-width:340px;">
             <label for="folio">Folio</label>
             {% if folios_cargolink %}
@@ -185,6 +186,7 @@
           {% if cobros_cargados %}<b>{{ cobros_cargados }}</b> cobro(s) ya vinculado(s) a este folio — al traer de nuevo se reemplazan.{% endif %}
         </p>
         <form method="post" action="{{ url_for('comisiones_cobros_cargar') }}" class="row">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="folio" value="{{ folio_actual }}">
           <input type="hidden" name="descripcion" value="{{ descripcion }}">
           <div class="field" style="max-width:200px;">

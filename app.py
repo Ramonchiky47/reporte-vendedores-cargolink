@@ -9,6 +9,7 @@ resultados se guardan directo en la base de datos.
 
 import calendar
 import csv
+import hmac
 import io
 import json
 import os
@@ -26,6 +27,7 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask_wtf import CSRFProtect
 from markupsafe import Markup, escape
 from psycopg.rows import dict_row
 from xhtml2pdf import pisa
@@ -167,6 +169,15 @@ def init_db():
         );
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_registro_ingresos_fecha ON registro_ingresos (fecha_hora desc);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS intentos_login (
+            id bigint generated always as identity primary key,
+            email text not null,
+            exitoso boolean not null,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_intentos_login_email_fecha ON intentos_login (lower(email), creado_en desc);")
     db.execute("""
         CREATE TABLE IF NOT EXISTS comisiones_liquidacion_detalle (
             id bigint generated always as identity primary key,
@@ -1043,6 +1054,37 @@ except Exception as e:
 app = Flask(__name__)
 app.secret_key = get_secret_key()
 
+# EN_VERCEL: solo exigimos cookies "Secure" en producción (HTTPS). En local
+# (HTTP en 127.0.0.1) exigirlo rompería el login, porque el navegador nunca
+# manda una cookie Secure sobre una conexión sin TLS.
+EN_VERCEL = bool(os.environ.get("VERCEL"))
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=EN_VERCEL,
+    # Fuerza un re-login cada 12h: sin esto, una sesión podía quedar abierta
+    # indefinidamente (nunca vencía sola) y los permisos que trae la sesión
+    # (es_admin, puede_ver_crm, ...) nunca se refrescaban aunque un admin
+    # se los quitara a alguien en Catálogos → Accesos.
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+    # Sin esto, Flask-WTF vence el token CSRF a la hora (su default) aunque
+    # la sesión siga viva 12h — rompería formularios largos (como Nueva
+    # cotización) si alguien tarda más de una hora en llenarlos.
+    WTF_CSRF_TIME_LIMIT=None,
+)
+
+csrf = CSRFProtect(app)
+
+
+@app.after_request
+def agregar_cabeceras_seguridad(resp):
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    resp.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+    return resp
+
+
 IMPORTACIONES_URL = (os.environ.get("IMPORTACIONES_URL") or "http://localhost:3001").strip()
 
 
@@ -1168,6 +1210,60 @@ def plazas_permitidas_usuario():
     filas = db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (usuario_id,)).fetchall()
     db.close()
     return {f["plaza"] for f in filas}
+
+
+def usuario_puede_ver_cotizacion(db, cliente_folio):
+    """True si el usuario en sesión puede ver/editar/borrar/clonar una
+    cotización con este cliente_folio, según sus plazas permitidas —
+    mismo criterio que el listado de Cotizaciones (construir_cotizaciones_crm):
+    las de prospecto (cliente_folio None) son visibles para cualquiera con
+    acceso al CRM; las de cliente real heredan la plaza del vendedor
+    asignado a ese cliente. El listado ya aplicaba esta regla al armar la
+    tabla; esta función la repite para las rutas que operan sobre UNA
+    cotización puntual por id (antes solo validaban que existiera)."""
+    plazas_permitidas = plazas_permitidas_usuario()
+    if plazas_permitidas is None or cliente_folio is None:
+        return True
+    fila = db.execute("""
+        SELECT cv.plaza
+        FROM asignacion_de_clientes ac
+        LEFT JOIN catalogo_vendedores cv ON upper(trim(cv.vendedor)) = upper(trim(ac.vendedor))
+        WHERE ac.folio = %s
+    """, (cliente_folio,)).fetchone()
+    plaza = (fila["plaza"] if fila else None) or "#N/D"
+    return plaza in plazas_permitidas
+
+
+def cotizacion_visible_para_usuario(db, cotizacion_id):
+    """True si la cotización existe y el usuario en sesión tiene permiso de
+    plaza para operar sobre ella. Úsala al inicio de cualquier ruta que
+    reciba un cotizacion_id, antes de mostrar/editar/borrar nada."""
+    fila = db.execute("SELECT cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    if fila is None:
+        return False
+    return usuario_puede_ver_cotizacion(db, fila["cliente_folio"])
+
+
+def usuario_puede_ver_contacto(db, contacto_id):
+    """True si el usuario en sesión puede ver/editar/borrar este contacto,
+    según sus plazas permitidas — mismo criterio que el listado de
+    Contactos (construir_contactos_crm): uno sin ningún cliente asociado es
+    visible para cualquiera con acceso al CRM; si tiene clientes, basta con
+    que UNO caiga en una plaza permitida."""
+    plazas_permitidas = plazas_permitidas_usuario()
+    if plazas_permitidas is None:
+        return True
+    filas = db.execute("""
+        SELECT DISTINCT cv.plaza
+        FROM crm_contacto_clientes cc
+        JOIN asignacion_de_clientes ac ON ac.folio = cc.cliente_folio
+        LEFT JOIN catalogo_vendedores cv ON upper(trim(cv.vendedor)) = upper(trim(ac.vendedor))
+        WHERE cc.contacto_id = %s
+    """, (contacto_id,)).fetchall()
+    plazas_contacto = {(f["plaza"] or "#N/D") for f in filas}
+    if not plazas_contacto:
+        return True
+    return bool(plazas_contacto & plazas_permitidas)
 
 
 def usuario_puede_exportar():
@@ -1345,13 +1441,48 @@ def autenticar_contra_catalogo_accesos(email, password):
     return fila
 
 
+INTENTOS_LOGIN_LIMITE = 5
+INTENTOS_LOGIN_VENTANA_MIN = 15
+
+
+def intentos_login_bloqueado(db, email):
+    """True si este correo ya acumuló demasiados intentos fallidos en la
+    ventana reciente. Se guarda en Postgres (no en memoria del proceso)
+    porque en Vercel cada invocación puede caer en una instancia distinta —
+    un contador en memoria no serviría para frenar fuerza bruta real."""
+    fila = db.execute(
+        "SELECT count(*) AS n FROM intentos_login "
+        "WHERE lower(email) = lower(%s) AND exitoso = false "
+        "AND creado_en > now() - make_interval(mins => %s)",
+        (email, INTENTOS_LOGIN_VENTANA_MIN),
+    ).fetchone()
+    return fila["n"] >= INTENTOS_LOGIN_LIMITE
+
+
+def registrar_intento_login(db, email, exitoso):
+    db.execute("INSERT INTO intentos_login (email, exitoso) VALUES (%s, %s)", (email, exitoso))
+    db.commit()
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
         clave = request.form.get("password", "")
+
+        db = get_db()
+        if email and intentos_login_bloqueado(db, email):
+            db.close()
+            flash(f"Demasiados intentos fallidos. Espera {INTENTOS_LOGIN_VENTANA_MIN} minutos e inténtalo de nuevo.")
+            return render_template("login.html")
+
         fila = autenticar_contra_catalogo_accesos(email, clave)
+        if email:
+            registrar_intento_login(db, email, fila is not None)
+        db.close()
+
         if fila:
+            session.permanent = True
             session["logged_in"] = True
             session["usuario"] = fila["email"]
             session["usuario_id"] = str(fila["id"])
@@ -1494,10 +1625,11 @@ def generar():
 
 
 @app.route("/cron/generar-reporte", methods=["GET", "POST"])
+@csrf.exempt
 def cron_generar_reporte():
     cron_secret = os.environ.get("CRON_SECRET", "").strip()
     auth = request.headers.get("Authorization", "")
-    if not cron_secret or auth != f"Bearer {cron_secret}":
+    if not cron_secret or not hmac.compare_digest(auth, f"Bearer {cron_secret}"):
         return {"ok": False, "error": "no autorizado"}, 401
 
     now = datetime.now(TZ_LOCAL)
@@ -2964,6 +3096,9 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     if fila is None:
         db.close()
         return None
+    if not usuario_puede_ver_cotizacion(db, fila["cliente_folio"]):
+        db.close()
+        return None
 
     bookings_aplicados = db.execute("""
         SELECT cb.booking_referencia AS referencia, cb.aplicado_en, rb.fecha, rb.venta
@@ -3082,8 +3217,11 @@ def clonar_cotizacion_crm(cotizacion_id):
     desde hoy. Regresa el `id` interno de la copia, o None si el original
     no existe."""
     db = get_db()
-    original = db.execute("SELECT vencimiento_modo, fecha_vencimiento FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    original = db.execute("SELECT vencimiento_modo, fecha_vencimiento, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
     if original is None:
+        db.close()
+        return None
+    if not usuario_puede_ver_cotizacion(db, original["cliente_folio"]):
         db.close()
         return None
 
@@ -3500,6 +3638,12 @@ def crm_contacto_detalle(contacto_id):
 @app.route("/crm/contactos/<int:contacto_id>/editar", methods=["GET", "POST"])
 @crm_required
 def crm_contacto_editar(contacto_id):
+    db = get_db()
+    if not usuario_puede_ver_contacto(db, contacto_id):
+        db.close()
+        return "No encontrado", 404
+    db.close()
+
     if request.method == "POST":
         error = guardar_contacto_crm(contacto_id)
         if error:
@@ -3536,6 +3680,9 @@ def crm_contacto_editar(contacto_id):
 @crm_required
 def crm_contacto_eliminar(contacto_id):
     db = get_db()
+    if not usuario_puede_ver_contacto(db, contacto_id):
+        db.close()
+        return "No encontrado", 404
     db.execute("DELETE FROM crm_contactos WHERE id = %s", (contacto_id,))
     db.commit()
     db.close()
@@ -3574,6 +3721,9 @@ def crm_cotizacion_editar(cotizacion_id):
     if cotizacion is None:
         db.close()
         return "No encontrado", 404
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
+        db.close()
+        return "No encontrado", 404
     tiene_bookings = db.execute(
         "SELECT 1 FROM crm_cotizacion_bookings WHERE cotizacion_id = %s LIMIT 1", (cotizacion_id,)
     ).fetchone() is not None
@@ -3610,6 +3760,9 @@ def crm_cotizacion_editar(cotizacion_id):
 @crm_required
 def crm_cotizacion_eliminar(cotizacion_id):
     db = get_db()
+    if not cotizacion_visible_para_usuario(db, cotizacion_id):
+        db.close()
+        return "No encontrado", 404
     db.execute("DELETE FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,))
     db.commit()
     db.close()
@@ -3636,9 +3789,12 @@ def crm_cotizacion_detalle(cotizacion_id):
 def crm_solicitud_maritimo_nueva(cotizacion_id):
     db = get_db()
     cotizacion = db.execute(
-        "SELECT id, id_cotizacion, nombre_cotizacion FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
+        "SELECT id, id_cotizacion, nombre_cotizacion, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
     ).fetchone()
     if cotizacion is None:
+        db.close()
+        return "No encontrado", 404
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
         db.close()
         return "No encontrado", 404
 
@@ -3704,8 +3860,12 @@ def crm_cotizacion_aplicar_booking(cotizacion_id):
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db = get_db()
-    cotizacion = db.execute("SELECT estatus FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    cotizacion = db.execute("SELECT estatus, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
     if cotizacion is None:
+        db.close()
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
@@ -3757,8 +3917,12 @@ def crm_cotizacion_marcar_perdida(cotizacion_id):
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db = get_db()
-    cotizacion = db.execute("SELECT id FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
+    cotizacion = db.execute("SELECT id, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
     if cotizacion is None:
+        db.close()
+        flash("Cotización no encontrada.")
+        return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))

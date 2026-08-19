@@ -5,6 +5,7 @@
     <div class="card">
       <h2>Actualización</h2>
       <form method="post" action="{{ url_for('generar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if session.get('es_admin') %}
         <div class="row">
           <div class="field">

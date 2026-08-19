@@ -37,6 +37,7 @@
         <div class="encabezado"></div>
         {% for fila in filas %}
         <form class="fila-firma" method="post" action="{{ url_for('firmas_cotizacion_guardar', user_id=fila.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="correo-usuario">{{ fila.email }}</div>
           <div><input type="text" name="nombre_firma" maxlength="120" value="{{ fila.nombre_firma or '' }}" placeholder="Lic Nombre Apellido"></div>
           <div><input type="text" name="puesto" maxlength="120" value="{{ fila.puesto or '' }}" placeholder="Ejecutivo de Cuenta"></div>

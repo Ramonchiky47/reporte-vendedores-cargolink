@@ -123,6 +123,7 @@
           {% if puede_exportar %}<button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>{% endif %}
           {% if puede_actualizar %}
           <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn small">Actualizar</button>
           </form>
           {% endif %}

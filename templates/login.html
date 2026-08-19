@@ -43,6 +43,7 @@
       {% endif %}
     {% endwith %}
     <form method="post" action="{{ url_for('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="email">Correo electrónico</label>
       <input type="email" id="email" name="email" autocomplete="username" required autofocus>
       <label for="password">Contraseña</label>

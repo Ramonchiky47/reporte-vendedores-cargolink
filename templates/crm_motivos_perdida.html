@@ -15,6 +15,7 @@
   <p class="pista">Catálogo de motivos que puede elegir quien marca una cotización como Perdida (CRM → Cotizaciones). No se puede marcar Perdida sin elegir un motivo de esta lista.</p>
 
   <form class="form-agregar-producto" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="nombre" placeholder="Nombre del motivo" required>
     <button type="submit">+ Agregar</button>
   </form>
@@ -29,6 +30,7 @@
           <td>{{ m.nombre }}</td>
           <td>
             <form method="post" action="{{ url_for('crm_motivo_perdida_eliminar', motivo_id=m.id) }}" onsubmit="return confirm('¿Borrar este motivo? Las cotizaciones que ya lo usan lo perderán.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-borrar">Borrar</button>
             </form>
           </td>

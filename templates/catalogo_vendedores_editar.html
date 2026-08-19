@@ -5,6 +5,7 @@
     <div class="card">
       <h2>Editar vendedor</h2>
       <form method="post" action="{{ url_for('catalogo_vendedores_editar', fila_id=fila.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row">
           <div class="field">
             <label for="vendedor">Vendedor</label>
