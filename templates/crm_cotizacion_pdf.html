@@ -48,8 +48,9 @@
   /* Los anchos suman 100% distinto según haya o no columna de Impuesto/
      Observaciones: table-layout:fixed no reparte solo, y reportlab truena
      con "negative availWidth" si las columnas suman de más. */
-  table.tabla-rate.sin-impuesto th.col-concepto, table.tabla-rate.sin-impuesto td.col-concepto { width: 50%; }
-  table.tabla-rate.sin-impuesto th.col-rate, table.tabla-rate.sin-impuesto td.col-rate { width: 25%; }
+  table.tabla-rate.sin-impuesto th.col-concepto, table.tabla-rate.sin-impuesto td.col-concepto { width: 35%; }
+  table.tabla-rate.sin-impuesto th.col-rate, table.tabla-rate.sin-impuesto td.col-rate { width: 20%; }
+  table.tabla-rate.sin-impuesto th.col-obs, table.tabla-rate.sin-impuesto td.col-obs { width: 45%; }
   table.tabla-rate.con-impuesto th.col-concepto, table.tabla-rate.con-impuesto td.col-concepto { width: 20%; }
   table.tabla-rate.con-impuesto th.col-monto, table.tabla-rate.con-impuesto td.col-monto { width: 15%; }
   table.tabla-rate.con-impuesto th.col-pct, table.tabla-rate.con-impuesto td.col-pct { width: 9%; }
@@ -154,11 +155,9 @@
         {% if doc.mostrar_columna_impuesto %}
         <th class="col-rate col-pct">IMPUESTO %</th>
         <th class="col-rate col-monto">IMPUESTO</th>
-        {% endif %}
         <th class="col-rate col-monto">TOTAL</th>
-        {% if doc.mostrar_columna_impuesto %}
-        <th class="col-obs">OBSERVACIONES</th>
         {% endif %}
+        <th class="col-obs">OBSERVACIONES</th>
       </tr>
     </thead>
     <tbody>
@@ -169,11 +168,9 @@
         {% if doc.mostrar_columna_impuesto %}
         <td class="col-rate col-pct">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
         <td class="col-rate col-monto">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
-        {% endif %}
         <td class="col-rate col-monto">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
-        {% if doc.mostrar_columna_impuesto %}
-        <td class="col-obs">{{ l.observaciones or '' }}</td>
         {% endif %}
+        <td class="col-obs">{{ l.observaciones or '' }}</td>
       </tr>
       {% endfor %}
       {% if not doc.lineas %}

@@ -166,11 +166,9 @@
           {% if doc.mostrar_columna_impuesto %}
           <th class="col-rate">IMPUESTO %</th>
           <th class="col-rate">IMPUESTO</th>
-          {% endif %}
           <th class="col-rate">TOTAL</th>
-          {% if doc.mostrar_columna_impuesto %}
-          <th>OBSERVACIONES</th>
           {% endif %}
+          <th>OBSERVACIONES</th>
         </tr>
       </thead>
       <tbody>
@@ -181,11 +179,9 @@
           {% if doc.mostrar_columna_impuesto %}
           <td class="col-rate">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
           <td class="col-rate">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
-          {% endif %}
           <td class="col-rate">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
-          {% if doc.mostrar_columna_impuesto %}
-          <td>{{ l.observaciones or '' }}</td>
           {% endif %}
+          <td>{{ l.observaciones or '' }}</td>
         </tr>
         {% endfor %}
         {% if not doc.lineas %}
