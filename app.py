@@ -1128,10 +1128,24 @@ def registrar_ingreso():
         print(f"Aviso: no se pudo registrar el ingreso ({e}).")
 
 
+def sesion_activa():
+    """True si hay una sesión logueada y completa (incluye usuario_id).
+    Antes solo se checaba "logged_in": como las sesiones no expiran solas,
+    una sesión vieja de antes de que existiera usuario_id podía seguir
+    "logueada" indefinidamente pero sin usuario_id — eso hacía que, por
+    ejemplo, las cotizaciones nuevas que creara esa persona se guardaran
+    con creado_por_user_id en NULL (nadie identificable como su autor).
+    Si falta, se limpia la sesión para forzar un re-login que la complete."""
+    if session.get("logged_in") and session.get("usuario_id"):
+        return True
+    session.clear()
+    return False
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
         return view(*args, **kwargs)
@@ -1142,7 +1156,7 @@ def login_required(view):
 def admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
         if not session.get("es_admin"):
@@ -1156,7 +1170,7 @@ def admin_required(view):
 def reportes_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
         if not usuario_puede_ver_reportes():
@@ -1170,7 +1184,7 @@ def reportes_required(view):
 def catalogos_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
         if not usuario_puede_ver_catalogos():
@@ -1184,7 +1198,7 @@ def catalogos_required(view):
 def crm_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
         if not usuario_puede_ver_crm():
@@ -2937,10 +2951,15 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     # aparte en Vendedor, para que su actividad no quede invisible.
     cot_por_identidad = {}
     for f in cot_periodo:
-        if not f["identidad"]:
-            continue
-        cot_por_identidad.setdefault(f["identidad"], {"nombre": f["identidad_mostrar"], "n": 0})
-        cot_por_identidad[f["identidad"]]["n"] += 1
+        # Antes, una cotización sin firma capturada NI creador identificado
+        # (sesión vieja sin usuario_id — ver sesion_activa) se saltaba por
+        # completo aquí: contaba en "Cotizaciones creadas" pero desaparecía
+        # de este desglose, así que la suma nunca cuadraba con el total.
+        # Ahora esas caen en un bucket "#N/D" visible en vez de perderse.
+        clave = f["identidad"] or "#N/D"
+        nombre = f["identidad_mostrar"] or "Sin creador registrado"
+        cot_por_identidad.setdefault(clave, {"nombre": nombre, "n": 0})
+        cot_por_identidad[clave]["n"] += 1
     for key, datos in cot_por_identidad.items():
         if key in resumen_vendedor:
             resumen_vendedor[key]["cotizaciones"] = datos["n"]
@@ -2975,8 +2994,12 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     return {
         "kpis": kpis,
         "serie": serie,
-        "ranking": ranking[:12],
-        "ranking_desarrolladores": ranking_desarrolladores[:12],
+        # Sin límite: antes se cortaba a los primeros 12 por profit, lo que
+        # escondía a quien solo tiene cotizaciones sin bookings todavía
+        # (profit $0) — la suma de la columna Cotizaciones nunca cuadraba
+        # con el KPI "Cotizaciones creadas" de arriba.
+        "ranking": ranking,
+        "ranking_desarrolladores": ranking_desarrolladores,
         "por_vencer": por_vencer[:8],
         "vencidas": vencidas[:8],
         "plazas_opciones": plazas_opciones,
