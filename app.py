@@ -728,7 +728,7 @@ def listar_folios_liquidacion_cargolink():
     folios = [
         {"folio": int(f["folio_int"]), "descripcion": f.get("nombre") or ""}
         for f in r_lista.json().get("values", [])
-        if int(f["folio_int"]) >= 51
+        if int(f["folio_int"]) >= 40
     ]
     folios.sort(key=lambda f: f["folio"], reverse=True)
     return folios
@@ -1776,7 +1776,7 @@ def comisiones():
 
     db = get_db()
     folios_disponibles = db.execute(
-        "SELECT DISTINCT folio, descripcion FROM comisiones_liquidacion_detalle WHERE folio >= 51 ORDER BY folio DESC"
+        "SELECT DISTINCT folio, descripcion FROM comisiones_liquidacion_detalle WHERE folio >= 40 ORDER BY folio DESC"
     ).fetchall()
 
     folio_solicitado = request.args.get("folio", type=int)
