@@ -185,10 +185,10 @@
     <div class="tarjeta">
       <div class="tarjeta__cabecera">
         <div>
-          <p class="tarjeta__titulo">Venta diaria</p>
+          <p class="tarjeta__titulo">Profit diario</p>
           <p class="tarjeta__pista">Últimos 30 días · reporte_bookings</p>
         </div>
-        <div class="leyenda"><span><i style="background:var(--s-blue)"></i>Venta ($)</span></div>
+        <div class="leyenda"><span><i style="background:var(--s-blue)"></i>Profit ($)</span></div>
       </div>
       <div class="chart-wrap" id="wrap-venta">
         <svg class="chart" id="chart-venta" viewBox="0 0 900 190" preserveAspectRatio="none"></svg>
@@ -343,7 +343,7 @@
       var wrap = document.getElementById("wrap-venta");
       var W = 900, H = 190, padL = 8, padR = 8, padT = 10, padB = 22;
       var n = serieDiaria.length;
-      var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.venta; }))) * 1.12;
+      var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.profit; }))) * 1.12;
       var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
       var y = function (v) { return H - padB - (v / maxV) * (H - padT - padB); };
       var ns = "http://www.w3.org/2000/svg";
@@ -360,7 +360,7 @@
       [0.25, 0.5, 0.75, 1].forEach(function (f) { gridG.appendChild(el("line", { x1: padL, x2: W - padR, y1: y(maxV * f), y2: y(maxV * f) })); });
       svg.appendChild(gridG);
 
-      var pathD = "M" + serieDiaria.map(function (d, i) { return x(i) + "," + y(d.venta); }).join(" L");
+      var pathD = "M" + serieDiaria.map(function (d, i) { return x(i) + "," + y(d.profit); }).join(" L");
       svg.appendChild(el("path", { d: pathD + " L" + x(n - 1) + "," + y(0) + " L" + x(0) + "," + y(0) + " Z", class: "chart-area" }));
       svg.appendChild(el("path", { d: pathD, class: "chart-line" }));
 
@@ -381,12 +381,12 @@
         var i = Math.max(0, Math.min(n - 1, Math.round(((relX - padL) / (W - padL - padR)) * (n - 1))));
         var d = serieDiaria[i];
         hoverLine.setAttribute("x1", x(i)); hoverLine.setAttribute("x2", x(i));
-        hoverDot.setAttribute("cx", x(i)); hoverDot.setAttribute("cy", y(d.venta));
+        hoverDot.setAttribute("cx", x(i)); hoverDot.setAttribute("cy", y(d.profit));
         hoverLine.setAttribute("opacity", 1); hoverDot.setAttribute("opacity", 1);
         var wrapRect = wrap.getBoundingClientRect();
         tip.style.left = (rect.left - wrapRect.left + (x(i) / W) * rect.width) + "px";
-        tip.style.top = (rect.top - wrapRect.top + (y(d.venta) / H) * rect.height) + "px";
-        tip.innerHTML = "<strong>" + money(d.venta) + "</strong>" + d.fecha;
+        tip.style.top = (rect.top - wrapRect.top + (y(d.profit) / H) * rect.height) + "px";
+        tip.innerHTML = "<strong>" + money(d.profit) + "</strong>" + d.fecha;
         tip.style.opacity = 1;
       });
       svg.addEventListener("mouseleave", function () { tip.style.opacity = 0; hoverLine.setAttribute("opacity", 0); hoverDot.setAttribute("opacity", 0); });

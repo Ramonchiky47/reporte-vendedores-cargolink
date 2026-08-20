@@ -2918,12 +2918,12 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     }
 
     dias = [inicio_tendencia + timedelta(days=i) for i in range(30)]
-    venta_por_dia, cot_por_dia = {}, {}
+    profit_por_dia, cot_por_dia = {}, {}
     for f in booking_tendencia:
-        venta_por_dia[f["d"]] = venta_por_dia.get(f["d"], 0) + f["venta"]
+        profit_por_dia[f["d"]] = profit_por_dia.get(f["d"], 0) + f["profit"]
     for f in cot_tendencia:
         cot_por_dia[f["d"]] = cot_por_dia.get(f["d"], 0) + 1
-    serie = [{"fecha": d.strftime("%d/%m"), "venta": round(venta_por_dia.get(d, 0)), "cotizaciones": cot_por_dia.get(d, 0)} for d in dias]
+    serie = [{"fecha": d.strftime("%d/%m"), "profit": round(profit_por_dia.get(d, 0)), "cotizaciones": cot_por_dia.get(d, 0)} for d in dias]
 
     resumen_vendedor = {}
     for f in booking_periodo:
