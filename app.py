@@ -357,6 +357,8 @@ def init_db():
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS motivo_perdida_id bigint references crm_motivos_perdida(id) on delete set null;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS perdida_en timestamptz;")
     db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS comentario_perdida text;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS mostrar_columna_impuesto boolean not null default true;")
+    db.execute("ALTER TABLE crm_cotizaciones ADD COLUMN IF NOT EXISTS mostrar_totales boolean not null default true;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_cotizacion_bookings (
             id bigint generated always as identity primary key,
@@ -436,6 +438,7 @@ def init_db():
     db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS causa_impuesto boolean not null default false;")
     db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS impuesto numeric not null default 0;")
     db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS producto_texto text;")
+    db.execute("ALTER TABLE crm_cotizacion_productos ADD COLUMN IF NOT EXISTS observaciones text;")
     db.execute("CREATE INDEX IF NOT EXISTS idx_crm_cotizacion_productos_cotizacion ON crm_cotizacion_productos (cotizacion_id);")
     db.execute("""
         INSERT INTO crm_incoterms (nombre) VALUES
@@ -3016,7 +3019,7 @@ def obtener_lineas_cotizacion_crm(cotizacion_id):
     db = get_db()
     filas = db.execute("""
         SELECT lp.producto_id, lp.producto_texto, p.nombre AS producto_nombre, lp.cantidad, lp.precio_unitario,
-               lp.moneda, lp.causa_impuesto, lp.impuesto
+               lp.moneda, lp.causa_impuesto, lp.impuesto, lp.observaciones
         FROM crm_cotizacion_productos lp
         LEFT JOIN crm_tipos_ingreso_egreso p ON p.id = lp.producto_id
         WHERE lp.cotizacion_id = %s
@@ -3032,6 +3035,7 @@ def obtener_lineas_cotizacion_crm(cotizacion_id):
         "moneda": r["moneda"] or "MXN",
         "causa_impuesto": r["causa_impuesto"],
         "impuesto": float(r["impuesto"] or 0),
+        "observaciones": r["observaciones"] or "",
     } for r in filas]
 
 
@@ -3170,6 +3174,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             "impuesto": impuesto_monto,
             "total": subtotal + impuesto_monto,
             "moneda": l["moneda"],
+            "observaciones": l["observaciones"],
         })
         t = totales_por_moneda.setdefault(l["moneda"], {"subtotal": 0.0, "impuesto": 0.0})
         t["subtotal"] += subtotal
@@ -3183,6 +3188,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     return {
         "id_cotizacion": fila["id_cotizacion"],
         "nombre_cotizacion": fila["nombre_cotizacion"] or "",
+        "mostrar_columna_impuesto": fila["mostrar_columna_impuesto"],
+        "mostrar_totales": fila["mostrar_totales"],
         "fecha_creacion": fila["fecha_creacion"],
         "fecha_vencimiento": fila["fecha_vencimiento"],
         "fecha_creacion_larga": fecha_larga_es(fila["fecha_creacion"]),
@@ -3382,6 +3389,10 @@ def guardar_cotizacion_crm(cotizacion_id):
     tiempo_traslado = request.form.get("tiempo_traslado", "").strip()[:30]
     via = request.form.get("via", "").strip()[:60]
     descripcion = request.form.get("descripcion", "").strip()
+    # Checkboxes reales (no <select>): si no vienen marcados, el campo ni
+    # siquiera se manda con el formulario, así que ausente = False.
+    mostrar_columna_impuesto = request.form.get("mostrar_columna_impuesto") == "si"
+    mostrar_totales = request.form.get("mostrar_totales") == "si"
 
     vencimiento_modo = request.form.get("vencimiento_modo", "libre").strip()
     if vencimiento_modo not in VENCIMIENTO_DIAS + ("libre",):
@@ -3435,8 +3446,9 @@ def guardar_cotizacion_crm(cotizacion_id):
                 origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
                 incoterm_id, modalidad_id,
                 estibable, tiempo_traslado, via, seguro_mercancia,
-                profit_estimado, tipo_cambio, descripcion, creado_por_user_id
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                profit_estimado, tipo_cambio, descripcion, creado_por_user_id,
+                mostrar_columna_impuesto, mostrar_totales
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
         """, (
             id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
@@ -3445,6 +3457,7 @@ def guardar_cotizacion_crm(cotizacion_id):
             incoterm_id, modalidad_id,
             estibable, tiempo_traslado, via, seguro_mercancia,
             profit_estimado, tipo_cambio, descripcion, creado_por_user_id,
+            mostrar_columna_impuesto, mostrar_totales,
         )).fetchone()
         cotizacion_id = fila_nueva["id"]
     else:
@@ -3455,7 +3468,8 @@ def guardar_cotizacion_crm(cotizacion_id):
                 origen = %s, destino = %s, hazmat = %s, hazmat_clase = %s, hazmat_un_imo = %s,
                 incoterm_id = %s, modalidad_id = %s,
                 estibable = %s, tiempo_traslado = %s, via = %s,
-                seguro_mercancia = %s, profit_estimado = %s, tipo_cambio = %s, descripcion = %s
+                seguro_mercancia = %s, profit_estimado = %s, tipo_cambio = %s, descripcion = %s,
+                mostrar_columna_impuesto = %s, mostrar_totales = %s
             WHERE id = %s
         """, (
             nombre_cotizacion, fecha_vencimiento, vencimiento_modo,
@@ -3464,6 +3478,7 @@ def guardar_cotizacion_crm(cotizacion_id):
             incoterm_id, modalidad_id,
             estibable, tiempo_traslado, via,
             seguro_mercancia, profit_estimado, tipo_cambio, descripcion,
+            mostrar_columna_impuesto, mostrar_totales,
             cotizacion_id,
         ))
 
@@ -3492,6 +3507,7 @@ def guardar_lineas_cotizacion_crm(db, cotizacion_id):
     monedas = request.form.getlist("linea_moneda")
     causa_impuestos = request.form.getlist("linea_causa_impuesto")
     impuestos = request.form.getlist("linea_impuesto")
+    observaciones_lineas = request.form.getlist("linea_observaciones")
 
     db.execute("DELETE FROM crm_cotizacion_productos WHERE cotizacion_id = %s", (cotizacion_id,))
     orden = 0
@@ -3513,11 +3529,12 @@ def guardar_lineas_cotizacion_crm(db, cotizacion_id):
         if causa_impuesto:
             impuesto, _ = parse_numero_formato_miles(impuestos[i] if i < len(impuestos) else "")
             impuesto = impuesto or 0.0
+        observaciones = (observaciones_lineas[i].strip()[:70] if i < len(observaciones_lineas) else "") or None
         db.execute(
             "INSERT INTO crm_cotizacion_productos "
-            "(cotizacion_id, producto_id, producto_texto, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (cotizacion_id, producto_id, producto_texto, cantidad, precio, moneda, causa_impuesto, impuesto, orden),
+            "(cotizacion_id, producto_id, producto_texto, cantidad, precio_unitario, moneda, causa_impuesto, impuesto, orden, observaciones) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (cotizacion_id, producto_id, producto_texto, cantidad, precio, moneda, causa_impuesto, impuesto, orden, observaciones),
         )
         orden += 1
 

@@ -163,9 +163,14 @@
         <tr>
           <th>CONCEPTOS</th>
           <th class="col-rate">PRECIO UNITARIO</th>
+          {% if doc.mostrar_columna_impuesto %}
           <th class="col-rate">IMPUESTO %</th>
           <th class="col-rate">IMPUESTO</th>
+          {% endif %}
           <th class="col-rate">TOTAL</th>
+          {% if doc.mostrar_columna_impuesto %}
+          <th>OBSERVACIONES</th>
+          {% endif %}
         </tr>
       </thead>
       <tbody>
@@ -173,18 +178,23 @@
         <tr>
           <td>{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
           <td class="col-rate">{{ "{:,.2f}".format(l.precio_unitario) }}{{ l.moneda }}</td>
+          {% if doc.mostrar_columna_impuesto %}
           <td class="col-rate">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
           <td class="col-rate">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
+          {% endif %}
           <td class="col-rate">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
+          {% if doc.mostrar_columna_impuesto %}
+          <td>{{ l.observaciones or '' }}</td>
+          {% endif %}
         </tr>
         {% endfor %}
         {% if not doc.lineas %}
-        <tr><td colspan="5" style="text-align:center; color:#999;">Sin conceptos capturados</td></tr>
+        <tr><td colspan="{{ 6 if doc.mostrar_columna_impuesto else 3 }}" style="text-align:center; color:#999;">Sin conceptos capturados</td></tr>
         {% endif %}
       </tbody>
     </table>
 
-    {% if doc.totales_moneda %}
+    {% if doc.mostrar_totales and doc.totales_moneda %}
     <div class="tarjetas-totales">
       {% for t in doc.totales_moneda %}
       <div class="tarjeta-moneda">

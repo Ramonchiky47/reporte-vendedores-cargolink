@@ -42,9 +42,18 @@
   .rejilla-envio .valor { font-size: 6.5pt; color: #222222; margin: 0; }
 
   table.tabla-rate { table-layout: fixed; }
-  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 7.5pt; width: 32%; }
-  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; width: 17%; }
+  table.tabla-rate th { background-color: #7a1f2c; color: #ffffff; text-align: left; padding: 6px 10px; font-size: 7.5pt; }
+  table.tabla-rate th.col-rate, table.tabla-rate td.col-rate { text-align: right; }
   table.tabla-rate td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 7pt; }
+  /* Los anchos suman 100% distinto según haya o no columna de Impuesto/
+     Observaciones: table-layout:fixed no reparte solo, y reportlab truena
+     con "negative availWidth" si las columnas suman de más. */
+  table.tabla-rate.sin-impuesto th.col-concepto, table.tabla-rate.sin-impuesto td.col-concepto { width: 50%; }
+  table.tabla-rate.sin-impuesto th.col-rate, table.tabla-rate.sin-impuesto td.col-rate { width: 25%; }
+  table.tabla-rate.con-impuesto th.col-concepto, table.tabla-rate.con-impuesto td.col-concepto { width: 20%; }
+  table.tabla-rate.con-impuesto th.col-monto, table.tabla-rate.con-impuesto td.col-monto { width: 15%; }
+  table.tabla-rate.con-impuesto th.col-pct, table.tabla-rate.con-impuesto td.col-pct { width: 9%; }
+  table.tabla-rate.con-impuesto th.col-obs, table.tabla-rate.con-impuesto td.col-obs { width: 26%; }
 
   table.tarjetas-totales { margin: 10px 0 6px; width: 100%; table-layout: fixed; }
   .tarjeta-columna {
@@ -137,33 +146,43 @@
   </table>
 
   <br/>
-  <table class="tabla-rate">
+  <table class="tabla-rate {{ 'con-impuesto' if doc.mostrar_columna_impuesto else 'sin-impuesto' }}">
     <thead>
       <tr>
-        <th>CONCEPTOS</th>
-        <th class="col-rate">PRECIO UNITARIO</th>
-        <th class="col-rate">IMPUESTO %</th>
-        <th class="col-rate">IMPUESTO</th>
-        <th class="col-rate">TOTAL</th>
+        <th class="col-concepto">CONCEPTOS</th>
+        <th class="col-rate col-monto">PRECIO UNITARIO</th>
+        {% if doc.mostrar_columna_impuesto %}
+        <th class="col-rate col-pct">IMPUESTO %</th>
+        <th class="col-rate col-monto">IMPUESTO</th>
+        {% endif %}
+        <th class="col-rate col-monto">TOTAL</th>
+        {% if doc.mostrar_columna_impuesto %}
+        <th class="col-obs">OBSERVACIONES</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody>
       {% for l in doc.lineas %}
       <tr>
-        <td>{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
-        <td class="col-rate">{{ "{:,.2f}".format(l.precio_unitario) }}{{ l.moneda }}</td>
-        <td class="col-rate">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
-        <td class="col-rate">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
-        <td class="col-rate">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
+        <td class="col-concepto">{{ l.descripcion }}{% if l.cantidad and l.cantidad != 1 %} x{{ l.cantidad|int if l.cantidad == l.cantidad|int else l.cantidad }}{% endif %}</td>
+        <td class="col-rate col-monto">{{ "{:,.2f}".format(l.precio_unitario) }}{{ l.moneda }}</td>
+        {% if doc.mostrar_columna_impuesto %}
+        <td class="col-rate col-pct">{{ "{:,.1f}".format(l.impuesto_pct) }}%</td>
+        <td class="col-rate col-monto">{{ "{:,.2f}".format(l.impuesto) }}{{ l.moneda }}</td>
+        {% endif %}
+        <td class="col-rate col-monto">{{ "{:,.2f}".format(l.total) }}{{ l.moneda }}</td>
+        {% if doc.mostrar_columna_impuesto %}
+        <td class="col-obs">{{ l.observaciones or '' }}</td>
+        {% endif %}
       </tr>
       {% endfor %}
       {% if not doc.lineas %}
-      <tr><td colspan="5" style="text-align:center; color:#999999;">Sin conceptos capturados</td></tr>
+      <tr><td colspan="{{ 6 if doc.mostrar_columna_impuesto else 3 }}" style="text-align:center; color:#999999;">Sin conceptos capturados</td></tr>
       {% endif %}
     </tbody>
   </table>
 
-  {% if doc.totales_moneda %}
+  {% if doc.mostrar_totales and doc.totales_moneda %}
   <table class="tarjetas-totales">
     <tr>
       {% for t in doc.totales_moneda %}
