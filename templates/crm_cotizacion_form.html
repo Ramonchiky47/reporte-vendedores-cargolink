@@ -38,7 +38,6 @@
     font-size: 0.85rem; cursor: pointer;
   }
   .resumen-totales { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: flex-end; }
-  .resumen-totales[hidden] { display: none; }
   .bloque-moneda { min-width: 220px; max-width: 280px; border: 1px solid var(--borde); border-radius: 8px; padding: 0.7rem 0.9rem; }
   .bloque-moneda__titulo { font-size: 0.78rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.35rem; }
   .bloque-moneda > div { display: flex; justify-content: space-between; padding: 0.2rem 0; font-size: 0.88rem; color: #555; }
@@ -79,6 +78,10 @@
   .caja-checkbox { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 400; color: #333; margin: 0; cursor: pointer; }
   .caja-checkbox input { margin: 0; }
   input.linea-observaciones { width: 100%; }
+  table.tabla-productos.sin-impuesto th.col-causa-impuesto, table.tabla-productos.sin-impuesto td.col-causa-impuesto,
+  table.tabla-productos.sin-impuesto th.col-impuesto-pct, table.tabla-productos.sin-impuesto td.col-impuesto-pct {
+    display: none;
+  }
 
   .fila-encabezado-cotizacion { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .caja-solicitar-info { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
@@ -306,24 +309,24 @@
 
     <label>Productos de la cotización</label>
     <div class="tabla-productos-scroll">
-      <table class="tabla-productos">
+      <table class="tabla-productos" id="tabla-lineas-producto">
         <thead>
           <tr>
             <th>Producto</th>
             <th class="col-num">Cantidad</th>
             <th class="col-num">Precio unitario</th>
             <th>Moneda</th>
-            <th>Causa Impuesto</th>
-            <th class="col-num">Impuesto %</th>
+            <th class="col-causa-impuesto">Causa Impuesto</th>
+            <th class="col-num col-impuesto-pct">Impuesto %</th>
             <th class="col-num">Total</th>
-            <th>Observaciones</th>
+            <th class="col-observaciones">Observaciones</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="cuerpo-lineas-producto"></tbody>
       </table>
     </div>
-    <p class="pista-campo">"Observaciones" solo se imprime en el documento si "Mostrar columna de Impuesto" está activado.</p>
+    <p class="pista-campo">Causa Impuesto, Impuesto % y Observaciones solo se muestran (aquí y en el documento) si "Mostrar columna de Impuesto" está activado.</p>
     <button type="button" id="btn-agregar-producto" class="btn-agregar-linea">+ Agregar producto</button>
 
     <div class="resumen-totales" id="resumen-totales"></div>
@@ -465,7 +468,14 @@
       const cuerpo = document.getElementById('cuerpo-lineas-producto');
       const btnAgregar = document.getElementById('btn-agregar-producto');
       const contenedorResumen = document.getElementById('resumen-totales');
-      const checkMostrarTotales = document.getElementById('mostrar_totales');
+      const tablaLineas = document.getElementById('tabla-lineas-producto');
+      const checkMostrarImpuesto = document.getElementById('mostrar_columna_impuesto');
+
+      function actualizarVisibilidadImpuesto() {
+        tablaLineas.classList.toggle('sin-impuesto', !checkMostrarImpuesto.checked);
+      }
+      checkMostrarImpuesto.addEventListener('change', actualizarVisibilidadImpuesto);
+      actualizarVisibilidadImpuesto();
 
       function formatoMoneda(numero) {
         return '$' + numero.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -490,7 +500,6 @@
           totalesPorMoneda[moneda].impuesto += impuestoMonto;
         });
 
-        contenedorResumen.hidden = !checkMostrarTotales.checked;
         contenedorResumen.innerHTML = Object.keys(totalesPorMoneda).sort().map((moneda) => {
           const t = totalesPorMoneda[moneda];
           const total = t.subtotal + t.impuesto;
@@ -603,6 +612,7 @@
         tdMoneda.appendChild(selectMoneda);
 
         const tdCausaImpuesto = document.createElement('td');
+        tdCausaImpuesto.className = 'col-causa-impuesto';
         const selectCausaImpuesto = document.createElement('select');
         selectCausaImpuesto.className = 'linea-causa-impuesto';
         selectCausaImpuesto.name = 'linea_causa_impuesto';
@@ -613,7 +623,7 @@
         tdCausaImpuesto.appendChild(selectCausaImpuesto);
 
         const tdImpuesto = document.createElement('td');
-        tdImpuesto.className = 'col-num';
+        tdImpuesto.className = 'col-num col-impuesto-pct';
         const inputImpuesto = document.createElement('input');
         inputImpuesto.type = 'text';
         inputImpuesto.inputMode = 'decimal';
@@ -639,6 +649,7 @@
         tdTotal.textContent = formatoMoneda(0);
 
         const tdObservaciones = document.createElement('td');
+        tdObservaciones.className = 'col-observaciones';
         const inputObservaciones = document.createElement('input');
         inputObservaciones.type = 'text';
         inputObservaciones.className = 'linea-observaciones';
@@ -668,7 +679,6 @@
       }
 
       btnAgregar.addEventListener('click', () => agregarFilaProducto());
-      checkMostrarTotales.addEventListener('change', recalcularTotales);
 
       if (lineasIniciales.length) {
         lineasIniciales.forEach((linea) => agregarFilaProducto(linea));
