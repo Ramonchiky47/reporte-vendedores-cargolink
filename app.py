@@ -3570,9 +3570,9 @@ def crm_seccion(slug):
     nav_groups = agrupar_nav_crm(slug)
     if slug == "inicio":
         hoy = datetime.now(TZ_LOCAL).date()
-        periodo = request.args.get("periodo", "mes")
+        periodo = request.args.get("periodo", "semana")
         if periodo not in ("hoy", "semana", "mes", "personalizado"):
-            periodo = "mes"
+            periodo = "semana"
         fecha_inicio_custom = fecha_valida_o_vacia(request.args.get("fecha_inicio", ""))
         fecha_fin_custom = fecha_valida_o_vacia(request.args.get("fecha_fin", ""))
         fecha_inicio, fecha_fin = rango_periodo_crm(
