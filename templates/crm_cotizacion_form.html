@@ -38,6 +38,7 @@
     font-size: 0.85rem; cursor: pointer;
   }
   .resumen-totales { margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 1rem; justify-content: flex-end; }
+  .resumen-totales[hidden] { display: none; }
   .bloque-moneda { min-width: 220px; max-width: 280px; border: 1px solid var(--borde); border-radius: 8px; padding: 0.7rem 0.9rem; }
   .bloque-moneda__titulo { font-size: 0.78rem; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 0.35rem; }
   .bloque-moneda > div { display: flex; justify-content: space-between; padding: 0.2rem 0; font-size: 0.88rem; color: #555; }
@@ -464,6 +465,7 @@
       const cuerpo = document.getElementById('cuerpo-lineas-producto');
       const btnAgregar = document.getElementById('btn-agregar-producto');
       const contenedorResumen = document.getElementById('resumen-totales');
+      const checkMostrarTotales = document.getElementById('mostrar_totales');
 
       function formatoMoneda(numero) {
         return '$' + numero.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -488,6 +490,7 @@
           totalesPorMoneda[moneda].impuesto += impuestoMonto;
         });
 
+        contenedorResumen.hidden = !checkMostrarTotales.checked;
         contenedorResumen.innerHTML = Object.keys(totalesPorMoneda).sort().map((moneda) => {
           const t = totalesPorMoneda[moneda];
           const total = t.subtotal + t.impuesto;
@@ -665,6 +668,7 @@
       }
 
       btnAgregar.addEventListener('click', () => agregarFilaProducto());
+      checkMostrarTotales.addEventListener('change', recalcularTotales);
 
       if (lineasIniciales.length) {
         lineasIniciales.forEach((linea) => agregarFilaProducto(linea));
