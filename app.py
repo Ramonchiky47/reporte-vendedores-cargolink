@@ -2787,9 +2787,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     else:
         fecha_fin_anterior = fecha_inicio - timedelta(days=1)
         fecha_inicio_anterior = fecha_fin_anterior - timedelta(days=dias_periodo - 1)
-    inicio_tendencia = hoy - timedelta(days=29)
-    ventana_inicio = min(fecha_inicio_anterior, inicio_tendencia)
-    ventana_fin = max(fecha_fin, hoy)
+    ventana_inicio = fecha_inicio_anterior
+    ventana_fin = fecha_fin
 
     db = get_db()
     vendedores_catalogo = db.execute("SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor").fetchall()
@@ -2880,10 +2879,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
 
     booking_periodo = en_rango(filas_booking, fecha_inicio, fecha_fin)
     booking_anterior = en_rango(filas_booking, fecha_inicio_anterior, fecha_fin_anterior)
-    booking_tendencia = en_rango(filas_booking, inicio_tendencia, hoy)
     cot_periodo = en_rango(filas_cot, fecha_inicio, fecha_fin)
     cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
-    cot_tendencia = en_rango(filas_cot, inicio_tendencia, hoy)
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
     # aplicado / cuándo se marcó perdida), no por cuándo se creó la
@@ -2917,11 +2914,11 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         "profit": profit_periodo, "profit_delta": delta_pct(profit_periodo, profit_anterior), "profit_anterior": profit_anterior,
     }
 
-    dias = [inicio_tendencia + timedelta(days=i) for i in range(30)]
+    dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
     profit_por_dia, cot_por_dia = {}, {}
-    for f in booking_tendencia:
+    for f in booking_periodo:
         profit_por_dia[f["d"]] = profit_por_dia.get(f["d"], 0) + f["profit"]
-    for f in cot_tendencia:
+    for f in cot_periodo:
         cot_por_dia[f["d"]] = cot_por_dia.get(f["d"], 0) + 1
     serie = [{"fecha": d.strftime("%d/%m"), "profit": round(profit_por_dia.get(d, 0)), "cotizaciones": cot_por_dia.get(d, 0)} for d in dias]
 
@@ -3349,8 +3346,9 @@ def parse_numero_formato_miles(texto):
 
 
 def guardar_cotizacion_crm(cotizacion_id):
-    """Crea o actualiza una cotización. Regresa None si guardó bien, o un
-    mensaje de error si algo obligatorio faltó o un número vino mal."""
+    """Crea o actualiza una cotización. Regresa (None, cotizacion_id) si
+    guardó bien (cotizacion_id es el nuevo id si se estaba creando), o
+    (mensaje_de_error, None) si algo obligatorio faltó o un número vino mal."""
     nombre_cotizacion = request.form.get("nombre_cotizacion", "").strip()[:60]
     contacto_id_raw = request.form.get("contacto_id", "").strip()
     contacto_id = int(contacto_id_raw) if contacto_id_raw.isdigit() else None
@@ -3360,18 +3358,18 @@ def guardar_cotizacion_crm(cotizacion_id):
     cliente_prospecto = request.form.get("cliente_prospecto", "").strip()[:120]
     if es_prospecto:
         if not cliente_prospecto:
-            return "Captura el nombre del prospecto."
+            return "Captura el nombre del prospecto.", None
         cliente_folio = None
     else:
         if not cliente_folio_raw.isdigit():
-            return "Selecciona un cliente (o marca Prospecto)."
+            return "Selecciona un cliente (o marca Prospecto).", None
         cliente_folio = int(cliente_folio_raw)
         cliente_prospecto = None
 
     origen = request.form.get("origen", "").strip()[:50]
     destino = request.form.get("destino", "").strip()[:50]
     if not origen or not destino:
-        return "Origen y Destino son obligatorios."
+        return "Origen y Destino son obligatorios.", None
 
     hazmat = request.form.get("hazmat") == "si"
     hazmat_clase = request.form.get("hazmat_clase", "").strip()[:50] if hazmat else None
@@ -3396,17 +3394,17 @@ def guardar_cotizacion_crm(cotizacion_id):
 
     vencimiento_modo = request.form.get("vencimiento_modo", "libre").strip()
     if vencimiento_modo not in VENCIMIENTO_DIAS + ("libre",):
-        return "Fecha de vencimiento inválida."
+        return "Fecha de vencimiento inválida.", None
     fecha_vencimiento_libre = fecha_valida_o_vacia(request.form.get("fecha_vencimiento_libre", ""))
     if vencimiento_modo == "libre" and not fecha_vencimiento_libre:
-        return "Captura la fecha de vencimiento."
+        return "Captura la fecha de vencimiento.", None
 
     profit_estimado, error_profit = parse_numero_formato_miles(request.form.get("profit_estimado", ""))
     if error_profit:
-        return f"Profit estimado {error_profit}."
+        return f"Profit estimado {error_profit}.", None
     tipo_cambio, error_tc = parse_numero_formato_miles(request.form.get("tipo_cambio", ""))
     if error_tc:
-        return f"Tipo de cambio {error_tc}."
+        return f"Tipo de cambio {error_tc}.", None
 
     db = get_db()
     if incoterm_nuevo:
@@ -3486,7 +3484,7 @@ def guardar_cotizacion_crm(cotizacion_id):
 
     db.commit()
     db.close()
-    return None
+    return None, cotizacion_id
 
 
 MONEDAS_VALIDAS = ("USD", "MXN", "EUR")
@@ -3733,11 +3731,12 @@ def crm_contacto_eliminar(contacto_id):
 @crm_required
 def crm_cotizacion_nueva():
     if request.method == "POST":
-        error = guardar_cotizacion_crm(None)
+        error, nuevo_id = guardar_cotizacion_crm(None)
         if error:
             flash(error)
         else:
-            return redirect(url_for("crm_seccion", slug="cotizaciones"))
+            flash("Cotización guardada.")
+            return redirect(url_for("crm_cotizacion_editar", cotizacion_id=nuevo_id))
 
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
@@ -3774,11 +3773,12 @@ def crm_cotizacion_editar(cotizacion_id):
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     if request.method == "POST":
-        error = guardar_cotizacion_crm(cotizacion_id)
+        error, _ = guardar_cotizacion_crm(cotizacion_id)
         if error:
             flash(error)
         else:
-            return redirect(url_for("crm_seccion", slug="cotizaciones"))
+            flash("Cotización guardada.")
+            return redirect(url_for("crm_cotizacion_editar", cotizacion_id=cotizacion_id))
 
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()

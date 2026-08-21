@@ -186,7 +186,7 @@
       <div class="tarjeta__cabecera">
         <div>
           <p class="tarjeta__titulo">Profit diario</p>
-          <p class="tarjeta__pista">Últimos 30 días · reporte_bookings</p>
+          <p class="tarjeta__pista">{{ fecha_inicio_larga if fecha_inicio_larga == fecha_fin_larga else fecha_inicio_larga ~ ' – ' ~ fecha_fin_larga }} · reporte_bookings</p>
         </div>
         <div class="leyenda"><span><i style="background:var(--s-blue)"></i>Profit ($)</span></div>
       </div>
@@ -200,7 +200,7 @@
       <div class="tarjeta__cabecera">
         <div>
           <p class="tarjeta__titulo">Cotizaciones creadas por día</p>
-          <p class="tarjeta__pista">Últimos 30 días · crm_cotizaciones</p>
+          <p class="tarjeta__pista">{{ fecha_inicio_larga if fecha_inicio_larga == fecha_fin_larga else fecha_inicio_larga ~ ' – ' ~ fecha_fin_larga }} · crm_cotizaciones</p>
         </div>
         <div class="leyenda"><span><i style="background:var(--s-orange)"></i>Cotizaciones</span></div>
       </div>
@@ -316,7 +316,7 @@
 
   <p class="nota-metodologia">
     Los KPIs y el ranking usan el periodo elegido arriba, comparado contra {{ etiqueta_anterior }} ({{ fecha_inicio_anterior_larga }}–{{ fecha_fin_anterior_larga }}).
-    Las gráficas de tendencia y las alertas de vencimiento son independientes del periodo: siempre muestran los últimos 30 días / los próximos 14 días desde hoy.
+    Las gráficas de tendencia usan el mismo periodo elegido arriba. Las alertas de vencimiento son independientes del periodo: siempre muestran los próximos 14 días desde hoy.
     Todo respeta las plazas que tu usuario puede ver.
   </p>
 {% endblock %}
@@ -344,7 +344,9 @@
       var W = 900, H = 190, padL = 8, padR = 8, padT = 10, padB = 22;
       var n = serieDiaria.length;
       var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.profit; }))) * 1.12;
-      var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
+      // Con un solo día en el periodo (p. ej. "Hoy") no hay entre qué repartir
+      // el ancho: i/(n-1) sería 0/0. Se centra el único punto.
+      var x = function (i) { return n > 1 ? padL + (i / (n - 1)) * (W - padL - padR) : padL + (W - padL - padR) / 2; };
       var y = function (v) { return H - padB - (v / maxV) * (H - padT - padB); };
       var ns = "http://www.w3.org/2000/svg";
       function el(tag, attrs) { var e = document.createElementNS(ns, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }
@@ -400,7 +402,7 @@
       var n = serieDiaria.length;
       var maxV = Math.max(1, Math.max.apply(null, serieDiaria.map(function (d) { return d.cotizaciones; }))) * 1.35;
       var bw = ((W - padL - padR) / n) * 0.55;
-      var x = function (i) { return padL + (i / (n - 1)) * (W - padL - padR); };
+      var x = function (i) { return n > 1 ? padL + (i / (n - 1)) * (W - padL - padR) : padL + (W - padL - padR) / 2; };
       var y = function (v) { return H - padB - (v / maxV) * (H - padT - padB); };
       var ns = "http://www.w3.org/2000/svg";
       function el(tag, attrs) { var e = document.createElementNS(ns, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); return e; }

@@ -18,6 +18,7 @@
     padding: 0.55rem 1.1rem; border: none; border-radius: 6px; font-size: 0.88rem; cursor: pointer; text-decoration: none; display: inline-block;
   }
   .btn-guardar { background: #1565c0; color: #fff; font-weight: 600; }
+  .btn-guardar:disabled { background: #b7c6db; color: #eef2f7; cursor: not-allowed; }
   .btn-cancelar { background: #e0e0e0; color: #333; }
   .id-cotizacion { font-size: 0.8rem; color: #999; margin-bottom: 0.5rem; }
   .id-cotizacion strong { color: #333; font-size: 1.1rem; }
@@ -332,12 +333,13 @@
     <div class="resumen-totales" id="resumen-totales"></div>
 
     <div class="acciones-form-cotizacion">
-      <button type="submit" class="btn-guardar">Guardar cotización</button>
+      <button type="submit" class="btn-guardar" id="btn-guardar-cotizacion">Guardar cotización</button>
       {% if cotizacion %}
         <a class="btn-cancelar" id="link-ver-cotizacion" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion.id) }}" target="_blank">Ver</a>
         <a class="btn-cancelar" id="link-pdf-cotizacion" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion.id) }}">Descargar PDF</a>
       {% endif %}
       <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">Cancelar</a>
+      <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">Salir</a>
     </div>
   </form>
 {% endblock %}
@@ -754,8 +756,16 @@
       const form = document.querySelector('.form-cotizacion');
       let formularioModificado = false;
 
-      form.addEventListener('input', () => { formularioModificado = true; });
-      form.addEventListener('change', () => { formularioModificado = true; });
+      // El botón Guardar arranca deshabilitado al editar una cotización ya
+      // guardada (no hay nada nuevo que guardar todavía) y se habilita en
+      // cuanto haya una interacción real. En "Nueva cotización" arranca
+      // habilitado, porque ahí sí hace falta guardar desde el principio.
+      const btnGuardar = document.getElementById('btn-guardar-cotizacion');
+      const esCotizacionExistente = {{ 'true' if cotizacion else 'false' }};
+      btnGuardar.disabled = esCotizacionExistente;
+
+      form.addEventListener('input', () => { formularioModificado = true; btnGuardar.disabled = false; });
+      form.addEventListener('change', () => { formularioModificado = true; btnGuardar.disabled = false; });
       form.addEventListener('submit', () => { formularioModificado = false; });
 
       window.addEventListener('beforeunload', (e) => {
