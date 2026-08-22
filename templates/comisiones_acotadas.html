@@ -1,0 +1,543 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Comisiones Acotadas{% endblock %}
+{% set active = "comisiones_acotadas" %}
+{% block extra_head %}
+<style>
+  .com-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 1.25rem; }
+  .com-descripcion b { color: var(--ink); }
+  .com-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .com-header-row h2 { margin: 0 0 .3rem; }
+  .com-header-row select { padding: .5rem .7rem; border-radius: 8px; border: 1px solid var(--border-strong); font-weight: 600; }
+
+  .com-tasas-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+  .com-tasas-form .field { width: 150px; flex: 0 0 auto; }
+  .com-tasas-form .field.folio { width: 320px; }
+  .com-tasas-form select, .com-tasas-form input { width: 100%; }
+  .com-tasas-form select { text-overflow: ellipsis; }
+
+  .com-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+  .com-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+  .com-kpi .label { font-size: .72rem; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .com-kpi .value { font-size: 1.4rem; font-weight: 700; color: var(--ink); margin-top: .25rem; font-variant-numeric: tabular-nums; }
+
+  .com-comisiones { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+  .com-comision-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem; position: relative; overflow: hidden; }
+  .com-comision-card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
+  .com-comision-card .etiqueta { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
+  .com-comparativa { display: flex; gap: 1.25rem; margin-top: .5rem; align-items: baseline; flex-wrap: wrap; }
+  .com-comparativa .actual { font-size: .95rem; color: var(--ink-3); }
+  .com-comparativa .acotada { font-size: 1.5rem; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .com-comision-card .diff { font-size: .78rem; margin-top: .35rem; font-weight: 700; }
+  .com-comision-card .diff.neg { color: var(--danger-dark); }
+  .com-comision-card .diff.pos { color: var(--ok); }
+
+  .com-resumen { width: 100%; font-variant-numeric: tabular-nums; font-size: .74rem; }
+  .com-resumen th, .com-resumen td { text-align: right; white-space: nowrap; padding: .5rem .7rem; }
+  .com-resumen th:first-child, .com-resumen td:first-child,
+  .com-resumen th:nth-child(2), .com-resumen td:nth-child(2),
+  .com-resumen th:nth-child(3), .com-resumen td:nth-child(3) { text-align: left; }
+  .com-resumen tfoot td { font-weight: 700; border-top: 2px solid var(--ink); }
+  .com-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 700; background: #fef3c7; color: #92400e; }
+
+  .com-tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
+  .com-tab {
+    padding: .5rem 1rem; border-radius: 8px; border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--ink-2); font-size: .9rem; font-weight: 600; cursor: pointer;
+  }
+  .com-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .com-vista { display: none; }
+  .com-vista.activa { display: block; }
+
+  .com-resumen tbody tr[data-booking] { cursor: pointer; }
+  .com-resumen tbody tr[data-booking]:hover { background: #f8fafc; }
+  .com-resumen tbody tr[data-booking]:hover td:first-child { color: var(--accent); text-decoration: underline; }
+
+  .com-resumen tbody tr[data-campo] { cursor: pointer; }
+  .com-resumen tbody tr[data-campo]:hover { background: #f8fafc; }
+  .com-resumen tbody tr[data-campo]:hover td:first-child { color: var(--accent); text-decoration: underline; }
+
+  #com-modal-booking { z-index: 60; }
+  #com-modal-cobro { z-index: 70; }
+
+  .com-distribucion { font-size: .68rem; font-weight: 700; padding: .05rem .5rem; border-radius: 999px; white-space: nowrap; }
+  .com-distribucion.d100-arriba { background: #fee2e2; color: #991b1b; }
+  .com-distribucion.d100-debajo { background: #dcfce7; color: #166534; }
+  .com-distribucion.dmixto { background: #fef3c7; color: #92400e; }
+  .com-distribucion.dsin { background: #e2e8f0; color: var(--ink-3); }
+
+  .com-modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
+    align-items: flex-start; justify-content: center; padding: 4vh 1.5rem; z-index: 50; overflow-y: auto;
+  }
+  .com-modal-overlay.abierto { display: flex; }
+  .com-modal-panel {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 900px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .com-modal-toolbar { position: absolute; top: 1rem; right: 1rem; display: flex; gap: .5rem; align-items: center; }
+  .com-modal-cerrar {
+    background: none; border: none; font-size: 1.4rem;
+    line-height: 1; color: var(--ink-3); cursor: pointer; padding: .2rem .5rem; border-radius: 6px;
+  }
+  .com-modal-cerrar:hover { background: #f1f5f9; color: var(--ink); }
+  .com-modal-body { position: relative; padding: 1.5rem 2rem 2rem; overflow-y: auto; }
+
+  .com-booking-titulo { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: 0; }
+  .com-booking-sub { font-size: .85rem; color: var(--ink-3); margin: .2rem 0 1.25rem; }
+  .com-booking-seccion { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); margin: 1.5rem 0 .6rem; }
+  .com-booking-seccion:first-of-type { margin-top: 0; }
+
+  .com-resumen tbody tr[data-cobro-idx] { cursor: pointer; }
+  .com-resumen tbody tr[data-cobro-idx]:hover { background: #f8fafc; }
+  .com-resumen tbody tr[data-cobro-idx]:hover td:first-child { color: var(--accent); text-decoration: underline; }
+
+  .com-cobro-overlay { z-index: 70; }
+  .com-cobro-panel { max-width: 560px; }
+  .com-cobro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem 1.5rem; font-size: .85rem; }
+  .com-cobro-grid .fila { display: flex; justify-content: space-between; gap: 1rem; padding: .5rem 0; border-bottom: 1px solid #eee; }
+  .com-cobro-grid .fila .label { color: var(--ink-3); }
+  .com-cobro-grid .fila .valor { font-weight: 600; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+
+  .com-bucket { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .66rem; font-weight: 700; }
+  .com-bucket.arriba { background: #fee2e2; color: #991b1b; }
+  .com-bucket.debajo { background: #dcfce7; color: #166534; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <div class="com-header-row">
+        <div>
+          <h2>Comisiones Acotadas</h2>
+          {% if folio_actual %}
+          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b> — comisión repartida por antigüedad de cobro (≤{{ dias_umbral }} días / &gt;{{ dias_umbral }} días)</p>
+          {% if resultados %}
+          <p class="com-descripcion" style="margin:.2rem 0 0;">
+            ≤{{ dias_umbral }} días: Vendedor {{ "{:g}".format(pct_vendedor_debajo) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_debajo) }}%
+            &nbsp;·&nbsp;
+            &gt;{{ dias_umbral }} días: Vendedor {{ "{:g}".format(pct_vendedor_arriba) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_arriba) }}%
+          </p>
+          {% endif %}
+          {% else %}
+          <p class="empty" style="padding:0;">Todavía no hay ningún folio cargado en Comisiones.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <form method="get" action="{{ url_for('comisiones_acotadas') }}" class="com-tasas-form">
+        {% if folios_disponibles|length > 1 %}
+        <div class="field folio">
+          <label for="folio">Folio</label>
+          <select id="folio" name="folio">
+            {% for f in folios_disponibles %}
+            <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% elif folio_actual %}
+        <input type="hidden" name="folio" value="{{ folio_actual }}">
+        {% endif %}
+        <div class="field">
+          <label for="usd">Tipo de cambio USD</label>
+          <input type="number" step="0.0001" min="0" id="usd" name="usd" value="{{ tasa_usd if tasa_usd else '' }}" placeholder="Ej. 17.00" required>
+        </div>
+        <div class="field">
+          <label for="eur">Tipo de cambio EUR</label>
+          <input type="number" step="0.0001" min="0" id="eur" name="eur" value="{{ tasa_eur if tasa_eur else '' }}" placeholder="Ej. 21.00" required>
+        </div>
+        <div class="field">
+          <label for="dias">A partir de cuántos días</label>
+          <input type="number" step="1" min="0" id="dias" name="dias" value="{{ dias_umbral }}" placeholder="Ej. 35" required>
+        </div>
+        <div class="field">
+          <label for="pct_v_arriba">% Vendedor arriba de esos días</label>
+          <input type="number" step="0.01" min="0" max="100" id="pct_v_arriba" name="pct_v_arriba" value="{{ pct_vendedor_arriba }}" placeholder="Ej. 5" required>
+        </div>
+        <div class="field">
+          <label for="pct_d_arriba">% Desarrollador arriba de esos días</label>
+          <input type="number" step="0.01" min="0" max="100" id="pct_d_arriba" name="pct_d_arriba" value="{{ pct_desarrollador_arriba }}" placeholder="Ej. 1" required>
+        </div>
+        <div class="field" style="flex:0;">
+          <button type="submit">Calcular</button>
+        </div>
+      </form>
+      <p class="hint" style="margin-top:.75rem;">
+        Los tipos de cambio y los % arriba del umbral se piden cada vez porque no se guardan: este cálculo es una simulación, no reemplaza a la liquidación oficial de Comisiones.
+        Debajo del umbral la comisión se calcula al 100% (Vendedor {{ "{:g}".format(pct_vendedor_debajo) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_debajo) }}%, fijo).
+      </p>
+    </div>
+
+    {% if folio_actual and not resultados %}
+    <div class="card"><p class="empty">Ingresa el tipo de cambio de USD y EUR y presiona "Calcular" para ver el desglose.</p></div>
+    {% endif %}
+
+    {% if resultados %}
+    <div class="com-kpis">
+      <div class="com-kpi"><div class="label">Bookings</div><div class="value">{{ total_bookings }}</div></div>
+      <div class="com-kpi"><div class="label">Con regla acotada</div><div class="value">{{ con_regla }}</div></div>
+      <div class="com-kpi"><div class="label">Sin datos de cobro</div><div class="value">{{ sin_regla }}</div></div>
+    </div>
+
+    <div class="com-comisiones">
+      <div class="com-comision-card">
+        <div class="etiqueta">Comisión Vendedor</div>
+        <div class="com-comparativa">
+          <div><span class="actual">Actual ${{ "{:,.2f}".format(total_vendedor_actual) }}</span></div>
+        </div>
+        <div class="acotada">${{ "{:,.2f}".format(total_vendedor_acotada) }}</div>
+        {% set diff_v = total_vendedor_acotada - total_vendedor_actual %}
+        <div class="diff {{ 'neg' if diff_v < 0 else 'pos' }}">{{ '-' if diff_v < 0 else '+' }}${{ "{:,.2f}".format(diff_v|abs) }} vs. actual</div>
+      </div>
+      <div class="com-comision-card">
+        <div class="etiqueta">Comisión Desarrollador</div>
+        <div class="com-comparativa">
+          <div><span class="actual">Actual ${{ "{:,.2f}".format(total_desarrollador_actual) }}</span></div>
+        </div>
+        <div class="acotada">${{ "{:,.2f}".format(total_desarrollador_acotada) }}</div>
+        {% set diff_d = total_desarrollador_acotada - total_desarrollador_actual %}
+        <div class="diff {{ 'neg' if diff_d < 0 else 'pos' }}">{{ '-' if diff_d < 0 else '+' }}${{ "{:,.2f}".format(diff_d|abs) }} vs. actual</div>
+      </div>
+    </div>
+
+    <div class="com-tabs">
+      <button type="button" class="com-tab active" data-vista="vendedor">Vendedor</button>
+      <button type="button" class="com-tab" data-vista="desarrollador">Desarrollador</button>
+    </div>
+
+    <div class="com-vista activa" id="com-vista-vendedor">
+      <div class="card">
+        <h2>Por Vendedor</h2>
+        <div class="tabla-scroll" style="overflow-x:auto;">
+          <table class="com-resumen">
+            <thead><tr><th>Vendedor</th><th>Cant book</th><th>Total actual</th><th>Total acotada</th></tr></thead>
+            <tbody>
+              {% for g in por_vendedor %}
+              <tr data-campo="vendedor" data-nombre="{{ g.nombre }}"><td>{{ g.nombre }}</td><td>{{ g.cant_book }}</td><td>${{ "{:,.2f}".format(g.actual) }}</td><td>${{ "{:,.2f}".format(g.acotada) }}</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr><td>Total</td><td>{{ resultados|length }}</td><td>${{ "{:,.2f}".format(total_vendedor_actual) }}</td><td>${{ "{:,.2f}".format(total_vendedor_acotada) }}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-vista" id="com-vista-desarrollador">
+      <div class="card">
+        <h2>Por Desarrollador</h2>
+        <div class="tabla-scroll" style="overflow-x:auto;">
+          <table class="com-resumen">
+            <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Total actual</th><th>Total acotada</th></tr></thead>
+            <tbody>
+              {% for g in por_desarrollador %}
+              <tr data-campo="desarrollador" data-nombre="{{ g.nombre }}"><td>{{ g.nombre }}</td><td>{{ g.cant_book }}</td><td>${{ "{:,.2f}".format(g.actual) }}</td><td>${{ "{:,.2f}".format(g.acotada) }}</td></tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr><td>Total</td><td>{{ resultados|length }}</td><td>${{ "{:,.2f}".format(total_desarrollador_actual) }}</td><td>${{ "{:,.2f}".format(total_desarrollador_acotada) }}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Detalle por booking</h2>
+      <div class="tabla-scroll" style="overflow-x:auto;">
+        <table class="com-resumen">
+          <thead>
+            <tr>
+              <th>Booking</th><th>Vendedor</th><th>Desarrollador</th><th>Profit</th>
+              <th>% &gt;{{ dias_umbral }} días</th><th>% ≤{{ dias_umbral }} días</th>
+              <th>Com. Vend. actual</th><th>Com. Vend. acotada</th>
+              <th>Com. Dev. actual</th><th>Com. Dev. acotada</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in resultados %}
+            <tr data-booking="{{ r.booking }}">
+              <td>{{ r.booking }}</td>
+              <td>{{ r.vendedor or "—" }}</td>
+              <td>{{ r.desarrollador or "—" }}</td>
+              <td>${{ "{:,.2f}".format(r.profit) }}</td>
+              {% if r.con_regla %}
+              <td>{{ "{:,.2f}".format(r.pct_arriba) }}%</td>
+              <td>{{ "{:,.2f}".format(r.pct_debajo) }}%</td>
+              {% else %}
+              <td colspan="2"><span class="com-badge">sin datos de cobro</span></td>
+              {% endif %}
+              <td>${{ "{:,.2f}".format(r.total_vendedor_actual) }}</td>
+              <td>${{ "{:,.2f}".format(r.total_vendedor_acotada) }}</td>
+              <td>${{ "{:,.2f}".format(r.total_desarrollador_actual) }}</td>
+              <td>${{ "{:,.2f}".format(r.total_desarrollador_acotada) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="6">Total ({{ resultados|length }})</td>
+              <td>${{ "{:,.2f}".format(total_vendedor_actual) }}</td>
+              <td>${{ "{:,.2f}".format(total_vendedor_acotada) }}</td>
+              <td>${{ "{:,.2f}".format(total_desarrollador_actual) }}</td>
+              <td>${{ "{:,.2f}".format(total_desarrollador_acotada) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay" id="com-modal-grupo">
+      <div class="com-modal-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-grupo-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-grupo-contenido"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay" id="com-modal-booking">
+      <div class="com-modal-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-booking-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-booking-contenido"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="com-modal-overlay com-cobro-overlay" id="com-modal-cobro">
+      <div class="com-modal-panel com-cobro-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-cobro-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="com-modal-cobro-contenido"></div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+<script id="datos-comisiones-acotadas" type="application/json">{{ resultados_json | safe }}</script>
+<script>
+(function () {
+  const tabs = document.querySelectorAll(".com-tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      document.querySelectorAll(".com-vista").forEach((v) => v.classList.remove("activa"));
+      document.getElementById("com-vista-" + tab.dataset.vista).classList.add("activa");
+    });
+  });
+
+  const modalBooking = document.getElementById("com-modal-booking");
+  if (!modalBooking) return; // sin folio/resultados calculados: no hay modales ni filas clicables
+
+  const datosEl = document.getElementById("datos-comisiones-acotadas");
+  const RESULTADOS = JSON.parse(datosEl.textContent);
+  const DIAS_UMBRAL = {{ dias_umbral | tojson }};
+  const contenidoBooking = document.getElementById("com-modal-booking-contenido");
+  let cobrosActuales = [];
+  let bookingActual = null;
+
+  function fmtMoneda(n) {
+    if (n == null) return "—";
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtPct(n) { return n == null ? "—" : n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%"; }
+  function fmtFecha(f) {
+    if (!f) return "—";
+    const [anio, mes, dia] = f.split("-");
+    return `${dia}/${mes}/${anio}`;
+  }
+
+  function distribucionBadge(r) {
+    if (!r.con_regla) return `<span class="com-distribucion dsin">sin datos</span>`;
+    if (r.pct_arriba >= 99.99) return `<span class="com-distribucion d100-arriba">100% &gt;${DIAS_UMBRAL} días</span>`;
+    if (r.pct_debajo >= 99.99) return `<span class="com-distribucion d100-debajo">100% &le;${DIAS_UMBRAL} días</span>`;
+    return `<span class="com-distribucion dmixto">Mixto: ${fmtPct(r.pct_arriba)} / ${fmtPct(r.pct_debajo)}</span>`;
+  }
+
+  // ---- modal de grupo: todos los bookings de un vendedor/desarrollador ----
+  const modalGrupo = document.getElementById("com-modal-grupo");
+  const contenidoGrupo = document.getElementById("com-modal-grupo-contenido");
+
+  function abrirGrupo(campo, nombre) {
+    const campoActual = campo === "vendedor" ? "total_vendedor_actual" : "total_desarrollador_actual";
+    const campoAcotada = campo === "vendedor" ? "total_vendedor_acotada" : "total_desarrollador_acotada";
+    const etiqueta = campo === "vendedor" ? "Vendedor" : "Desarrollador";
+
+    const bookings = RESULTADOS.filter((r) => (r[campo] || "(sin nombre)") === nombre);
+    const profitTotal = bookings.reduce((acc, b) => acc + b.profit, 0);
+    const actualTotal = bookings.reduce((acc, b) => acc + b[campoActual], 0);
+    const acotadaTotal = bookings.reduce((acc, b) => acc + b[campoAcotada], 0);
+    const diff = acotadaTotal - actualTotal;
+
+    const filasHtml = bookings.map((b) => `
+      <tr data-booking-grupo="${b.booking}">
+        <td>${b.booking}</td>
+        <td>${fmtMoneda(b.profit)}</td>
+        <td>${distribucionBadge(b)}</td>
+        <td>${fmtMoneda(b[campoActual])}</td>
+        <td>${fmtMoneda(b[campoAcotada])}</td>
+      </tr>
+    `).join("");
+
+    contenidoGrupo.innerHTML = `
+      <p class="com-booking-titulo">${etiqueta}: ${nombre}</p>
+      <p class="com-booking-sub">${bookings.length} booking(s) · Profit ${fmtMoneda(profitTotal)}</p>
+      <div class="com-comisiones" style="margin-bottom:1.25rem;">
+        <div class="com-comision-card">
+          <div class="etiqueta">Comisión ${etiqueta}</div>
+          <div class="com-comparativa"><span class="actual">Actual ${fmtMoneda(actualTotal)}</span></div>
+          <div class="acotada">${fmtMoneda(acotadaTotal)}</div>
+          <div class="diff ${diff < 0 ? "neg" : "pos"}">${diff < 0 ? "-" : "+"}${fmtMoneda(Math.abs(diff))} vs. actual</div>
+        </div>
+      </div>
+      <table class="com-resumen">
+        <thead><tr><th>Booking</th><th>Profit</th><th>Distribución</th><th>Comisión actual</th><th>Comisión acotada</th></tr></thead>
+        <tbody>${filasHtml}</tbody>
+      </table>
+      <p class="hint" style="margin-top:.6rem;">Clic en un booking para ver el detalle completo de sus cobros.</p>
+    `;
+    modalGrupo.classList.add("abierto");
+  }
+
+  document.querySelectorAll(".com-resumen tbody tr[data-campo]").forEach((tr) => {
+    tr.addEventListener("click", () => abrirGrupo(tr.dataset.campo, tr.dataset.nombre));
+  });
+
+  contenidoGrupo.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-booking-grupo]");
+    if (tr) abrirBooking(tr.dataset.bookingGrupo);
+  });
+
+  function cerrarModalGrupo() { modalGrupo.classList.remove("abierto"); }
+  document.getElementById("com-modal-grupo-cerrar").addEventListener("click", cerrarModalGrupo);
+  modalGrupo.addEventListener("click", (e) => { if (e.target === modalGrupo) cerrarModalGrupo(); });
+
+  function abrirBooking(booking) {
+    const r = RESULTADOS.find((x) => x.booking === booking);
+    if (!r) return;
+
+    const cobros = r.cobros || [];
+    cobrosActuales = cobros;
+    bookingActual = r.booking;
+
+    const cobrosHtml = cobros.length
+      ? `<table class="com-resumen">
+          <thead><tr><th>Fecha factura</th><th>Fecha cobro</th><th>Banco</th><th>Folio factura</th><th>Días</th><th>% particip.</th><th>Bucket</th><th>Total</th></tr></thead>
+          <tbody>
+            ${cobros.map((c, i) => `
+              <tr data-cobro-idx="${i}">
+                <td>${fmtFecha(c.fecha_factura)}</td>
+                <td>${fmtFecha(c.fecha_cobro)}</td>
+                <td>${c.banco || "—"}</td>
+                <td>${c.folio_factura || "—"}</td>
+                <td>${c.dias_diferencia != null ? c.dias_diferencia : "—"}</td>
+                <td>${fmtPct(c.pct_participacion)}</td>
+                <td>${c.bucket ? `<span class="com-bucket ${c.bucket}">${c.bucket === "arriba" ? "&gt;" + DIAS_UMBRAL + " días" : "&le;" + DIAS_UMBRAL + " días"}</span>` : "—"}</td>
+                <td>${fmtMoneda(c.total)} ${c.moneda || ""}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+        <p class="hint" style="margin-top:.6rem;">Clic en un cobro para ver el desglose completo de la factura.</p>`
+      : `<p class="empty">Sin cobros vinculados a este booking.</p>`;
+
+    contenidoBooking.innerHTML = `
+      <p class="com-booking-titulo">${r.booking}</p>
+      <p class="com-booking-sub">${r.vendedor || "—"} · ${r.desarrollador || "—"}</p>
+
+      <p class="com-booking-seccion">Comisión</p>
+      <div class="com-kpis" style="margin-bottom:0;">
+        <div class="com-kpi"><div class="label">Profit</div><div class="value">${fmtMoneda(r.profit)}</div></div>
+        <div class="com-kpi"><div class="label">% &gt;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_arriba)}</div></div>
+        <div class="com-kpi"><div class="label">% &le;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_debajo)}</div></div>
+      </div>
+      <div class="com-comisiones" style="margin-bottom:0; margin-top:1rem;">
+        <div class="com-comision-card">
+          <div class="etiqueta">Comisión Vendedor</div>
+          <div class="com-comparativa"><span class="actual">Actual ${fmtMoneda(r.total_vendedor_actual)}</span></div>
+          <div class="acotada">${fmtMoneda(r.total_vendedor_acotada)}</div>
+        </div>
+        <div class="com-comision-card">
+          <div class="etiqueta">Comisión Desarrollador</div>
+          <div class="com-comparativa"><span class="actual">Actual ${fmtMoneda(r.total_desarrollador_actual)}</span></div>
+          <div class="acotada">${fmtMoneda(r.total_desarrollador_acotada)}</div>
+        </div>
+      </div>
+
+      <p class="com-booking-seccion">Reporte de cobros</p>
+      ${cobrosHtml}
+    `;
+    modalBooking.classList.add("abierto");
+  }
+
+  document.querySelectorAll(".com-resumen tbody tr[data-booking]").forEach((tr) => {
+    tr.addEventListener("click", () => abrirBooking(tr.dataset.booking));
+  });
+
+  function cerrarModalBooking() { modalBooking.classList.remove("abierto"); }
+  document.getElementById("com-modal-booking-cerrar").addEventListener("click", cerrarModalBooking);
+  modalBooking.addEventListener("click", (e) => { if (e.target === modalBooking) cerrarModalBooking(); });
+
+  const modalCobro = document.getElementById("com-modal-cobro");
+  const contenidoCobro = document.getElementById("com-modal-cobro-contenido");
+
+  function abrirCobro(c) {
+    const campos = [
+      ["Folio Factura", c.folio_factura],
+      ["Referencia", bookingActual],
+      ["UUID", c.uuid],
+      ["Tipo Docto", c.tipo_docto],
+      ["Tipo / Referencia", c.tipo_referencia],
+      ["Cliente", c.cliente],
+      ["Fecha Factura", fmtFecha(c.fecha_factura)],
+      ["Fecha Cobro", fmtFecha(c.fecha_cobro)],
+      ["Días diferencia", c.dias_diferencia],
+      ["Fecha Timbre", c.fecha_timbre],
+      ["Banco", c.banco],
+      ["Moneda", c.moneda],
+      ["Subtotal", fmtMoneda(c.subtotal)],
+      ["IVA", fmtMoneda(c.iva)],
+      ["Descuento", fmtMoneda(c.descuento)],
+      ["Retención", fmtMoneda(c.retencion)],
+      ["Total", fmtMoneda(c.total)],
+      ["Total en MXN", fmtMoneda(c.monto_mxn)],
+      ["% Participación", fmtPct(c.pct_participacion)],
+    ];
+    contenidoCobro.innerHTML = `
+      <p class="com-booking-titulo">Factura ${c.folio_factura || "—"}</p>
+      <p class="com-booking-sub">${c.cliente || "Sin cliente"}</p>
+      <div class="com-cobro-grid">
+        ${campos.map(([label, valor]) => `
+          <div class="fila"><span class="label">${label}</span><span class="valor">${valor != null && valor !== "" ? valor : "—"}</span></div>
+        `).join("")}
+      </div>
+    `;
+    modalCobro.classList.add("abierto");
+  }
+
+  contenidoBooking.addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-cobro-idx]");
+    if (tr) abrirCobro(cobrosActuales[Number(tr.dataset.cobroIdx)]);
+  });
+
+  function cerrarModalCobro() { modalCobro.classList.remove("abierto"); }
+  document.getElementById("com-modal-cobro-cerrar").addEventListener("click", cerrarModalCobro);
+  modalCobro.addEventListener("click", (e) => { if (e.target === modalCobro) cerrarModalCobro(); });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (modalCobro.classList.contains("abierto")) cerrarModalCobro();
+    else if (modalBooking.classList.contains("abierto")) cerrarModalBooking();
+    else if (modalGrupo.classList.contains("abierto")) cerrarModalGrupo();
+  });
+})();
+</script>
+{% endblock %}

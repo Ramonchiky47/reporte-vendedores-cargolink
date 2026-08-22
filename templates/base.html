@@ -117,6 +117,7 @@
           {% if puede_ver_ventas %}<a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Información de Ventas</a>{% endif %}
           {% if puede_ver_reportes %}<a href="{{ url_for('reportes_graficas') }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
           {% if puede_comisiones %}<a href="{{ url_for('comisiones') }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
+          {% if session.get('es_admin') %}<a href="{{ url_for('comisiones_acotadas') }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
           {% if puede_ver_crm %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
           {% if puede_ver_catalogos %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>

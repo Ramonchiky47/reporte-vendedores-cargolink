@@ -790,16 +790,19 @@ def descargar_liquidacion_vendedor_cargolink(folio):
             continue
         if not header_visto or celdas[0] == "" or len(celdas) < 9:
             continue  # fila de totales al final, o de encabezado/folio arriba de la tabla
+        profit = num(celdas[2])
         detalle.append({
             "booking": celdas[0],
             "folio_cobro": celdas[1],
-            "profit": num(celdas[2]),
+            "profit": profit,
             "vendedor": celdas[3],
             "pct_vendedor": num(celdas[4]),
             "total_vendedor": num(celdas[5]),
             "desarrollador": celdas[6],
-            "pct_desarrollador": num(celdas[7]),
-            "total_desarrollador": num(celdas[8]),
+            # La comisión del desarrollador ya no viene de CargoLink: se
+            # calcula aquí como profit * 0.02.
+            "pct_desarrollador": 2.0 if celdas[6] else None,
+            "total_desarrollador": round(profit * 0.02, 2) if celdas[6] else 0.0,
         })
 
     return {"folio": int(folio), "descripcion": descripcion, "detalle": detalle}
@@ -2129,6 +2132,198 @@ def comisiones_cobros_cargar():
 
     flash(f'Cobros cargados para "{etiqueta}": {len(cobros)} registro(s).')
     return redirect(url_for("comisiones", folio=folio))
+
+
+def calcular_comisiones_acotadas(
+    filas, cobros_por_booking, tasa_usd, tasa_eur, dias_umbral,
+    pct_vendedor_arriba, pct_vendedor_debajo, pct_desarrollador_arriba, pct_desarrollador_debajo,
+):
+    """Comisión 'acotada': por cada booking se reparte el profit entre sus
+    cobros según su % de participación en MXN (convirtiendo USD/EUR con la
+    tasa dada), agrupando ese % en dos buckets según dias_diferencia
+    (> dias_umbral o <= dias_umbral). A cada bucket se le aplica una tasa
+    distinta para vendedor y desarrollador, y la comisión es la suma de
+    ambos. Si el booking no tiene cobros utilizables (sin registros, sin
+    dias_diferencia, o en una moneda sin tasa) se mantiene su comisión
+    actual sin cambios."""
+    tasas_moneda = {"MXN": 1.0, "USD": tasa_usd, "EUR": tasa_eur}
+    resultado = []
+    for f in filas:
+        booking = f["booking"]
+        profit = float(f["profit"])
+        total_vendedor_actual = float(f["total_vendedor"])
+        total_desarrollador_actual = float(f["total_desarrollador"])
+
+        cobros_raw = cobros_por_booking.get(booking) or []
+        filas_calc = []
+        for c in cobros_raw:
+            tasa = tasas_moneda.get(c["moneda"])
+            usable = tasa is not None and c["dias_diferencia"] is not None
+            monto_mxn = float(c["total"]) * tasa if tasa is not None else None
+            filas_calc.append({"c": c, "monto_mxn": monto_mxn, "dias": c["dias_diferencia"], "usable": usable})
+
+        usables = [v for v in filas_calc if v["usable"]]
+        suma_mxn = sum(v["monto_mxn"] for v in usables)
+        con_regla = bool(usables) and suma_mxn != 0
+
+        if con_regla:
+            for v in usables:
+                v["pct"] = v["monto_mxn"] / suma_mxn * 100
+            pct_arriba = sum(v["pct"] for v in usables if v["dias"] > dias_umbral)
+            pct_debajo = sum(v["pct"] for v in usables if v["dias"] <= dias_umbral)
+            profit_arriba = profit * pct_arriba / 100
+            profit_debajo = profit * pct_debajo / 100
+            total_vendedor_acotada = round(
+                profit_arriba * pct_vendedor_arriba / 100 + profit_debajo * pct_vendedor_debajo / 100, 2
+            )
+            total_desarrollador_acotada = round(
+                profit_arriba * pct_desarrollador_arriba / 100 + profit_debajo * pct_desarrollador_debajo / 100, 2
+            )
+        else:
+            pct_arriba = pct_debajo = None
+            total_vendedor_acotada = total_vendedor_actual
+            total_desarrollador_acotada = total_desarrollador_actual
+
+        cobros_out = []
+        for v in filas_calc:
+            c = v["c"]
+            bucket = None
+            if v["usable"]:
+                bucket = "arriba" if v["dias"] > dias_umbral else "debajo"
+            cobros_out.append({
+                "folio_cobro": c["folio_cobro"],
+                "folio_factura": c["folio_factura"],
+                "uuid": c["uuid"],
+                "tipo_docto": c["tipo_docto"],
+                "tipo_referencia": c["tipo_referencia"],
+                "cliente": c["cliente"],
+                "fecha_factura": c["fecha_factura"].strftime("%Y-%m-%d") if c["fecha_factura"] else None,
+                "fecha_cobro": c["fecha_cobro"].strftime("%Y-%m-%d") if c["fecha_cobro"] else None,
+                "dias_diferencia": c["dias_diferencia"],
+                "fecha_timbre": c["fecha_timbre"],
+                "banco": c["banco"],
+                "moneda": c["moneda"],
+                "subtotal": float(c["subtotal"]),
+                "iva": float(c["iva"]),
+                "descuento": float(c["descuento"]),
+                "retencion": float(c["retencion"]),
+                "total": float(c["total"]),
+                "monto_mxn": round(v["monto_mxn"], 2) if v["monto_mxn"] is not None else None,
+                "pct_participacion": round(v["pct"], 2) if v.get("pct") is not None else None,
+                "bucket": bucket,
+            })
+
+        resultado.append({
+            "booking": booking, "vendedor": f["vendedor"], "desarrollador": f["desarrollador"],
+            "profit": profit,
+            "pct_arriba": round(pct_arriba, 2) if pct_arriba is not None else None,
+            "pct_debajo": round(pct_debajo, 2) if pct_debajo is not None else None,
+            "total_vendedor_actual": total_vendedor_actual, "total_vendedor_acotada": total_vendedor_acotada,
+            "total_desarrollador_actual": total_desarrollador_actual,
+            "total_desarrollador_acotada": total_desarrollador_acotada,
+            "con_regla": con_regla,
+            "cobros": cobros_out,
+        })
+    return resultado
+
+
+@app.route("/comisiones-acotadas")
+@login_required
+def comisiones_acotadas():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Comisiones Acotadas.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    db = get_db()
+    folios_disponibles = db.execute(
+        "SELECT DISTINCT folio, descripcion FROM comisiones_liquidacion_detalle WHERE folio >= 40 ORDER BY folio DESC"
+    ).fetchall()
+
+    folio_solicitado = request.args.get("folio", type=int)
+    folio_actual = folio_solicitado or (folios_disponibles[0]["folio"] if folios_disponibles else None)
+
+    tasa_usd = request.args.get("usd", type=float)
+    tasa_eur = request.args.get("eur", type=float)
+    dias_umbral = request.args.get("dias", type=int) or 35
+    pct_vendedor_arriba = request.args.get("pct_v_arriba", type=float)
+    pct_vendedor_arriba = 5.0 if pct_vendedor_arriba is None else pct_vendedor_arriba
+    pct_desarrollador_arriba = request.args.get("pct_d_arriba", type=float)
+    pct_desarrollador_arriba = 1.0 if pct_desarrollador_arriba is None else pct_desarrollador_arriba
+    pct_vendedor_debajo = 7.0
+    pct_desarrollador_debajo = 2.0
+
+    filas = []
+    descripcion = None
+    resultados = []
+    if folio_actual is not None:
+        filas = db.execute(
+            "SELECT * FROM comisiones_liquidacion_detalle WHERE folio = %s ORDER BY booking", (folio_actual,)
+        ).fetchall()
+        if filas:
+            descripcion = filas[0]["descripcion"]
+            bookings = [f["booking"] for f in filas]
+            cobros_por_booking = {}
+            for r in db.execute(
+                "SELECT referencia, folio_cobro, folio_factura, uuid, tipo_docto, tipo_referencia, cliente, "
+                "fecha_factura, fecha_cobro, dias_diferencia, fecha_timbre, banco, moneda, subtotal, iva, "
+                "descuento, retencion, total "
+                "FROM comisiones_cobros_detalle WHERE referencia = ANY(%s) ORDER BY fecha_cobro",
+                (bookings,),
+            ):
+                cobros_por_booking.setdefault(r["referencia"], []).append(r)
+
+            if tasa_usd and tasa_eur:
+                resultados = calcular_comisiones_acotadas(
+                    filas, cobros_por_booking, tasa_usd, tasa_eur, dias_umbral,
+                    pct_vendedor_arriba, pct_vendedor_debajo, pct_desarrollador_arriba, pct_desarrollador_debajo,
+                )
+    db.close()
+
+    con_regla = sum(1 for r in resultados if r["con_regla"])
+    total_vendedor_actual = sum(r["total_vendedor_actual"] for r in resultados)
+    total_vendedor_acotada = sum(r["total_vendedor_acotada"] for r in resultados)
+    total_desarrollador_actual = sum(r["total_desarrollador_actual"] for r in resultados)
+    total_desarrollador_acotada = sum(r["total_desarrollador_acotada"] for r in resultados)
+
+    def agrupar(campo_nombre, campo_actual, campo_acotada):
+        grupos = {}
+        for r in resultados:
+            nombre = r[campo_nombre] or "(sin nombre)"
+            g = grupos.setdefault(nombre, {"nombre": nombre, "cant_book": 0, "actual": 0.0, "acotada": 0.0})
+            g["cant_book"] += 1
+            g["actual"] += r[campo_actual]
+            g["acotada"] += r[campo_acotada]
+        return sorted(grupos.values(), key=lambda g: g["acotada"], reverse=True)
+
+    por_vendedor = agrupar("vendedor", "total_vendedor_actual", "total_vendedor_acotada")
+    por_desarrollador = agrupar("desarrollador", "total_desarrollador_actual", "total_desarrollador_acotada")
+
+    resultados_json = json.dumps(resultados).replace("</", "<\\/")
+
+    return render_template(
+        "comisiones_acotadas.html",
+        folios_disponibles=folios_disponibles,
+        folio_actual=folio_actual,
+        descripcion=descripcion,
+        tasa_usd=tasa_usd,
+        tasa_eur=tasa_eur,
+        dias_umbral=dias_umbral,
+        pct_vendedor_arriba=pct_vendedor_arriba,
+        pct_vendedor_debajo=pct_vendedor_debajo,
+        pct_desarrollador_arriba=pct_desarrollador_arriba,
+        pct_desarrollador_debajo=pct_desarrollador_debajo,
+        resultados=resultados,
+        resultados_json=resultados_json,
+        total_bookings=len(filas),
+        con_regla=con_regla,
+        sin_regla=len(resultados) - con_regla,
+        total_vendedor_actual=total_vendedor_actual,
+        total_vendedor_acotada=total_vendedor_acotada,
+        total_desarrollador_actual=total_desarrollador_actual,
+        total_desarrollador_acotada=total_desarrollador_acotada,
+        por_vendedor=por_vendedor,
+        por_desarrollador=por_desarrollador,
+    )
 
 
 @app.route("/reportes/por-vendedor")
