@@ -109,7 +109,9 @@
   </aside>
 
   <div class="barra-superior">
-    {% if reporte_ventas_url %}
+    {% if request.args.get('panel') == 'comercial' %}
+      <a class="btn-volver" href="{{ importaciones_url }}/inicio" onclick="try{window.close();}catch(e){}">&larr; Regresar al menú</a>
+    {% elif reporte_ventas_url %}
       <a class="btn-volver" href="{{ reporte_ventas_url }}">&larr; Reporte de Ventas</a>
     {% endif %}
     <h2 class="barra-superior__titulo">{{ titulo_pagina }}</h2>

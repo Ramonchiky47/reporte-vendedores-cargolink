@@ -111,17 +111,24 @@
         </span>
         <h1>Reporte de Ventas</h1>
       </div>
+      {% set panel = request.args.get('panel') %}
+      {% set panel_ventas = panel == 'ventas' %}
+      {% set panel_admin = panel == 'admin' %}
+      {% set panel_scoped = panel_ventas or panel_admin %}
       <nav>
         <div class="nav-links">
-          {% if session.get('es_admin') %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
-          {% if puede_ver_ventas %}<a href="{{ url_for('dashboard_plazas_vendedores') }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Información de Ventas</a>{% endif %}
-          {% if puede_ver_reportes %}<a href="{{ url_for('reportes_graficas') }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
-          {% if puede_comisiones %}<a href="{{ url_for('comisiones') }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
-          {% if session.get('es_admin') %}<a href="{{ url_for('comisiones_acotadas') }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
-          {% if puede_ver_crm %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
-          {% if puede_ver_catalogos %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
+          {% if session.get('es_admin') and not panel_scoped %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
+          {% if puede_ver_ventas and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Información de Ventas</a>{% endif %}
+          {% if puede_ver_reportes and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('reportes_graficas', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
+          {% if puede_comisiones and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
+          {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
+          {% if puede_ver_crm and not panel_scoped %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
+          {% if puede_ver_catalogos and not panel_scoped %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>
         <div class="nav-user">
+          {% if panel_scoped %}
+          <a href="{{ importaciones_url }}/inicio" onclick="try{window.close();}catch(e){}">← Regresar al menú</a>
+          {% endif %}
           {% if session.get('usuario') %}<span style="opacity:.75;">{{ session['usuario'] }}</span>{% endif %}
           <a href="{{ url_for('logout') }}">Cerrar sesión</a>
         </div>

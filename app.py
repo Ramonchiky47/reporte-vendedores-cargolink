@@ -7,8 +7,10 @@ persistente ni de subprocesos — la descarga de CargoLink corre inline y los
 resultados se guardan directo en la base de datos.
 """
 
+import base64
 import calendar
 import csv
+import hashlib
 import hmac
 import io
 import json
@@ -16,6 +18,7 @@ import os
 import random
 import re
 import secrets
+import time
 from datetime import date, datetime, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -1092,6 +1095,8 @@ def agregar_cabeceras_seguridad(resp):
 
 
 IMPORTACIONES_URL = (os.environ.get("IMPORTACIONES_URL") or "http://localhost:3001").strip()
+SSO_SHARED_SECRET = (os.environ.get("SSO_SHARED_SECRET") or "").strip()
+SSO_TOKEN_TTL_SEGUNDOS = 60
 
 
 @app.context_processor
@@ -1525,6 +1530,91 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+def verificar_token_sso(token):
+    """Valida un token de acceso único emitido por Seguimiento de
+    Importaciones para no pedir login de nuevo (mismo catálogo de accesos):
+    HMAC-SHA256 sobre {email, iat} con un secreto compartido
+    (SSO_SHARED_SECRET) y vigencia corta. Regresa el email si es válido."""
+    if not SSO_SHARED_SECRET or not token or "." not in token:
+        return None
+    payload_b64, firma = token.rsplit(".", 1)
+    esperada = hmac.new(
+        SSO_SHARED_SECRET.encode(), payload_b64.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(firma, esperada):
+        return None
+    try:
+        relleno = "=" * (-len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + relleno))
+        email = payload["email"]
+        iat = float(payload["iat"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not (-5 <= time.time() - iat <= SSO_TOKEN_TTL_SEGUNDOS):
+        return None
+    return email
+
+
+def _siguiente_sso_valido(next_path):
+    """Solo permite redirigir dentro de esta misma app tras el SSO — una
+    ruta relativa, nunca una URL completa (evita usar /sso como open-redirect)."""
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+        return None
+    return next_path
+
+
+@app.route("/sso")
+def sso():
+    email = verificar_token_sso(request.args.get("token", ""))
+    if not email:
+        flash("El enlace de acceso expiró o no es válido. Inicia sesión normalmente.")
+        return redirect(url_for("login"))
+
+    db = get_db()
+    fila = db.execute(
+        """
+        SELECT
+            u.id, u.email,
+            (u.banned_until IS NOT NULL AND u.banned_until > now()) AS baneado,
+            coalesce(p.es_admin, false) AS es_admin,
+            coalesce(p.puede_exportar, false) AS puede_exportar,
+            coalesce(p.puede_actualizar, false) AS puede_actualizar,
+            coalesce(p.puede_comisiones, false) AS puede_comisiones,
+            coalesce(p.puede_ver_ventas, true) AS puede_ver_ventas,
+            coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
+            coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
+            coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
+            coalesce(p.todas_las_plazas, false) AS todas_las_plazas
+        FROM auth.users u
+        LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
+        WHERE lower(u.email) = lower(%(email)s)
+        """,
+        {"email": email},
+    ).fetchone()
+    db.close()
+
+    if not fila or fila["baneado"]:
+        flash("Tu cuenta no tiene acceso a esta app.")
+        return redirect(url_for("login"))
+
+    session.permanent = True
+    session["logged_in"] = True
+    session["usuario"] = fila["email"]
+    session["usuario_id"] = str(fila["id"])
+    session["es_admin"] = bool(fila["es_admin"])
+    session["puede_exportar"] = bool(fila["puede_exportar"])
+    session["puede_actualizar"] = bool(fila["puede_actualizar"])
+    session["puede_comisiones"] = bool(fila["puede_comisiones"])
+    session["puede_ver_ventas"] = bool(fila["puede_ver_ventas"])
+    session["puede_ver_reportes"] = bool(fila["puede_ver_reportes"])
+    session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
+    session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
+    session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
+
+    destino = _siguiente_sso_valido(request.args.get("next")) or url_for(primera_pagina_permitida())
+    return redirect(destino)
 
 
 @app.route("/", methods=["GET"])
