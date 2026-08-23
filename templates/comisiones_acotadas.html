@@ -359,7 +359,7 @@
     if (!r.con_regla) return `<span class="com-distribucion dsin">sin datos</span>`;
     if (r.pct_arriba >= 99.99) return `<span class="com-distribucion d100-arriba">100% &gt;${DIAS_UMBRAL} días</span>`;
     if (r.pct_debajo >= 99.99) return `<span class="com-distribucion d100-debajo">100% &le;${DIAS_UMBRAL} días</span>`;
-    return `<span class="com-distribucion dmixto">Mixto: ${fmtPct(r.pct_arriba)} / ${fmtPct(r.pct_debajo)}</span>`;
+    return `<span class="com-distribucion dmixto">${fmtPct(r.pct_debajo)} actual · ${fmtPct(r.pct_arriba)} reducido</span>`;
   }
 
   // ---- modal de grupo: todos los bookings de un vendedor/desarrollador ----
