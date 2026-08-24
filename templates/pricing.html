@@ -3,44 +3,41 @@
 {% set active = "pricing" %}
 {% block extra_head %}
 <style>
-  main { max-width: 980px; }
-  .pricing-solicitud {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 1.25rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 2px rgba(15,23,42,0.04);
-  }
-  .pricing-encabezado {
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
-    margin-bottom: .6rem;
-  }
-  .pricing-titulo { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
-  .pricing-titulo strong { font-size: .95rem; }
+  main { max-width: 1180px; }
   .pricing-badge {
-    font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 999px;
-    text-transform: uppercase; letter-spacing: .02em;
+    display: inline-block; font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
   }
   .pricing-badge.solicitud { background: #fef3de; color: #92400e; }
   .pricing-badge.en-proceso { background: #dbeafe; color: var(--accent-dark); }
   .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
   .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
-  .pricing-meta { font-size: .78rem; color: var(--ink-3); }
-  .pricing-datos {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .5rem 1.5rem;
-    font-size: .82rem; margin: .75rem 0 1rem; padding: .75rem 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+
+  .tabla-pricing-wrap { overflow-x: auto; }
+  .tabla-pricing { width: 100%; border-collapse: collapse; font-size: .83rem; min-width: 980px; }
+  .tabla-pricing th {
+    text-align: left; padding: .55rem .6rem; color: var(--ink-2); font-weight: 700;
+    border-bottom: 1px solid var(--border); background: #f8fafc; white-space: nowrap;
   }
-  .pricing-datos .campo .label { color: var(--ink-3); font-size: .7rem; text-transform: uppercase; letter-spacing: .02em; }
-  .pricing-datos .campo .valor { color: var(--ink); font-weight: 500; }
-  .pricing-respuesta-previa {
-    background: #f8fafc; border-radius: var(--radius-sm); padding: .7rem .9rem; margin-bottom: .9rem;
-    font-size: .82rem; color: var(--ink-2);
+  .tabla-pricing td { padding: .6rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .tabla-pricing tr:last-child td { border-bottom: none; }
+  .tabla-pricing tr:hover td { background: #f8fafc; }
+  .col-referencia { white-space: nowrap; }
+  .col-referencia .cotizacion { display: block; font-size: .76rem; margin-top: .15rem; }
+  .col-referencia .cliente { color: var(--ink-3); }
+  .col-meta { white-space: nowrap; color: var(--ink-2); }
+  .col-meta .fecha { display: block; font-size: .76rem; color: var(--ink-3); }
+  .col-ruta { white-space: nowrap; }
+  .pricing-form { display: flex; flex-direction: column; gap: .4rem; min-width: 260px; }
+  .pricing-form .fila { display: flex; gap: .4rem; }
+  .pricing-form select {
+    padding: .4rem .5rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: .8rem;
   }
-  .pricing-respuesta-previa .quien { color: var(--ink-3); font-size: .74rem; margin-top: .3rem; }
-  .pricing-form { display: flex; gap: .75rem; flex-wrap: wrap; align-items: flex-end; }
-  .pricing-form .campo-estado { min-width: 160px; }
-  .pricing-form .campo-respuesta { flex: 1; min-width: 260px; }
-  .pricing-form select, .pricing-form textarea {
-    width: 100%; padding: .5rem .6rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: .85rem;
+  .pricing-form textarea {
+    width: 100%; padding: .4rem .5rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-size: .8rem; resize: vertical; min-height: 2.2rem;
   }
-  .pricing-form textarea { resize: vertical; min-height: 2.4rem; }
+  .pricing-respuesta-previa { font-size: .74rem; color: var(--ink-3); margin-top: .2rem; }
 </style>
 {% endblock %}
 {% block content %}
@@ -48,51 +45,65 @@
     <p class="hint" style="margin: 0 0 1.5rem;">Solicitudes Marítimo / Aéreo de todas las cotizaciones, para cotizarlas o contestarlas.</p>
 
     {% if filas %}
-      {% for fila in filas %}
-      <div class="pricing-solicitud">
-        <div class="pricing-encabezado">
-          <div class="pricing-titulo">
-            <strong>{{ fila.referencia }}</strong>
-            <span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span>
-            {% if fila.cotizacion_id %}
-            <a href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=fila.cotizacion_id) }}" style="font-size: .78rem;">
-              {{ fila.id_cotizacion or ('Cotización #' ~ fila.cotizacion_id) }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}
-            </a>
-            {% endif %}
-          </div>
-          <span class="pricing-meta">{{ fila.tipo_embarque or '—' }} · {{ fila.fecha_creacion }} · pidió {{ fila.creado_por or '—' }}</span>
-        </div>
-
-        <div class="pricing-datos">
-          <div class="campo"><div class="label">Origen</div><div class="valor">{{ fila.pais_origen or '—' }}{% if fila.puerto_carga %} · {{ fila.puerto_carga }}{% endif %}</div></div>
-          <div class="campo"><div class="label">Destino</div><div class="valor">{{ fila.pais_destino or '—' }}{% if fila.puerto_descarga %} · {{ fila.puerto_descarga }}{% endif %}</div></div>
-          <div class="campo"><div class="label">Producto</div><div class="valor">{{ fila.producto or '—' }}</div></div>
-          <div class="campo"><div class="label">Agente a cotizar</div><div class="valor">{{ fila.agente_a_cotizar or '—' }}</div></div>
-        </div>
-
-        {% if fila.respuesta_pricing %}
-        <div class="pricing-respuesta-previa">
-          {{ fila.respuesta_pricing }}
-          <div class="quien">— {{ fila.respondido_por or 'Pricing' }}{% if fila.respondido_en %} · {{ fila.respondido_en.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>
-        </div>
-        {% endif %}
-
-        <form class="pricing-form" method="post" action="{{ url_for('pricing_responder', solicitud_id=fila.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="campo-estado">
-            <select name="estado">
-              {% for opcion in estados %}
-              <option value="{{ opcion }}" {{ 'selected' if opcion == fila.estado else '' }}>{{ opcion }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="campo-respuesta">
-            <textarea name="respuesta_pricing" rows="1" placeholder="Escribe la respuesta o cotización para el vendedor...">{{ fila.respuesta_pricing or '' }}</textarea>
-          </div>
-          <button class="btn small" type="submit">Guardar</button>
-        </form>
-      </div>
-      {% endfor %}
+    <div class="tabla-pricing-wrap">
+      <table class="tabla-pricing">
+        <thead>
+          <tr>
+            <th>Referencia</th>
+            <th>Tipo · Fecha</th>
+            <th>Ruta</th>
+            <th>Producto</th>
+            <th>Agente a cotizar</th>
+            <th>Estado</th>
+            <th>Respuesta</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td class="col-referencia">
+              <strong>{{ fila.referencia }}</strong>
+              {% if fila.cotizacion_id %}
+              <a class="cotizacion" href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=fila.cotizacion_id) }}">
+                {{ fila.id_cotizacion or ('Cotización #' ~ fila.cotizacion_id) }}
+              </a>
+              {% if fila.cliente_nombre %}<span class="cliente" style="font-size: .76rem;">{{ fila.cliente_nombre }}</span>{% endif %}
+              {% endif %}
+            </td>
+            <td class="col-meta">
+              {{ fila.tipo_embarque or '—' }}
+              <span class="fecha">{{ fila.fecha_creacion }} · {{ fila.creado_por or '—' }}</span>
+            </td>
+            <td class="col-ruta">
+              {{ fila.pais_origen or '—' }}{% if fila.puerto_carga %} ({{ fila.puerto_carga }}){% endif %}
+              →
+              {{ fila.pais_destino or '—' }}{% if fila.puerto_descarga %} ({{ fila.puerto_descarga }}){% endif %}
+            </td>
+            <td>{{ fila.producto or '—' }}</td>
+            <td>{{ fila.agente_a_cotizar or '—' }}</td>
+            <td colspan="2">
+              <form class="pricing-form" method="post" action="{{ url_for('pricing_responder', solicitud_id=fila.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="fila">
+                  <select name="estado">
+                    {% for opcion in estados %}
+                    <option value="{{ opcion }}" {{ 'selected' if opcion == fila.estado else '' }}>{{ opcion }}</option>
+                    {% endfor %}
+                  </select>
+                  <span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span>
+                </div>
+                <textarea name="respuesta_pricing" rows="1" placeholder="Respuesta o cotización para el vendedor...">{{ fila.respuesta_pricing or '' }}</textarea>
+                {% if fila.respondido_por %}
+                <span class="pricing-respuesta-previa">— {{ fila.respondido_por }}{% if fila.respondido_en %} · {{ fila.respondido_en.strftime('%Y-%m-%d %H:%M') }}{% endif %}</span>
+                {% endif %}
+                <button class="btn small" type="submit" style="align-self: flex-start;">Guardar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% else %}
     <p class="empty">Todavía no hay solicitudes a Pricing.</p>
     {% endif %}
