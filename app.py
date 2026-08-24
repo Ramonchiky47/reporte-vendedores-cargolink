@@ -479,7 +479,7 @@ def get_desarrolladores(db):
 
 
 def opciones_mes():
-    anio_actual = datetime.now().year
+    anio_actual = datetime.now(TZ_LOCAL).year
     opciones = []
     for anio in range(anio_actual - 1, anio_actual + 2):
         for mes_num, nombre in enumerate(MESES_ES, start=1):
@@ -1036,7 +1036,7 @@ def construir_datos_dashboard(plazas_permitidas=None):
         })
 
     todos_los_meses = sorted(set(f["mes"] for f in filas) | set(f["mes"] for f in filas_desarrolladores))
-    mes_actual = datetime.now().strftime("%Y-%m")
+    mes_actual = datetime.now(TZ_LOCAL).strftime("%Y-%m")
     if mes_actual not in todos_los_meses:
         todos_los_meses.append(mes_actual)
         todos_los_meses.sort()
@@ -5024,7 +5024,7 @@ def catalogo_presupuesto():
     db.close()
     return render_template(
         "catalogo_presupuesto.html", filas=filas, opciones_mes=opciones_mes(),
-        mes_actual=datetime.now().strftime("%Y-%m"),
+        mes_actual=datetime.now(TZ_LOCAL).strftime("%Y-%m"),
         vendedores=vendedores, desarrolladores=desarrolladores,
     )
 
