@@ -2865,6 +2865,113 @@ def construir_contactos_crm(plazas_permitidas=None):
     return resultado
 
 
+def sincronizar_contactos_grupo(db, grupo_id):
+    """Reconstruye crm_contacto_grupos para este grupo a partir de los
+    clientes que tiene asociados ahora mismo (crm_grupos_clientes) y los
+    contactos de esos clientes (crm_contacto_clientes): cualquier contacto
+    de un cliente del grupo queda automáticamente en el grupo, y se quita si
+    su cliente sale — no requiere asociarlos a mano."""
+    db.execute("DELETE FROM crm_contacto_grupos WHERE grupo_id = %s", (grupo_id,))
+    db.execute("""
+        INSERT INTO crm_contacto_grupos (contacto_id, grupo_id)
+        SELECT DISTINCT cc.contacto_id, %s
+        FROM crm_contacto_clientes cc
+        JOIN crm_grupos_clientes gc ON gc.cliente_folio = cc.cliente_folio AND gc.grupo_id = %s
+    """, (grupo_id, grupo_id))
+
+
+def construir_grupos_crm(plazas_permitidas=None):
+    """Grupos de clientes (crm_grupos) con cuántos clientes y contactos
+    tiene cada uno. Un grupo es visible si al menos uno de sus clientes cae
+    en una plaza permitida (mismo criterio que Clientes/Contactos)."""
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    grupos = db.execute("SELECT id, nombre, creado_en FROM crm_grupos ORDER BY creado_en DESC").fetchall()
+    miembros = db.execute("""
+        SELECT gc.grupo_id, ac.vendedor
+        FROM crm_grupos_clientes gc
+        JOIN asignacion_de_clientes ac ON ac.folio = gc.cliente_folio
+    """).fetchall()
+    contactos_por_grupo = {
+        r["grupo_id"]: r["n"]
+        for r in db.execute("SELECT grupo_id, count(*) AS n FROM crm_contacto_grupos GROUP BY grupo_id")
+    }
+    db.close()
+
+    clientes_visibles_por_grupo = {}
+    for m in miembros:
+        plaza = plaza_por_vendedor.get(normalizar(m["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
+
+    resultado = []
+    for g in grupos:
+        n_clientes = clientes_visibles_por_grupo.get(g["id"], 0)
+        if plazas_permitidas is not None and n_clientes == 0:
+            continue
+        resultado.append({
+            "id": g["id"], "nombre": g["nombre"], "creado_en": g["creado_en"],
+            "clientes_n": n_clientes, "contactos_n": contactos_por_grupo.get(g["id"], 0),
+        })
+    return resultado
+
+
+def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None):
+    """Un grupo con sus clientes miembro y los contactos que se le asociaron
+    automáticamente (vía sincronizar_contactos_grupo)."""
+    db = get_db()
+    grupo = db.execute("SELECT id, nombre, creado_en FROM crm_grupos WHERE id = %s", (grupo_id,)).fetchone()
+    if grupo is None:
+        db.close()
+        return None
+
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+
+    miembros_raw = db.execute("""
+        SELECT ac.folio, ac.razon_social, ac.vendedor
+        FROM crm_grupos_clientes gc
+        JOIN asignacion_de_clientes ac ON ac.folio = gc.cliente_folio
+        WHERE gc.grupo_id = %s
+        ORDER BY ac.razon_social
+    """, (grupo_id,)).fetchall()
+
+    contactos = db.execute("""
+        SELECT DISTINCT c.id, c.nombre, c.apellido, c.correo, c.telefono
+        FROM crm_contacto_grupos cg
+        JOIN crm_contactos c ON c.id = cg.contacto_id
+        WHERE cg.grupo_id = %s
+        ORDER BY c.nombre, c.apellido
+    """, (grupo_id,)).fetchall()
+    db.close()
+
+    miembros = []
+    for m in miembros_raw:
+        plaza = plaza_por_vendedor.get(normalizar(m["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        miembros.append({"folio": m["folio"], "cliente": m["razon_social"], "vendedor": m["vendedor"] or "#N/D"})
+
+    return {
+        "id": grupo["id"], "nombre": grupo["nombre"], "creado_en": grupo["creado_en"],
+        "miembros": miembros,
+        "contactos": [
+            {
+                "id": c["id"],
+                "nombre": f"{c['nombre']} {c['apellido'] or ''}".strip(),
+                "correo": c["correo"] or "",
+                "telefono": c["telefono"] or "",
+            }
+            for c in contactos
+        ],
+    }
+
+
 def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None):
     """Info de un contacto + sus clientes/grupos asociados + los bookings
     reales de esos clientes (reporte_bookings, casados por nombre), para la
@@ -4059,7 +4166,144 @@ def crm_seccion(slug):
         cotizaciones = construir_cotizaciones_crm(plazas_permitidas_usuario())
         return render_template("crm_cotizaciones.html", nav_groups=nav_groups, titulo_pagina=item["texto"], cotizaciones=cotizaciones)
 
+    if slug == "grupo":
+        grupos = construir_grupos_crm(plazas_permitidas_usuario())
+        return render_template("crm_grupos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], grupos=grupos)
+
     return render_template("crm_placeholder.html", nav_groups=nav_groups, titulo_pagina=item["texto"])
+
+
+@app.route("/crm/grupos/buscar-clientes")
+@crm_required
+def crm_grupos_buscar_clientes():
+    """Búsqueda en vivo de clientes para agregarlos a un grupo — nunca se
+    manda la lista completa (son miles) al navegador, solo coincidencias."""
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return {"resultados": []}
+    grupo_id_raw = (request.args.get("grupo_id") or "").strip()
+    plazas_permitidas = plazas_permitidas_usuario()
+
+    db = get_db()
+    plaza_por_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
+        plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+    filas = db.execute(
+        "SELECT folio, razon_social, vendedor FROM asignacion_de_clientes "
+        "WHERE razon_social ILIKE %s AND vendedor IS NOT NULL ORDER BY razon_social LIMIT 25",
+        (f"%{q}%",),
+    ).fetchall()
+    ya_en_grupo = set()
+    if grupo_id_raw.isdigit():
+        ya_en_grupo = {
+            r["cliente_folio"]
+            for r in db.execute("SELECT cliente_folio FROM crm_grupos_clientes WHERE grupo_id = %s", (int(grupo_id_raw),))
+        }
+    db.close()
+
+    resultados = []
+    for f in filas:
+        if f["folio"] in ya_en_grupo:
+            continue
+        plaza = plaza_por_vendedor.get(normalizar(f["vendedor"]), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        resultados.append({"folio": f["folio"], "nombre": f["razon_social"]})
+    return {"resultados": resultados}
+
+
+@app.route("/crm/grupos/nuevo", methods=["GET", "POST"])
+@crm_required
+def crm_grupo_nuevo():
+    if request.method == "POST":
+        nombre = (request.form.get("nombre", "") or "").strip()[:120]
+        if not nombre:
+            flash("El grupo necesita un nombre.")
+            return render_template("crm_grupo_form.html", nav_groups=agrupar_nav_crm("grupo"), titulo_pagina="Nuevo grupo")
+        db = get_db()
+        try:
+            fila = db.execute("INSERT INTO crm_grupos (nombre) VALUES (%s) RETURNING id", (nombre,)).fetchone()
+            db.commit()
+        except psycopg.errors.UniqueViolation:
+            db.rollback()
+            flash(f'Ya existe un grupo llamado "{nombre}".')
+            db.close()
+            return render_template("crm_grupo_form.html", nav_groups=agrupar_nav_crm("grupo"), titulo_pagina="Nuevo grupo")
+        db.close()
+        return redirect(url_for("crm_grupo_detalle", grupo_id=fila["id"]))
+    return render_template("crm_grupo_form.html", nav_groups=agrupar_nav_crm("grupo"), titulo_pagina="Nuevo grupo")
+
+
+@app.route("/crm/grupos/<int:grupo_id>")
+@crm_required
+def crm_grupo_detalle(grupo_id):
+    grupo = construir_grupo_detalle_crm(grupo_id, plazas_permitidas_usuario())
+    if grupo is None:
+        flash("Grupo no encontrado.")
+        return redirect(url_for("crm_seccion", slug="grupo"))
+    return render_template(
+        "crm_grupo_detalle.html", nav_groups=agrupar_nav_crm("grupo"), titulo_pagina=grupo["nombre"], grupo=grupo,
+    )
+
+
+@app.route("/crm/grupos/<int:grupo_id>/renombrar", methods=["POST"])
+@crm_required
+def crm_grupo_renombrar(grupo_id):
+    nombre = (request.form.get("nombre", "") or "").strip()[:120]
+    if not nombre:
+        flash("El grupo necesita un nombre.")
+        return redirect(url_for("crm_grupo_detalle", grupo_id=grupo_id))
+    db = get_db()
+    try:
+        db.execute("UPDATE crm_grupos SET nombre = %s WHERE id = %s", (nombre, grupo_id))
+        db.commit()
+    except psycopg.errors.UniqueViolation:
+        db.rollback()
+        flash(f'Ya existe un grupo llamado "{nombre}".')
+    db.close()
+    return redirect(url_for("crm_grupo_detalle", grupo_id=grupo_id))
+
+
+@app.route("/crm/grupos/<int:grupo_id>/miembros", methods=["POST"])
+@crm_required
+def crm_grupo_miembros(grupo_id):
+    accion = request.form.get("accion")
+    folio_raw = (request.form.get("cliente_folio", "") or "").strip()
+    if accion not in ("agregar", "quitar") or not folio_raw.isdigit():
+        flash("Solicitud inválida.")
+        return redirect(url_for("crm_grupo_detalle", grupo_id=grupo_id))
+    folio = int(folio_raw)
+
+    db = get_db()
+    grupo = db.execute("SELECT id FROM crm_grupos WHERE id = %s", (grupo_id,)).fetchone()
+    if grupo is None:
+        db.close()
+        flash("Grupo no encontrado.")
+        return redirect(url_for("crm_seccion", slug="grupo"))
+
+    if accion == "agregar":
+        db.execute(
+            "INSERT INTO crm_grupos_clientes (grupo_id, cliente_folio) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (grupo_id, folio),
+        )
+    else:
+        db.execute("DELETE FROM crm_grupos_clientes WHERE grupo_id = %s AND cliente_folio = %s", (grupo_id, folio))
+
+    sincronizar_contactos_grupo(db, grupo_id)
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_grupo_detalle", grupo_id=grupo_id))
+
+
+@app.route("/crm/grupos/<int:grupo_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_grupo_eliminar(grupo_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_grupos WHERE id = %s", (grupo_id,))
+    db.commit()
+    db.close()
+    flash("Grupo eliminado.")
+    return redirect(url_for("crm_seccion", slug="grupo"))
 
 
 @app.route("/crm/clientes/<int:folio>")

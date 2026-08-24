@@ -1,0 +1,46 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.78rem; }
+  th { color: #555; background: #fafafa; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: #f5f5f5; }
+  .badge-num { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.72rem; font-weight: 600; background: #e3f2fd; color: #1565c0; }
+  .badge-num.contactos { background: #f1f1f1; color: #555; }
+  .btn-nuevo-grupo { display: inline-block; padding: 0.5rem 1rem; background: #1565c0; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; margin-bottom: 1rem; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Grupo</h2>
+  <p class="pista">Junta dos o más clientes bajo un mismo grupo para identificarlos — sus contactos se asocian solos.</p>
+
+  <a class="btn-nuevo-grupo" href="{{ url_for('crm_grupo_nuevo') }}">+ Nuevo grupo</a>
+
+  {% if grupos %}
+  <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Clientes</th>
+          <th>Contactos</th>
+          <th>Creado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in grupos %}
+        <tr onclick="window.location.href='{{ url_for('crm_grupo_detalle', grupo_id=g.id) }}'">
+          <td>{{ g.nombre }}</td>
+          <td><span class="badge-num">{{ g.clientes_n }}</span></td>
+          <td><span class="badge-num contactos">{{ g.contactos_n }}</span></td>
+          <td>{{ g.creado_en|hora_mx('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="aviso-vacio">Todavía no hay grupos.</p>
+  {% endif %}
+{% endblock %}

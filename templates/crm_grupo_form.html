@@ -1,0 +1,20 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-grupo { max-width: 420px; }
+  .form-grupo label { display: block; font-size: 0.8rem; font-weight: 600; color: #333; margin-bottom: 0.35rem; }
+  .form-grupo input { width: 100%; padding: 0.55rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.9rem; margin-bottom: 1rem; }
+  .form-grupo button { padding: 0.55rem 1.1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .btn-atras { display: inline-block; margin-bottom: 1rem; padding: 0.4rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; color: #333; text-decoration: none; font-size: 0.725rem; }
+{% endblock %}
+{% block crm_content %}
+  <a class="btn-atras" href="{{ url_for('crm_seccion', slug='grupo') }}">&larr; Grupo</a>
+  <h2>Nuevo grupo</h2>
+  <p class="pista">Dale un nombre; en la siguiente pantalla agregas los clientes.</p>
+
+  <form class="form-grupo" method="post" action="{{ url_for('crm_grupo_nuevo') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="nombre">Nombre del grupo</label>
+    <input type="text" id="nombre" name="nombre" required autofocus maxlength="120" placeholder="p. ej. Grupo Helvex">
+    <button type="submit">Crear grupo</button>
+  </form>
+{% endblock %}
