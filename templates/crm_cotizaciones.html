@@ -22,6 +22,7 @@
   }
   .pricing-indicador.pendiente { background: #fef3de; color: #92400e; }
   .pricing-indicador.respondida { background: #dcfce7; color: #166534; }
+  .pricing-indicador.nuevo { background: #c0392b; color: #fff; }
   .pricing-indicador svg { flex-shrink: 0; }
   .pricing-vacio { color: #bbb; font-size: 0.72rem; }
   tbody tr.fila-ganada td { background: #f0fdf4; }
@@ -97,7 +98,12 @@
             </span>
           </td>
           <td>
-            {% if c.pricing_estado == 'pendiente' %}
+            {% if c.pricing_estado == 'nuevo' %}
+            <span class="pricing-indicador nuevo">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="9"/></svg>
+              New
+            </span>
+            {% elif c.pricing_estado == 'pendiente' %}
             <span class="pricing-indicador pendiente">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
               Pendiente
@@ -105,7 +111,7 @@
             {% elif c.pricing_estado == 'respondida' %}
             <span class="pricing-indicador respondida">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>
-              Respondida
+              Ok
             </span>
             {% else %}
             <span class="pricing-vacio">—</span>

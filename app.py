@@ -3001,17 +3001,24 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
                co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
-               sp.estado_mas_reciente AS pricing_estado_mas_reciente
+               sp.estado_mas_reciente AS pricing_estado_mas_reciente,
+               sp.visto_por_vendedor_en AS pricing_visto_en,
+               sp.ultima_respuesta_en AS pricing_ultima_respuesta_en
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
         LEFT JOIN LATERAL (
-            SELECT estado AS estado_mas_reciente
-            FROM crm_solicitudes_maritimo_aereo
-            WHERE cotizacion_id = co.id
-            ORDER BY creado_en DESC
+            SELECT s.estado AS estado_mas_reciente, s.visto_por_vendedor_en, r.ultima_respuesta_en
+            FROM crm_solicitudes_maritimo_aereo s
+            LEFT JOIN LATERAL (
+                SELECT max(creado_en) AS ultima_respuesta_en
+                FROM crm_solicitudes_pricing_respuestas
+                WHERE solicitud_id = s.id
+            ) r ON true
+            WHERE s.cotizacion_id = co.id
+            ORDER BY s.creado_en DESC
             LIMIT 1
         ) sp ON true
         ORDER BY co.fecha_creacion DESC, co.id DESC
@@ -3049,8 +3056,13 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
 
         contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
 
+        pricing_no_visto = bool(
+            r["pricing_ultima_respuesta_en"]
+            and (not r["pricing_visto_en"] or r["pricing_visto_en"] < r["pricing_ultima_respuesta_en"])
+        )
         pricing_estado = (
-            "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Rechazada")
+            "nuevo" if pricing_no_visto
+            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Rechazada")
             else "pendiente" if r["pricing_estado_mas_reciente"]
             else None
         )
