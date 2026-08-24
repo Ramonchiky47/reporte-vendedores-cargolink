@@ -4246,9 +4246,14 @@ def pricing_detalle(solicitud_id):
         db.close()
         flash("Solicitud no encontrada.")
         return redirect(url_for("pricing"))
-    operativos = db.execute(
-        "SELECT id, nombre_operativo FROM catalogo_operativos WHERE activo = true ORDER BY nombre_operativo"
-    ).fetchall()
+    operativos = db.execute("""
+        SELECT co.id, co.nombre_operativo
+        FROM catalogo_operativos co
+        LEFT JOIN app_user_permissions p ON p.user_id = co.user_id
+        WHERE co.activo = true
+          AND (coalesce(p.es_admin, false) OR coalesce(p.puede_pricing, false) OR co.id = %s)
+        ORDER BY co.nombre_operativo
+    """, (fila["operativo_asignado_id"],)).fetchall()
     db.close()
     return render_template(
         "pricing_detalle.html", fila=fila, estados=ESTADOS_SOLICITUD_PRICING, operativos=operativos,
