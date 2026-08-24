@@ -44,6 +44,7 @@
           pidió {{ fila.creado_por or '—' }} &middot; {{ fila.fecha_creacion }}
         </p>
       </div>
+      <a class="btn secondary small" href="{{ url_for('pricing_pdf', solicitud_id=fila.id) }}" target="_blank" rel="noopener">Vista previa PDF</a>
     </div>
 
     <div class="pd-grid">
@@ -126,21 +127,28 @@
             </div>
 
             <div class="campo">
-              <label>Respuesta para el vendedor</label>
-              <textarea name="respuesta_pricing" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, condiciones o motivo de rechazo...">{{ fila.respuesta_pricing or '' }}</textarea>
+              <label>Nueva respuesta para el vendedor</label>
+              <textarea name="respuesta_pricing" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, condiciones o motivo de rechazo..."></textarea>
             </div>
 
             <button type="submit" id="pd-enviar" style="width: 100%;" {{ '' if fila.estado in estados else 'disabled' }}>Enviar</button>
           </form>
         </div>
 
-        <div class="pd-respuesta-previa" style="margin-top: 1rem;">
-          {% if fila.respondido_por %}
-          <div class="quien">{{ fila.respondido_por }}{% if fila.respondido_en %} · {{ fila.respondido_en.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>
-          Última respuesta guardada arriba.
+        <div class="pd-historial" style="margin-top: 1rem;">
+          <h2 style="margin: 0 0 .75rem; font-size: .85rem; color: var(--ink-2);">Historial de respuestas</h2>
+          {% if respuestas %}
+            {% for r in respuestas %}
+            <div class="pd-respuesta-previa" style="margin-bottom: .6rem;">
+              <div class="quien">{{ r.respondido_por or 'Pricing' }}{% if r.creado_en %} · {{ r.creado_en.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>
+              <p style="margin: .3rem 0 0; white-space: pre-line;">{{ r.respuesta }}</p>
+            </div>
+            {% endfor %}
           {% else %}
-          <div class="quien">Sin respuesta todavía</div>
-          Nadie ha contestado esta solicitud.
+          <div class="pd-respuesta-previa">
+            <div class="quien">Sin respuesta todavía</div>
+            Nadie ha contestado esta solicitud.
+          </div>
           {% endif %}
         </div>
       </div>

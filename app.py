@@ -4257,9 +4257,16 @@ def pricing_detalle(solicitud_id):
           AND (coalesce(p.es_admin, false) OR coalesce(p.puede_pricing, false) OR co.id = %s)
         ORDER BY co.nombre_operativo
     """, (fila["operativo_asignado_id"],)).fetchall()
+    respuestas = db.execute("""
+        SELECT id, respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_pricing_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
     db.close()
     return render_template(
         "pricing_detalle.html", fila=fila, estados=ESTADOS_FINALES_PRICING, operativos=operativos,
+        respuestas=respuestas,
     )
 
 
@@ -4273,6 +4280,7 @@ def pricing_responder(solicitud_id):
     respuesta = (request.form.get("respuesta_pricing", "") or "").strip()[:4000] or None
     operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()
     operativo_id = int(operativo_raw) if operativo_raw.isdigit() else None
+    usuario = session.get("usuario", "")
 
     db = get_db()
     db.execute("""
@@ -4280,11 +4288,64 @@ def pricing_responder(solicitud_id):
         SET estado = %s, respuesta_pricing = %s, respondido_por = %s, respondido_en = now(),
             operativo_asignado_id = %s
         WHERE id = %s
-    """, (estado, respuesta, session.get("usuario", ""), operativo_id, solicitud_id))
+    """, (estado, respuesta, usuario, operativo_id, solicitud_id))
+    if respuesta:
+        db.execute("""
+            INSERT INTO crm_solicitudes_pricing_respuestas (solicitud_id, respuesta, respondido_por)
+            VALUES (%s, %s, %s)
+        """, (solicitud_id, respuesta, usuario))
     db.commit()
     db.close()
     flash("Solicitud actualizada.")
     return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
+
+
+@app.route("/pricing/<int:solicitud_id>/pdf")
+@pricing_required
+def pricing_pdf(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre,
+            i.nombre AS incoterm_nombre
+        FROM crm_solicitudes_maritimo_aereo s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_incoterms i ON i.id = s.incoterm_id
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None:
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for("pricing"))
+    operativo = None
+    if fila["operativo_asignado_id"]:
+        operativo = db.execute(
+            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
+        ).fetchone()
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_pricing_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en ASC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+
+    html = render_template(
+        "pricing_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
+        respuestas=respuestas,
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF de la solicitud.")
+        return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=False, download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
+    )
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
