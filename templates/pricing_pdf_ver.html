@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · {{ fila.referencia }} · Pricing{% endblock %}
+{% set active = "pricing" %}
+{% block extra_head %}
+<style>
+  main { max-width: 900px; }
+  .ver-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .ver-visor { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #525659; }
+  .ver-visor iframe { width: 100%; height: 80vh; border: none; display: block; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="ver-encabezado">
+      <div>
+        <a href="javascript:history.back()" style="display: inline-flex; align-items: center; gap: .3rem; font-size: .82rem; font-weight: 600;">&larr; Regresar</a>
+        <h2 style="margin: .4rem 0 0;">{{ fila.referencia }}</h2>
+      </div>
+      <a class="btn" href="{{ url_for('pricing_pdf', solicitud_id=fila.id, descargar=1) }}">Descargar PDF</a>
+    </div>
+
+    <div class="ver-visor">
+      <iframe src="{{ url_for('pricing_pdf', solicitud_id=fila.id) }}" title="Vista previa de {{ fila.referencia }}"></iframe>
+    </div>
+{% endblock %}

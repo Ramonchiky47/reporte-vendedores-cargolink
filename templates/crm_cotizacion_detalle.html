@@ -21,9 +21,25 @@
   .caja-accion { border: 1px solid var(--borde); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem; background: #fafafa; }
   .caja-accion h4 { margin: 0 0 0.6rem; font-size: 0.725rem; }
   .btn-nueva-solicitud { display: inline-block; padding: 0.4rem 0.8rem; background: #1565c0; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.725rem; font-weight: 600; margin-bottom: 0.6rem; }
-  .lista-solicitudes-pricing { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
-  .lista-solicitudes-pricing li { display: flex; justify-content: space-between; gap: 0.6rem; font-size: 0.78rem; padding: 0.35rem 0; border-bottom: 1px solid var(--borde); }
-  .lista-solicitudes-pricing li:last-child { border-bottom: none; }
+  .tabla-solicitudes-pricing { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+  .tabla-solicitudes-pricing th {
+    text-align: left; padding: 0.3rem 0.5rem 0.3rem 0; color: #666; font-weight: 700; font-size: 0.68rem;
+    text-transform: uppercase; border-bottom: 1px solid var(--borde);
+  }
+  .tabla-solicitudes-pricing td { padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  .fila-solicitud-pricing { cursor: pointer; }
+  .fila-solicitud-pricing:hover td { background: #f0f0f0; }
+  .fila-solicitud-pricing:last-child td { border-bottom: none; }
+  .badge-nuevo {
+    display: inline-block; font-size: 0.6rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 999px;
+    background: var(--peligro); color: #fff; margin-left: 0.35rem; vertical-align: middle;
+  }
+  .badge-estado-solicitud { display: inline-block; font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 999px; }
+  .badge-estado-solicitud.solicitud { background: #fef3de; color: #92400e; }
+  .badge-estado-solicitud.en-proceso { background: #e3f2fd; color: #1565c0; }
+  .badge-estado-solicitud.cotizado { background: #dcfce7; color: var(--exito); }
+  .badge-estado-solicitud.rechazada { background: #fee2e2; color: var(--peligro); }
+  .sin-dato { color: #999; }
   .detalle-aplicar-booking summary {
     font-size: 0.725rem; font-weight: 700; cursor: pointer; color: #222; list-style: revert;
   }
@@ -109,11 +125,31 @@
     <h4>Solicitudes a Pricing</h4>
     <a class="btn-nueva-solicitud" href="{{ url_for('crm_solicitud_maritimo_nueva', cotizacion_id=cotizacion_id) }}">+ Nueva solicitud Marítimo / Aéreo</a>
     {% if doc.solicitudes_maritimo %}
-    <ul class="lista-solicitudes-pricing">
-      {% for s in doc.solicitudes_maritimo %}
-      <li><span>{{ s.referencia }} · {{ s.tipo_embarque or "—" }} · {{ s.fecha_creacion }}</span><span>{{ s.estado }}</span></li>
-      {% endfor %}
-    </ul>
+    <table class="tabla-solicitudes-pricing">
+      <thead>
+        <tr>
+          <th>Referencia</th>
+          <th>Fecha de solicitud</th>
+          <th>Fecha de entrega</th>
+          <th>Diferencia</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in doc.solicitudes_maritimo %}
+        <tr class="fila-solicitud-pricing" onclick="window.open('{{ url_for('pricing_ver', solicitud_id=s.id) }}', '_blank')">
+          <td>
+            {{ s.referencia }} · {{ s.tipo_embarque or "—" }}
+            {% if s.es_nuevo %}<span class="badge-nuevo">NUEVO</span>{% endif %}
+          </td>
+          <td>{{ s.solicitud_en|hora_mx }}</td>
+          <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
+          <td>{{ s.diferencia or '—' }}</td>
+          <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     {% else %}
       <p class="pendiente">Todavía no hay solicitudes enviadas.</p>
     {% endif %}

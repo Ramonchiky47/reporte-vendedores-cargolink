@@ -1104,6 +1104,21 @@ def inject_importaciones_url():
     return {"importaciones_url": IMPORTACIONES_URL}
 
 
+def formatear_duracion(delta):
+    """Formatea un timedelta como "2d 3h", "5h 20min" o "12min" — lo que
+    tardó Pricing en contestar una solicitud, en la unidad más legible."""
+    total_min = int(delta.total_seconds() // 60)
+    if total_min < 0:
+        total_min = 0
+    dias, resto_min = divmod(total_min, 24 * 60)
+    horas, minutos = divmod(resto_min, 60)
+    if dias:
+        return f"{dias}d {horas}h"
+    if horas:
+        return f"{horas}h {minutos}min"
+    return f"{minutos}min"
+
+
 @app.template_filter("hora_mx")
 def hora_mx(valor, formato="%Y-%m-%d %H:%M"):
     """Formatea un datetime (con tz, típicamente UTC desde Postgres) en la
@@ -3455,12 +3470,35 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         WHERE cb.cotizacion_id = %s ORDER BY cb.aplicado_en
     """, (cotizacion_id,)).fetchall()
     motivos_perdida = db.execute("SELECT id, nombre FROM crm_motivos_perdida ORDER BY nombre").fetchall()
-    solicitudes_maritimo = db.execute("""
-        SELECT referencia, tipo_embarque, estado, fecha_creacion, creado_por
-        FROM crm_solicitudes_maritimo_aereo
-        WHERE cotizacion_id = %s ORDER BY creado_en DESC
+    solicitudes_maritimo_raw = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_embarque, s.estado, s.fecha_creacion, s.creado_por,
+            s.creado_en AS solicitud_en, s.visto_por_vendedor_en,
+            r.ultima_respuesta_en
+        FROM crm_solicitudes_maritimo_aereo s
+        LEFT JOIN LATERAL (
+            SELECT max(creado_en) AS ultima_respuesta_en
+            FROM crm_solicitudes_pricing_respuestas
+            WHERE solicitud_id = s.id
+        ) r ON true
+        WHERE s.cotizacion_id = %s
+        ORDER BY s.creado_en DESC
     """, (cotizacion_id,)).fetchall()
     db.close()
+
+    solicitudes_maritimo = []
+    for s in solicitudes_maritimo_raw:
+        s = dict(s)
+        s["fecha_entrega"] = s["ultima_respuesta_en"]
+        s["diferencia"] = (
+            formatear_duracion(s["ultima_respuesta_en"] - s["solicitud_en"])
+            if s["ultima_respuesta_en"] else None
+        )
+        s["es_nuevo"] = bool(
+            s["ultima_respuesta_en"]
+            and (not s["visto_por_vendedor_en"] or s["visto_por_vendedor_en"] < s["ultima_respuesta_en"])
+        )
+        solicitudes_maritimo.append(s)
 
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
     # al cliente: usa la firma capturada si existe, si no deriva un nombre
@@ -3555,8 +3593,10 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         "bookings_disponibles": bookings_disponibles,
         "motivos_perdida": [{"id": m["id"], "nombre": m["nombre"]} for m in motivos_perdida],
         "solicitudes_maritimo": [
-            {"referencia": s["referencia"], "tipo_embarque": s["tipo_embarque"] or "",
-             "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or ""}
+            {"id": s["id"], "referencia": s["referencia"], "tipo_embarque": s["tipo_embarque"] or "",
+             "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or "",
+             "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
+             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
             for s in solicitudes_maritimo
         ],
     }
@@ -4309,8 +4349,21 @@ def pricing_responder(solicitud_id):
     return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
 
 
+def puede_ver_solicitud_pricing(db, fila):
+    """True si el usuario en sesión puede ver esta solicitud: es de Pricing,
+    o tiene acceso al CRM y puede ver la cotización de la que salió (mismo
+    criterio de plazas que el resto del CRM)."""
+    if usuario_puede_pricing():
+        return True
+    if not usuario_puede_ver_crm():
+        return False
+    if not fila["cotizacion_id"]:
+        return False
+    return cotizacion_visible_para_usuario(db, fila["cotizacion_id"])
+
+
 @app.route("/pricing/<int:solicitud_id>/pdf")
-@pricing_required
+@login_required
 def pricing_pdf(solicitud_id):
     db = get_db()
     fila = db.execute("""
@@ -4325,10 +4378,10 @@ def pricing_pdf(solicitud_id):
         LEFT JOIN crm_incoterms i ON i.id = s.incoterm_id
         WHERE s.id = %s
     """, (solicitud_id,)).fetchone()
-    if fila is None:
+    if fila is None or not puede_ver_solicitud_pricing(db, fila):
         db.close()
         flash("Solicitud no encontrada.")
-        return redirect(url_for("pricing"))
+        return redirect(url_for(primera_pagina_permitida()))
     operativo = None
     if fila["operativo_asignado_id"]:
         operativo = db.execute(
@@ -4353,8 +4406,34 @@ def pricing_pdf(solicitud_id):
         return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
     buffer.seek(0)
     return send_file(
-        buffer, as_attachment=False, download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
+        buffer, as_attachment=request.args.get("descargar") == "1",
+        download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
     )
+
+
+@app.route("/pricing/<int:solicitud_id>/ver")
+@login_required
+def pricing_ver(solicitud_id):
+    """Pantalla intermedia para revisar el PDF de una solicitud (visor +
+    botón de descarga explícito) antes de que el vendedor decida guardarlo.
+    Marca la solicitud como vista, lo que le quita el aviso de "Nuevo" que
+    ve el vendedor en la cotización cuando Pricing responde."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT id, referencia, cotizacion_id FROM crm_solicitudes_maritimo_aereo WHERE id = %s",
+        (solicitud_id,),
+    ).fetchone()
+    if fila is None or not puede_ver_solicitud_pricing(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+    db.execute(
+        "UPDATE crm_solicitudes_maritimo_aereo SET visto_por_vendedor_en = now() WHERE id = %s",
+        (solicitud_id,),
+    )
+    db.commit()
+    db.close()
+    return render_template("pricing_pdf_ver.html", fila=fila)
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
