@@ -140,7 +140,7 @@
           {% if respuestas %}
             {% for r in respuestas %}
             <div class="pd-respuesta-previa" style="margin-bottom: .6rem;">
-              <div class="quien">{{ r.respondido_por or 'Pricing' }}{% if r.creado_en %} · {{ r.creado_en.strftime('%Y-%m-%d %H:%M') }}{% endif %}</div>
+              <div class="quien">{{ r.respondido_por or 'Pricing' }}{% if r.creado_en %} · {{ r.creado_en|hora_mx }}{% endif %}</div>
               <p style="margin: .3rem 0 0; white-space: pre-line;">{{ r.respuesta }}</p>
             </div>
             {% endfor %}

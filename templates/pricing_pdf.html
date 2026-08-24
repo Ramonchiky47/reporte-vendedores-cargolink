@@ -51,7 +51,7 @@
         <p class="marca-slogan">Pricing · Solicitud Marítimo / Aéreo</p>
       </td>
       <td class="der" style="font-size: 7pt; color: #555555;">
-        <p style="margin:0;">Generado {{ fila.creado_en.strftime('%Y-%m-%d %H:%M') if fila.creado_en else '' }}</p>
+        <p style="margin:0;">Generado {{ generado_en.strftime('%Y-%m-%d %H:%M') }}</p>
       </td>
     </tr>
   </table>
@@ -119,7 +119,7 @@
     <table class="caja-respuesta">
       <tr>
         <td>
-          <p class="respuesta-quien">{{ r.respondido_por or 'Pricing' }} · {{ r.creado_en.strftime('%Y-%m-%d %H:%M') if r.creado_en else '' }}</p>
+          <p class="respuesta-quien">{{ r.respondido_por or 'Pricing' }} · {{ r.creado_en|hora_mx }}</p>
           <p class="respuesta-texto">{{ r.respuesta|nl2br }}</p>
         </td>
       </tr>

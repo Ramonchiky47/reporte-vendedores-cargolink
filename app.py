@@ -1104,6 +1104,15 @@ def inject_importaciones_url():
     return {"importaciones_url": IMPORTACIONES_URL}
 
 
+@app.template_filter("hora_mx")
+def hora_mx(valor, formato="%Y-%m-%d %H:%M"):
+    """Formatea un datetime (con tz, típicamente UTC desde Postgres) en la
+    hora de Ciudad de México en vez de la hora cruda de la base de datos."""
+    if not valor:
+        return ""
+    return valor.astimezone(TZ_LOCAL).strftime(formato)
+
+
 @app.template_filter("nl2br")
 def nl2br(texto):
     """Convierte saltos de línea en <br>, escapando el resto del texto.
@@ -4335,7 +4344,7 @@ def pricing_pdf(solicitud_id):
 
     html = render_template(
         "pricing_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
-        respuestas=respuestas,
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL),
     )
     buffer = io.BytesIO()
     resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
