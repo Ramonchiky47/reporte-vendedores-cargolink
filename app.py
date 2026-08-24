@@ -4204,6 +4204,9 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
 
 
 ESTADOS_SOLICITUD_PRICING = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
+# Al guardar una respuesta hay que llegar a una decisión final: no se puede
+# dejar la solicitud en "Solicitud" ni "En proceso" desde este formulario.
+ESTADOS_FINALES_PRICING = ["Cotizado", "Rechazada"]
 
 
 @app.route("/pricing")
@@ -4256,7 +4259,7 @@ def pricing_detalle(solicitud_id):
     """, (fila["operativo_asignado_id"],)).fetchall()
     db.close()
     return render_template(
-        "pricing_detalle.html", fila=fila, estados=ESTADOS_SOLICITUD_PRICING, operativos=operativos,
+        "pricing_detalle.html", fila=fila, estados=ESTADOS_FINALES_PRICING, operativos=operativos,
     )
 
 
@@ -4264,8 +4267,8 @@ def pricing_detalle(solicitud_id):
 @pricing_required
 def pricing_responder(solicitud_id):
     estado = request.form.get("estado", "").strip()
-    if estado not in ESTADOS_SOLICITUD_PRICING:
-        flash("Estado inválido.")
+    if estado not in ESTADOS_FINALES_PRICING:
+        flash("Elige Cotizado o Rechazada para guardar la respuesta.")
         return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
     respuesta = (request.form.get("respuesta_pricing", "") or "").strip()[:4000] or None
     operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()

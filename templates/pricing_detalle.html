@@ -111,7 +111,10 @@
 
             <div class="campo">
               <label>Estado</label>
-              <select name="estado">
+              <select name="estado" required>
+                {% if fila.estado not in estados %}
+                <option value="" disabled selected>Selecciona Cotizado o Rechazada...</option>
+                {% endif %}
                 {% for opcion in estados %}
                 <option value="{{ opcion }}" {{ 'selected' if opcion == fila.estado else '' }}>{{ opcion }}</option>
                 {% endfor %}
