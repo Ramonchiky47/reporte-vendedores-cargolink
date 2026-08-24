@@ -123,6 +123,7 @@
           {% if puede_comisiones and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
           {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
           {% if puede_ver_crm and not panel_scoped %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
+          {% if puede_pricing and not panel_scoped %}<a href="{{ url_for('pricing') }}" class="{{ 'active' if active == 'pricing' else '' }}">Pricing</a>{% endif %}
           {% if puede_ver_catalogos and not panel_scoped %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>
         <div class="nav-user">

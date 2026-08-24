@@ -1220,6 +1220,20 @@ def crm_required(view):
     return wrapped
 
 
+def pricing_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not sesion_activa():
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_pricing():
+            flash("No tienes permiso para ver Pricing.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
@@ -1321,6 +1335,17 @@ def usuario_puede_comisiones():
     if session.get("es_admin"):
         return True
     return bool(session.get("puede_comisiones"))
+
+
+def usuario_puede_pricing():
+    """True = el usuario en sesión puede ver la pestaña Pricing (bandeja de
+    solicitudes Marítimo/Aéreo de todas las cotizaciones, para contestarlas).
+    Los administradores siempre pueden; para el resto se usa el permiso
+    guardado en sesión al hacer login (app_user_permissions.puede_pricing),
+    otorgado desde Catálogos → Permisos de Usuario."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_pricing"))
 
 
 def usuario_puede_ver_ventas():
@@ -1425,6 +1450,7 @@ def inject_permisos():
         "puede_ver_reportes": usuario_puede_ver_reportes(),
         "puede_ver_catalogos": usuario_puede_ver_catalogos(),
         "puede_ver_crm": usuario_puede_ver_crm(),
+        "puede_pricing": usuario_puede_pricing(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
 
@@ -1450,6 +1476,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
+            coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
@@ -1519,6 +1546,7 @@ def login():
             session["puede_ver_reportes"] = bool(fila["puede_ver_reportes"])
             session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
             session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
+            session["puede_pricing"] = bool(fila["puede_pricing"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             destino = primera_pagina_permitida()
             return redirect(url_for(destino))
@@ -1586,6 +1614,7 @@ def sso():
             coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
+            coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
@@ -1611,6 +1640,7 @@ def sso():
     session["puede_ver_reportes"] = bool(fila["puede_ver_reportes"])
     session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
     session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
+    session["puede_pricing"] = bool(fila["puede_pricing"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
 
     destino = _siguiente_sso_valido(request.args.get("next")) or url_for(primera_pagina_permitida())
@@ -4173,6 +4203,52 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
     )
 
 
+ESTADOS_SOLICITUD_PRICING = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
+
+
+@app.route("/pricing")
+@pricing_required
+def pricing():
+    db = get_db()
+    filas = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado, s.creado_por,
+            s.pais_origen, s.pais_destino, s.puerto_carga, s.puerto_descarga,
+            s.producto, s.agente_a_cotizar, s.respuesta_pricing, s.respondido_por, s.respondido_en,
+            co.id AS cotizacion_id, co.id_cotizacion, co.nombre_cotizacion,
+            ac.razon_social AS cliente_nombre
+        FROM crm_solicitudes_maritimo_aereo s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
+    """).fetchall()
+    db.close()
+    return render_template(
+        "pricing.html", filas=filas, estados=ESTADOS_SOLICITUD_PRICING,
+    )
+
+
+@app.route("/pricing/<int:solicitud_id>/responder", methods=["POST"])
+@pricing_required
+def pricing_responder(solicitud_id):
+    estado = request.form.get("estado", "").strip()
+    if estado not in ESTADOS_SOLICITUD_PRICING:
+        flash("Estado inválido.")
+        return redirect(url_for("pricing"))
+    respuesta = (request.form.get("respuesta_pricing", "") or "").strip()[:4000] or None
+
+    db = get_db()
+    db.execute("""
+        UPDATE crm_solicitudes_maritimo_aereo
+        SET estado = %s, respuesta_pricing = %s, respondido_por = %s, respondido_en = now()
+        WHERE id = %s
+    """, (estado, respuesta, session.get("usuario", ""), solicitud_id))
+    db.commit()
+    db.close()
+    flash("Solicitud actualizada.")
+    return redirect(url_for("pricing"))
+
+
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
 @crm_required
 def crm_cotizacion_aplicar_booking(cotizacion_id):
@@ -4406,6 +4482,7 @@ PERMISOS_LISTA = [
     ("puede_ver_reportes", "Reportes"),
     ("puede_comisiones", "Comisiones"),
     ("puede_ver_crm", "CRM"),
+    ("puede_pricing", "Pricing"),
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
 ]
@@ -4425,7 +4502,8 @@ def permisos_actualizar():
             coalesce(p.puede_ver_ventas, true) AS puede_ver_ventas,
             coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
-            coalesce(p.puede_ver_crm, false) AS puede_ver_crm
+            coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
+            coalesce(p.puede_pricing, false) AS puede_pricing
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
