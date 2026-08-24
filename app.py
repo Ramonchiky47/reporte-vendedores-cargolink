@@ -4212,19 +4212,46 @@ def pricing():
     db = get_db()
     filas = db.execute("""
         SELECT
-            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado, s.creado_por,
-            s.pais_origen, s.pais_destino, s.puerto_carga, s.puerto_descarga,
-            s.producto, s.agente_a_cotizar, s.respuesta_pricing, s.respondido_por, s.respondido_en,
-            co.id AS cotizacion_id, co.id_cotizacion, co.nombre_cotizacion,
-            ac.razon_social AS cliente_nombre
+            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre,
+            op.nombre_operativo AS operativo_asignado
         FROM crm_solicitudes_maritimo_aereo s
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
     """).fetchall()
     db.close()
+    return render_template("pricing.html", filas=filas)
+
+
+@app.route("/pricing/<int:solicitud_id>")
+@pricing_required
+def pricing_detalle(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre,
+            i.nombre AS incoterm_nombre
+        FROM crm_solicitudes_maritimo_aereo s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_incoterms i ON i.id = s.incoterm_id
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None:
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for("pricing"))
+    operativos = db.execute(
+        "SELECT id, nombre_operativo FROM catalogo_operativos WHERE activo = true ORDER BY nombre_operativo"
+    ).fetchall()
+    db.close()
     return render_template(
-        "pricing.html", filas=filas, estados=ESTADOS_SOLICITUD_PRICING,
+        "pricing_detalle.html", fila=fila, estados=ESTADOS_SOLICITUD_PRICING, operativos=operativos,
     )
 
 
@@ -4234,19 +4261,22 @@ def pricing_responder(solicitud_id):
     estado = request.form.get("estado", "").strip()
     if estado not in ESTADOS_SOLICITUD_PRICING:
         flash("Estado inválido.")
-        return redirect(url_for("pricing"))
+        return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
     respuesta = (request.form.get("respuesta_pricing", "") or "").strip()[:4000] or None
+    operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()
+    operativo_id = int(operativo_raw) if operativo_raw.isdigit() else None
 
     db = get_db()
     db.execute("""
         UPDATE crm_solicitudes_maritimo_aereo
-        SET estado = %s, respuesta_pricing = %s, respondido_por = %s, respondido_en = now()
+        SET estado = %s, respuesta_pricing = %s, respondido_por = %s, respondido_en = now(),
+            operativo_asignado_id = %s
         WHERE id = %s
-    """, (estado, respuesta, session.get("usuario", ""), solicitud_id))
+    """, (estado, respuesta, session.get("usuario", ""), operativo_id, solicitud_id))
     db.commit()
     db.close()
     flash("Solicitud actualizada.")
-    return redirect(url_for("pricing"))
+    return redirect(url_for("pricing_detalle", solicitud_id=solicitud_id))
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
