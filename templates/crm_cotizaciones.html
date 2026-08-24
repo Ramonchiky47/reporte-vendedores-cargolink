@@ -2,20 +2,28 @@
 {% block extra_style %}
   .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; white-space: nowrap; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.72rem; white-space: nowrap; }
   th { color: #555; background: #fafafa; position: sticky; top: 0; z-index: 2; }
   td.num { text-align: right; }
   th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 0 var(--borde); }
   th:first-child { z-index: 3; background: #fafafa; }
-  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
-  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.75rem; }
+  .aviso-vacio { color: #757575; font-size: 0.72rem; padding: 2rem 0; text-align: center; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.66rem; }
   .badge-si { background: #dcfce7; color: #166534; }
   .badge-no { background: #f1f1f1; color: #757575; }
-  .badge-estatus { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700; }
+  .badge-estatus { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 10px; font-size: 0.66rem; font-weight: 700; }
   .badge-estatus.vigente { background: #e3f2fd; color: #1565c0; }
   .badge-estatus.vencido { background: #fff3e0; color: #e65100; }
   .badge-estatus.ganada { background: #dcfce7; color: #166534; }
   .badge-estatus.perdida { background: #fee2e2; color: #991b1b; }
+  .pricing-indicador {
+    display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.62rem; font-weight: 700;
+    padding: 0.15rem 0.5rem; border-radius: 10px; white-space: nowrap;
+  }
+  .pricing-indicador.pendiente { background: #fef3de; color: #92400e; }
+  .pricing-indicador.respondida { background: #dcfce7; color: #166534; }
+  .pricing-indicador svg { flex-shrink: 0; }
+  .pricing-vacio { color: #bbb; font-size: 0.72rem; }
   tbody tr.fila-ganada td { background: #f0fdf4; }
   tbody tr.fila-ganada:hover td { background: #dcfce7; }
   td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
@@ -62,6 +70,7 @@
       <thead>
         <tr>
           <th data-campo="estatus">Estatus</th>
+          <th data-campo="pricing_estado">Pricing</th>
           <th data-campo="nombre_cotizacion">Nombre</th>
           <th data-campo="cliente">Cliente</th>
           <th data-campo="contacto">Contacto</th>
@@ -86,6 +95,21 @@
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
             </span>
+          </td>
+          <td>
+            {% if c.pricing_estado == 'pendiente' %}
+            <span class="pricing-indicador pendiente">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              Pendiente
+            </span>
+            {% elif c.pricing_estado == 'respondida' %}
+            <span class="pricing-indicador respondida">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M4 12l5 5L20 6"/></svg>
+              Respondida
+            </span>
+            {% else %}
+            <span class="pricing-vacio">—</span>
+            {% endif %}
           </td>
           <td>{{ c.nombre_cotizacion }}</td>
           <td>{{ c.cliente }}</td>

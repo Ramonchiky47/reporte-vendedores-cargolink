@@ -2992,12 +2992,20 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
                co.origen, co.destino, co.hazmat, co.hazmat_clase, co.hazmat_un_imo,
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
-               co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus
+               co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
+               sp.estado_mas_reciente AS pricing_estado_mas_reciente
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        LEFT JOIN LATERAL (
+            SELECT estado AS estado_mas_reciente
+            FROM crm_solicitudes_maritimo_aereo
+            WHERE cotizacion_id = co.id
+            ORDER BY creado_en DESC
+            LIMIT 1
+        ) sp ON true
         ORDER BY co.fecha_creacion DESC, co.id DESC
     """).fetchall()
 
@@ -3033,8 +3041,14 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
 
         contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
 
+        pricing_estado = (
+            "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Rechazada")
+            else "pendiente" if r["pricing_estado_mas_reciente"]
+            else None
+        )
         resultado.append({
             "id": r["id"],
+            "pricing_estado": pricing_estado,
             "id_cotizacion": r["id_cotizacion"],
             "nombre_cotizacion": r["nombre_cotizacion"] or "",
             "cliente": cliente_texto,
