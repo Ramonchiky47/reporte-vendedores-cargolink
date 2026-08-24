@@ -21,6 +21,8 @@
   .tabla-pricing tr:last-child td { border-bottom: none; }
   .fila-pricing { cursor: pointer; }
   .fila-pricing:hover td { background: #f8fafc; }
+  .fila-pricing.cotizada td { background: var(--ok-wash); }
+  .fila-pricing.cotizada:hover td { background: #c7f0d8; }
   .fila-pricing .referencia { font-weight: 700; }
   .fila-pricing .cliente { color: var(--ink-3); font-size: .78rem; }
   .col-operativo { color: var(--ink-2); }
@@ -44,7 +46,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing" onclick="window.location.href='{{ url_for('pricing_detalle', solicitud_id=fila.id) }}'">
+        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}" onclick="window.location.href='{{ url_for('pricing_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">{{ fila.referencia }}</div>
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>

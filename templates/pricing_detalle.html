@@ -4,6 +4,7 @@
 {% block extra_head %}
 <style>
   main { max-width: 1080px; }
+  #pd-enviar:disabled { background: var(--ink-4); cursor: not-allowed; }
   .pricing-badge {
     display: inline-block; font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 999px;
     text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
@@ -111,7 +112,10 @@
 
             <div class="campo">
               <label>Estado</label>
-              <select name="estado" required>
+              <select name="estado" id="pd-estado" required onchange="
+                document.getElementById('pd-enviar').disabled = !this.value;
+                document.getElementById('pd-respuesta').rows = this.value === 'Cotizado' ? 10 : 5;
+              ">
                 {% if fila.estado not in estados %}
                 <option value="" disabled selected>Selecciona Cotizado o Rechazada...</option>
                 {% endif %}
@@ -123,10 +127,10 @@
 
             <div class="campo">
               <label>Respuesta para el vendedor</label>
-              <textarea name="respuesta_pricing" rows="5" placeholder="Escribe la cotización, condiciones o motivo de rechazo...">{{ fila.respuesta_pricing or '' }}</textarea>
+              <textarea name="respuesta_pricing" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, condiciones o motivo de rechazo...">{{ fila.respuesta_pricing or '' }}</textarea>
             </div>
 
-            <button type="submit" style="width: 100%;">Guardar</button>
+            <button type="submit" id="pd-enviar" style="width: 100%;" {{ '' if fila.estado in estados else 'disabled' }}>Enviar</button>
           </form>
         </div>
 
