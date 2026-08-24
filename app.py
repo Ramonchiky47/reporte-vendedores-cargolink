@@ -1087,10 +1087,18 @@ csrf = CSRFProtect(app)
 
 @app.after_request
 def agregar_cabeceras_seguridad(resp):
-    resp.headers["X-Frame-Options"] = "DENY"
+    # El PDF de Pricing se embebe en un <iframe> propio (pricing_pdf_ver.html,
+    # mismo origen) para poder mostrar un botón de "Descargar" aparte del
+    # visor; frame-ancestors 'none' bloqueaba ese iframe igual que uno
+    # externo, dejando el visor en blanco.
+    if request.endpoint == "pricing_pdf":
+        resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+        resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+    else:
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    resp.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
     return resp
 
 
@@ -3318,6 +3326,14 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             resumen_vendedor[key]["cotizaciones"] = datos["n"]
         elif key in resumen_desarrollador:
             resumen_desarrollador[key]["cotizaciones"] = datos["n"]
+        elif key in plaza_por_desarrollador:
+            # Sin bookings todavía, pero está dado de alta en el catálogo de
+            # Desarrolladores (p.ej. un asistente que solo crea cotizaciones):
+            # que aparezca ahí, no en Vendedor.
+            resumen_desarrollador[key] = {
+                "nombre": datos["nombre"], "plaza": plaza_por_desarrollador[key],
+                "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": datos["n"],
+            }
         else:
             resumen_vendedor[key] = {"nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": datos["n"]}
 
