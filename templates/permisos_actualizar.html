@@ -3,62 +3,140 @@
 {% set active = "catalogos" %}
 {% block extra_head %}
 <style>
-  .permisos-lista { display: flex; flex-wrap: wrap; gap: .4rem; }
-  .permiso-pill {
-    display: inline-flex; align-items: center; gap: .3rem; padding: .3rem .7rem;
-    border-radius: 999px; border: 1px solid var(--border-strong); background: none; cursor: pointer;
-    font-size: .78rem; font-weight: 600; color: var(--ink-3);
+  .permisos-card { max-width: 980px; }
+  .permisos-header {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem;
+    flex-wrap: wrap; margin-bottom: .35rem;
   }
-  .permiso-pill.activo { background: var(--ok-wash); border-color: var(--ok); color: var(--ok); }
-  .permiso-pill:hover { border-color: var(--accent); }
+  .permisos-header h2 { margin: 0 0 .2rem; }
+  .permisos-header .hint { margin: 0; }
+  .permisos-buscador { position: relative; min-width: 220px; }
+  .permisos-buscador svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
+  .permisos-buscador input {
+    width: 100%; padding: .5rem .7rem .5rem 2rem; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); font-size: .85rem;
+  }
+  .permisos-detalle { margin-bottom: 1.25rem; }
+  .permisos-detalle summary {
+    cursor: pointer; font-size: .8rem; color: var(--accent); font-weight: 600;
+  }
+  .permisos-detalle p { margin: .6rem 0 0; font-size: .8rem; color: var(--ink-3); line-height: 1.55; max-width: 720px; }
+  .tabla-permisos-wrap { overflow-x: auto; margin: 0 -2rem; }
+  .tabla-permisos { width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 640px; }
+  .tabla-permisos th {
+    text-align: center; padding: .6rem .5rem; color: var(--ink-2); font-weight: 700;
+    border-bottom: 1px solid var(--border); background: #f8fafc; white-space: nowrap;
+  }
+  .tabla-permisos th:first-child, .tabla-permisos td.col-usuario { text-align: left; padding-left: 2rem; }
+  .tabla-permisos th:last-child, .tabla-permisos td:last-child { padding-right: 2rem; }
+  .tabla-permisos td { padding: .65rem .5rem; border-bottom: 1px solid var(--border); text-align: center; }
+  .tabla-permisos tr:last-child td { border-bottom: none; }
+  .fila-admin { background: #eff6ff; }
+  .badge-admin {
+    margin-left: .4rem; font-size: .68rem; font-weight: 700; color: var(--accent-dark);
+    background: #dbeafe; padding: .1rem .45rem; border-radius: 999px; vertical-align: middle;
+  }
+  .acceso-total { color: var(--ink-3); font-size: .8rem; font-style: italic; }
+  .permiso-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 999px; cursor: pointer;
+    font-size: .85rem; font-weight: 700; border: 1.5px solid var(--border-strong); color: var(--ink-4);
+    background: none;
+  }
+  .permiso-toggle.activo { background: var(--ok-wash); border-color: var(--ok); color: var(--ok); }
+  .permiso-toggle:hover { border-color: var(--accent); }
+  .permisos-pie { margin: .9rem 0 0; font-size: .72rem; color: var(--ink-4); }
 </style>
 {% endblock %}
 {% block content %}
-    <div class="card">
-      <h2>Permisos de Usuario</h2>
-      <p class="hint">
-        Controla qué pestañas puede ver cada usuario (Información de Ventas, Reportes, Comisiones,
-        Catálogos) y quién puede usar el botón "Actualizar" (regenera el reporte desde CargoLink,
-        reemplaza todos los bookings). Los administradores siempre tienen todo. Dentro de Catálogos,
-        las herramientas de administración (vendedores, presupuesto, este mismo catálogo de permisos,
-        etc.) siguen siendo exclusivas de administradores aunque el usuario pueda ver la pantalla
-        principal. El resto de los accesos (quién puede entrar, quién exporta) se administra en el
-        catálogo de Accesos de Seguimiento de Importaciones. CRM también se puede otorgar por plaza
-        completa, en vez de por usuario, desde Catálogos → CRM por Plaza.
-      </p>
+    <div class="card permisos-card">
+      <div class="permisos-header">
+        <div>
+          <h2>Permisos de Usuario</h2>
+          <p class="hint">Qué puede ver o hacer cada cuenta. Los administradores siempre tienen todo.</p>
+        </div>
+        <div class="permisos-buscador">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--ink-4)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input type="text" id="buscador-permisos" placeholder="Buscar por correo..." autocomplete="off">
+        </div>
+      </div>
+
+      <details class="permisos-detalle">
+        <summary>¿Cómo funciona?</summary>
+        <p>
+          Cada columna es una pestaña o acción de la app. "Actualizar" regenera el reporte desde
+          CargoLink y reemplaza todos los bookings. Dentro de Catálogos, las herramientas de
+          administración (vendedores, presupuesto, este mismo catálogo, etc.) siguen siendo
+          exclusivas de administradores aunque el usuario pueda ver la pantalla principal. Quién
+          puede entrar o exportar se administra en el catálogo de Accesos de Seguimiento de
+          Importaciones. CRM también se puede otorgar por plaza completa desde Catálogos → CRM por
+          Plaza.
+        </p>
+      </details>
+
       {% if filas %}
-      <table>
-        <thead>
-          <tr><th>Usuario</th><th>Permisos</th></tr>
-        </thead>
-        <tbody>
-          {% for fila in filas %}
-          <tr>
-            <td>{{ fila.email }}{% if fila.es_admin %} <span class="hint">(admin)</span>{% endif %}</td>
-            <td>
+      <div class="tabla-permisos-wrap">
+        <table class="tabla-permisos">
+          <thead>
+            <tr>
+              <th>Usuario</th>
+              {% for campo, etiqueta in permisos_lista %}
+              <th>{{ etiqueta }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody id="cuerpo-permisos">
+            {% for fila in filas %}
+            <tr class="{{ 'fila-admin' if fila.es_admin else '' }}" data-email="{{ fila.email|lower }}">
+              <td class="col-usuario">
+                {{ fila.email }}{% if fila.es_admin %}<span class="badge-admin">ADMIN</span>{% endif %}
+              </td>
               {% if fila.es_admin %}
-              <span class="hint">Todos (admin)</span>
+              <td colspan="{{ permisos_lista|length }}" class="acceso-total">Acceso total (administrador)</td>
               {% else %}
-              <div class="permisos-lista">
                 {% for campo, etiqueta in permisos_lista %}
-                <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <input type="hidden" name="campo" value="{{ campo }}">
-                  <input type="hidden" name="valor" value="{{ '0' if fila[campo] else '1' }}">
-                  <button class="permiso-pill{{ ' activo' if fila[campo] else '' }}" type="submit">
-                    {{ "✓" if fila[campo] else "＋" }} {{ etiqueta }}
-                  </button>
-                </form>
+                <td>
+                  <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="campo" value="{{ campo }}">
+                    <input type="hidden" name="valor" value="{{ '0' if fila[campo] else '1' }}">
+                    <button class="permiso-toggle{{ ' activo' if fila[campo] else '' }}" type="submit" title="{{ etiqueta }}">
+                      {{ "✓" if fila[campo] else "＋" }}
+                    </button>
+                  </form>
+                </td>
                 {% endfor %}
-              </div>
               {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="permisos-pie" id="permisos-contador">{{ filas|length }} usuarios · clic en un círculo para activar o desactivar ese permiso</p>
       {% else %}
       <p class="empty">Todavía no hay usuarios registrados en el catálogo de accesos.</p>
       {% endif %}
     </div>
+
+    <script>
+      (function () {
+        var input = document.getElementById('buscador-permisos');
+        var contador = document.getElementById('permisos-contador');
+        if (!input) return;
+        var filas = document.querySelectorAll('#cuerpo-permisos tr');
+        var total = filas.length;
+        input.addEventListener('input', function () {
+          var q = input.value.trim().toLowerCase();
+          var visibles = 0;
+          filas.forEach(function (fila) {
+            var coincide = fila.dataset.email.indexOf(q) !== -1;
+            fila.style.display = coincide ? '' : 'none';
+            if (coincide) visibles++;
+          });
+          if (contador) {
+            contador.textContent = (q ? visibles + ' de ' + total : total) + ' usuarios · clic en un círculo para activar o desactivar ese permiso';
+          }
+        });
+      })();
+    </script>
 {% endblock %}
