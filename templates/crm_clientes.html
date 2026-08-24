@@ -31,6 +31,7 @@
           <th data-campo="cliente">Cliente</th>
           <th data-campo="vendedor">Vendedor</th>
           <th data-campo="desarrollador">Desarrollador</th>
+          <th data-campo="ultima_actividad">Última actividad</th>
           <th>Actividad</th>
         </tr>
       </thead>
@@ -40,6 +41,7 @@
           <td>{{ c.cliente }}</td>
           <td>{{ c.vendedor }}</td>
           <td>{{ c.desarrollador }}</td>
+          <td>{{ c.ultima_actividad or '—' }}</td>
           <td>
             <span class="badge {{ 'badge-si' if c.tiene_booking else 'badge-no' }}">Órdenes</span>
             <span class="badge {{ 'badge-si' if c.tiene_cotizacion else 'badge-no' }}">Cotizaciones</span>

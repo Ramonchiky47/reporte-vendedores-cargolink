@@ -1112,6 +1112,27 @@ def inject_importaciones_url():
     return {"importaciones_url": IMPORTACIONES_URL}
 
 
+def formatear_ultima_actividad(booking_ts, cotizacion_fecha):
+    """Combina el booking más reciente (timestamptz, se convierte a hora de
+    Ciudad de México) y la cotización más reciente (solo fecha, sin hora
+    real capturada) de un cliente, y regresa un texto con lo más reciente
+    de los dos. None si no hay ninguna actividad."""
+    candidatos = []
+    if booking_ts:
+        candidatos.append(("booking", booking_ts))
+    if cotizacion_fecha:
+        candidatos.append(("cotizacion", cotizacion_fecha))
+    if not candidatos:
+        return None
+    tipo, valor = max(
+        candidatos,
+        key=lambda item: item[1].astimezone(TZ_LOCAL).date() if item[0] == "booking" else item[1],
+    )
+    if tipo == "booking":
+        return valor.astimezone(TZ_LOCAL).strftime("%Y-%m-%d %H:%M")
+    return valor.strftime("%Y-%m-%d")
+
+
 def formatear_duracion(delta):
     """Formatea un timedelta como "2d 3h", "5h 20min" o "12min" — lo que
     tardó Pricing en contestar una solicitud, en la unidad más legible."""
@@ -2646,16 +2667,25 @@ def construir_clientes_crm(plazas_permitidas=None):
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
 
     bookings_por_cliente = set()
+    ultimo_booking_por_cliente = {}
     for r in db.execute(
-        "SELECT DISTINCT cliente_servicio FROM reporte_bookings WHERE cliente_servicio IS NOT NULL"
+        "SELECT cliente_servicio, max(fecha) AS ultima FROM reporte_bookings "
+        "WHERE cliente_servicio IS NOT NULL GROUP BY cliente_servicio"
     ):
-        bookings_por_cliente.add(normalizar(r["cliente_servicio"]))
+        clave = normalizar(r["cliente_servicio"])
+        bookings_por_cliente.add(clave)
+        actual = ultimo_booking_por_cliente.get(clave)
+        if actual is None or r["ultima"] > actual:
+            ultimo_booking_por_cliente[clave] = r["ultima"]
 
     clientes_con_cotizacion = set()
+    ultima_cotizacion_por_cliente = {}
     for r in db.execute(
-        "SELECT DISTINCT cliente_folio FROM crm_cotizaciones WHERE cliente_folio IS NOT NULL"
+        "SELECT cliente_folio, max(fecha_creacion) AS ultima FROM crm_cotizaciones "
+        "WHERE cliente_folio IS NOT NULL GROUP BY cliente_folio"
     ):
         clientes_con_cotizacion.add(r["cliente_folio"])
+        ultima_cotizacion_por_cliente[r["cliente_folio"]] = r["ultima"]
 
     filas_clientes = db.execute(
         "SELECT folio, razon_social, vendedor, desarrollador "
@@ -2675,6 +2705,10 @@ def construir_clientes_crm(plazas_permitidas=None):
             "desarrollador": r["desarrollador"] or "Sin asignar",
             "tiene_booking": normalizar(r["razon_social"]) in bookings_por_cliente,
             "tiene_cotizacion": r["folio"] in clientes_con_cotizacion,
+            "ultima_actividad": formatear_ultima_actividad(
+                ultimo_booking_por_cliente.get(normalizar(r["razon_social"])),
+                ultima_cotizacion_por_cliente.get(r["folio"]),
+            ),
         })
     return filas
 
