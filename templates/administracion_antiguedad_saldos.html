@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Administración{% endblock %}
+{% set active = "administracion_antiguedad_saldos" %}
+{% block extra_head %}
+<style>
+  .adm-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .adm-header-row h2 { margin: 0 0 .3rem; }
+  .adm-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 0; }
+  .adm-header-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: flex-start; }
+
+  .adm-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+  .adm-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
+  .adm-kpi .label { font-size: .72rem; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .adm-kpi .value { font-size: 1.4rem; font-weight: 700; color: var(--ink); margin-top: .25rem; font-variant-numeric: tabular-nums; }
+
+  .adm-buscador { margin-bottom: 1rem; max-width: 340px; }
+  .adm-buscador input { padding: .55rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font-size: .85rem; width: 100%; }
+
+  .adm-resumen { width: 100%; font-variant-numeric: tabular-nums; font-size: .74rem; }
+  .adm-resumen th, .adm-resumen td { text-align: right; white-space: nowrap; padding: .5rem .7rem; }
+  .adm-resumen th:nth-child(2), .adm-resumen td:nth-child(2),
+  .adm-resumen th:nth-child(3), .adm-resumen td:nth-child(3) { text-align: left; }
+  .adm-resumen th:first-child, .adm-resumen td.adm-check-col { text-align: center; white-space: normal; }
+  .adm-resumen td.adm-check-col input { width: auto; accent-color: var(--accent); }
+  .adm-resumen tbody tr { cursor: pointer; }
+  .adm-resumen tbody tr:hover { background: #f8fafc; }
+  .adm-resumen tbody tr:hover td:nth-child(2) { color: var(--accent); text-decoration: underline; }
+  .adm-resumen tbody tr[hidden] { display: none; }
+  .adm-resumen td.vencido { color: var(--danger-dark); font-weight: 600; }
+
+  .adm-modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
+    align-items: flex-start; justify-content: center; padding: 4vh 1.5rem; z-index: 50; overflow-y: auto;
+  }
+  .adm-modal-overlay.abierto { display: flex; }
+  .adm-modal-panel {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 1000px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .adm-modal-toolbar { position: absolute; top: 1rem; right: 1rem; display: flex; gap: .5rem; align-items: center; }
+  .adm-modal-cerrar {
+    background: none; border: none; font-size: 1.4rem;
+    line-height: 1; color: var(--ink-3); cursor: pointer; padding: .2rem .5rem; border-radius: 6px;
+  }
+  .adm-modal-cerrar:hover { background: #f1f5f9; color: var(--ink); }
+  .adm-modal-body { position: relative; padding: 1.5rem 2rem 2rem; overflow-y: auto; }
+  .adm-modal-titulo { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: 0 0 1.25rem; }
+
+  .adm-envio-contador { font-size: .8rem; color: var(--ink-3); }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <div class="adm-header-row">
+        <div>
+          <h2>Antigüedad de Saldos</h2>
+          <p class="adm-descripcion">Datos en vivo de CargoLink (Ingresos → Antigüedad de saldos) — no se guarda nada, se consulta cada vez que entras a esta página.</p>
+        </div>
+        <div class="adm-header-actions">
+          <a class="btn small secondary" href="{{ url_for('administracion_antiguedad_saldos') }}">↻ Actualizar</a>
+          {% if reporte and reporte.filas %}
+          <a class="btn small secondary" href="{{ url_for('administracion_antiguedad_saldos_exportar', formato='excel') }}">Exportar Excel</a>
+          <a class="btn small secondary" href="{{ url_for('administracion_antiguedad_saldos_exportar', formato='pdf') }}">Exportar PDF</a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if error %}
+    <div class="card"><p class="empty">No se pudo obtener el reporte: {{ error }}</p></div>
+    {% elif not reporte or not reporte.filas %}
+    <div class="card"><p class="empty">No hay saldos pendientes que mostrar.</p></div>
+    {% else %}
+
+    <div class="adm-kpis">
+      {% for moneda, total in reporte.totales_moneda.items() %}
+      <div class="adm-kpi"><div class="label">Total {{ moneda }}</div><div class="value">${{ "{:,.2f}".format(total) }}</div></div>
+      {% endfor %}
+      <div class="adm-kpi"><div class="label">Facturas vencidas</div><div class="value">{{ facturas_vencidas }}</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Por cliente</h2>
+      <p class="hint" style="margin-top:-.5rem;">
+        Marca "Enviar semanal" para que ese cliente reciba, cada semana, el detalle de su propia antigüedad de saldos por correo (al correo capturado en <a href="{{ url_for('catalogo_clientes_por_pagar') }}" target="_blank" rel="noopener">Catálogos → Clientes por Pagar</a>).
+      </p>
+      <div class="adm-buscador">
+        <input type="text" id="cliente-buscador" placeholder="Buscar cliente..." autocomplete="off">
+      </div>
+      <form method="post" action="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="tabla-scroll" style="overflow-x:auto;">
+          <table class="adm-resumen">
+            <thead>
+              <tr>
+                <th>Enviar semanal</th><th>Cliente</th><th>Moneda</th>
+                {% for _, label in buckets %}
+                <th>{{ label }}</th>
+                {% endfor %}
+                <th>Total vencido</th><th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in reporte.filas %}
+              <tr data-cliente="{{ f.cliente|lower }}" data-cliente-real="{{ f.cliente }}" data-moneda="{{ f.moneda }}" data-total="{{ f.total }}">
+                <td class="adm-check-col">
+                  {% if f.id_cliente %}
+                  <input type="checkbox" name="cliente_envio" value="{{ f.id_cliente }}" {{ 'checked' if f.id_cliente in envio_activo else '' }}>
+                  {% endif %}
+                </td>
+                <td>{{ f.cliente }}</td>
+                <td>{{ f.moneda }}</td>
+                {% for key, _ in buckets %}
+                <td class="{{ 'vencido' if key != 'porvencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
+                {% endfor %}
+                <td class="vencido">${{ "{:,.2f}".format(f.total_vencido) }}</td>
+                <td>${{ "{:,.2f}".format(f.total) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:1rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+          <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">Guardar selección</button>
+          <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_enviar_ahora') }}" class="btn secondary" onclick="return confirm('¿Enviar ahora el correo de antigüedad de saldos a los clientes marcados?');">Enviar ahora</button>
+          <button type="button" class="btn secondary" id="btn-seleccionar-saldo">Seleccionar con saldo pendiente</button>
+          <span class="adm-envio-contador"><span id="envio-contador">{{ envio_activo|length }}</span> cliente(s) seleccionado(s) para el envío semanal.</span>
+        </div>
+      </form>
+    </div>
+
+    <div class="adm-modal-overlay" id="adm-modal-cliente">
+      <div class="adm-modal-panel">
+        <div class="adm-modal-body">
+          <div class="adm-modal-toolbar">
+            <a class="btn small secondary" href="{{ url_for('catalogo_clientes_por_pagar') }}" target="_blank" rel="noopener">Ver en Clientes por Pagar</a>
+            <a class="btn small secondary" id="adm-modal-exportar-excel" target="_blank" rel="noopener">Exportar Excel</a>
+            <a class="btn small secondary" id="adm-modal-exportar-pdf" target="_blank" rel="noopener">Exportar PDF</a>
+            <button type="button" class="adm-modal-cerrar" id="adm-modal-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <div id="adm-modal-contenido"></div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+<script id="datos-facturas" type="application/json">{{ facturas_json | safe }}</script>
+<script>
+(function () {
+  const buscador = document.getElementById("cliente-buscador");
+  if (buscador) {
+    buscador.addEventListener("input", () => {
+      const q = buscador.value.trim().toLowerCase();
+      document.querySelectorAll(".adm-resumen tbody tr").forEach((tr) => {
+        tr.hidden = q.length > 0 && !tr.dataset.cliente.includes(q);
+      });
+    });
+  }
+
+  const envioContador = document.getElementById("envio-contador");
+  function actualizarContador() {
+    if (envioContador) envioContador.textContent = document.querySelectorAll('input[name="cliente_envio"]:checked').length;
+  }
+  document.querySelectorAll('input[name="cliente_envio"]').forEach((cb) => {
+    cb.addEventListener("change", actualizarContador);
+    cb.addEventListener("click", (e) => e.stopPropagation());
+  });
+
+  const btnSeleccionarSaldo = document.getElementById("btn-seleccionar-saldo");
+  if (btnSeleccionarSaldo) {
+    btnSeleccionarSaldo.addEventListener("click", () => {
+      document.querySelectorAll(".adm-resumen tbody tr[data-total]").forEach((tr) => {
+        const cb = tr.querySelector('input[name="cliente_envio"]');
+        if (!cb) return;
+        cb.checked = parseFloat(tr.dataset.total) > 0;
+      });
+      actualizarContador();
+    });
+  }
+
+  const modal = document.getElementById("adm-modal-cliente");
+  if (!modal) return;
+
+  const FACTURAS = JSON.parse(document.getElementById("datos-facturas").textContent);
+  const contenido = document.getElementById("adm-modal-contenido");
+  const URL_EXPORTAR_CLIENTE = "{{ url_for('administracion_antiguedad_saldos_cliente_exportar') }}";
+  const linkExcel = document.getElementById("adm-modal-exportar-excel");
+  const linkPdf = document.getElementById("adm-modal-exportar-pdf");
+
+  function fmtMoneda(n) {
+    if (n == null) return "—";
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function abrirCliente(clienteReal, moneda) {
+    const facturas = FACTURAS.filter((f) => f.cliente === clienteReal && f.moneda === moneda)
+      .sort((a, b) => (a.dias_vencimiento || 0) - (b.dias_vencimiento || 0));
+
+    const filasHtml = facturas.map((f) => {
+      const vencido = f.dias_vencimiento != null && f.dias_vencimiento < 0;
+      const diasTxt = f.dias_vencimiento == null ? "—" : (vencido ? `Vencido hace ${Math.abs(Math.round(f.dias_vencimiento))} días` : `Vence en ${Math.round(f.dias_vencimiento)} días`);
+      return `
+        <tr>
+          <td>${f.booking || "—"}</td>
+          <td>${f.folio || "—"}</td>
+          <td>${f.fecha_factura || "—"}</td>
+          <td>${f.vencimiento || "—"}</td>
+          <td style="${vencido ? "color:var(--danger-dark);font-weight:600;" : ""}">${diasTxt}</td>
+          <td>${fmtMoneda(f.total)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+
+    const params = new URLSearchParams({ cliente: clienteReal, moneda });
+    linkExcel.href = URL_EXPORTAR_CLIENTE + "?" + params.toString() + "&formato=excel";
+    linkPdf.href = URL_EXPORTAR_CLIENTE + "?" + params.toString() + "&formato=pdf";
+
+    contenido.innerHTML = `
+      <p class="adm-modal-titulo">${clienteReal} · ${moneda} — ${facturas.length} factura(s), total ${fmtMoneda(total)}</p>
+      <table class="adm-resumen">
+        <thead><tr><th>Booking</th><th>Folio</th><th>Fecha factura</th><th>Vencimiento</th><th>Estado</th><th>Total</th></tr></thead>
+        <tbody>${filasHtml}</tbody>
+      </table>
+    `;
+    modal.classList.add("abierto");
+  }
+
+  document.querySelectorAll(".adm-resumen tbody tr[data-cliente-real]").forEach((tr) => {
+    tr.addEventListener("click", () => abrirCliente(tr.dataset.clienteReal, tr.dataset.moneda));
+  });
+
+  function cerrarModal() { modal.classList.remove("abierto"); }
+  document.getElementById("adm-modal-cerrar").addEventListener("click", cerrarModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+})();
+</script>
+{% endblock %}

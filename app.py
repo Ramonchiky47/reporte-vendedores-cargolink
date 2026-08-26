@@ -18,7 +18,9 @@ import os
 import random
 import re
 import secrets
+import smtplib
 import time
+from email.message import EmailMessage
 from datetime import date, datetime, timedelta
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -58,6 +60,11 @@ def fecha_valida_o_vacia(texto):
 
 CARGOLINK_LOGIN_URL = "https://fwd.cargolink.mx/seguridad/control.php?loginfrom=usuario"
 CARGOLINK_REPORT_URL = "https://fwd.cargolink.mx/templates/pdfs/excel_vendedores.php"
+
+ANTIGUEDAD_BUCKET_LABELS = {
+    "porvencer": "Por vencer", "0a30": "0-30", "31a60": "31-60", "61a90": "61-90",
+    "91a120": "91-120", "121a150": "121-150", "151a180": "151-180", "mas181": "+181",
+}
 CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 CARGOLINK_LIQ_VENDEDOR_URL = "https://fwd.cargolink.mx/templates/egresos_liq_vendedor/"
 
@@ -113,6 +120,23 @@ def init_db():
     db.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uq_catalogo_presupuesto_mes_vendedor_dev
             ON catalogo_presupuesto (mes, coalesce(vendedor, ''), coalesce(desarrollador, ''));
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS antiguedad_saldos_envio_clientes (
+            id_cliente text primary key,
+            cliente text not null,
+            activo boolean not null default true,
+            actualizado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS catalogo_clientes_por_pagar (
+            id bigint generated always as identity primary key,
+            id_cliente text not null unique,
+            nombre text not null,
+            correo text,
+            telefono text
+        );
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS reporte_bookings (
@@ -906,6 +930,132 @@ def descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin):
         })
 
     return cobros
+
+
+def descargar_antiguedad_saldos_cargolink():
+    """Se conecta a CargoLink, consulta Ingresos → Antigüedad de saldos
+    (m=63) y regresa el reporte de antigüedad de saldos: un renglón por
+    cliente+moneda con los montos por rango de vencimiento (0-30, 31-60,
+    61-90, 91-120, 121-150, 151-180, +181 días) y el detalle de facturas.
+    No toca el disco."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(
+        "https://fwd.cargolink.mx/templates/antiguedadSaldoIngreso/?m=63", headers=headers, timeout=60
+    )
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión de Antigüedad de saldos.")
+    token = match_token.group(1)
+
+    r_consulta = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api4&fn=consultaAntiguedadSaldoIngresos",
+        json={"filtros": {"Moneda": ""}},
+        headers={"Content-Type": "application/json"},
+        timeout=60,
+    )
+    if r_consulta.status_code != 200:
+        raise RuntimeError("Error al consultar Antigüedad de saldos en CargoLink.")
+    data = r_consulta.json()
+
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.0
+
+    buckets = ["porvencer", "0a30", "31a60", "61a90", "91a120", "121a150", "151a180", "mas181"]
+    filas = []
+    for cliente, monedas in (data.get("clientes") or {}).items():
+        for moneda, d in monedas.items():
+            fila = {"cliente": cliente, "moneda": moneda, "id_cliente": d.get("id_cliente")}
+            for b in buckets:
+                fila[b] = num(d.get(b))
+            fila["total_vencido"] = num(d.get("total_vencido"))
+            fila["total"] = num(d.get("total"))
+            filas.append(fila)
+    filas.sort(key=lambda f: f["total"], reverse=True)
+
+    facturas = []
+    for v in data.get("valores") or []:
+        facturas.append({
+            "id_factura": v.get("id_factura"),
+            "booking": v.get("no_booking"),
+            "cliente": v.get("cliente"),
+            "vendedor": v.get("vendedorName"),
+            "folio": v.get("folio"),
+            "fecha_factura": v.get("fecha"),
+            "vencimiento": v.get("vencimiento"),
+            "dias_vencimiento": num(v.get("venc")) if v.get("venc") is not None else None,
+            "moneda": v.get("Moneda"),
+            "total": num(v.get("Total")),
+        })
+
+    totales_moneda = {}
+    for moneda, d in (data.get("totalPorMoneda") or {}).items():
+        totales_moneda[moneda] = num(d.get("total"))
+
+    return {"filas": filas, "facturas": facturas, "totales_moneda": totales_moneda, "buckets": buckets}
+
+
+def obtener_contactos_por_cliente():
+    """{id_cliente: (nombre, correo)} desde el catálogo propio Clientes por
+    Pagar (Catálogos → Clientes por Pagar) — NO desde el CRM ni desde
+    CargoLink. El id_cliente es el mismo identificador que usa CargoLink
+    en Antigüedad de Saldos, así que el cruce es exacto (nada de emparejar
+    nombres truncados)."""
+    db = get_db()
+    filas = db.execute(
+        "SELECT id_cliente, nombre, correo FROM catalogo_clientes_por_pagar WHERE correo IS NOT NULL AND correo <> ''"
+    ).fetchall()
+    db.close()
+    return {f["id_cliente"]: (f["nombre"], f["correo"].strip()) for f in filas}
+
+
+def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
+    """Envía un correo HTML por SMTP usando las credenciales en variables
+    de entorno (SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_PASSWORD, y
+    opcionalmente SMTP_FROM si el remitente es distinto del usuario).
+    adjuntos: lista opcional de (nombre_archivo, bytes_pdf) a adjuntar."""
+    host = (os.environ.get("SMTP_HOST") or "").strip()
+    puerto = (os.environ.get("SMTP_PORT") or "").strip()
+    usuario = (os.environ.get("SMTP_USUARIO") or "").strip()
+    password = (os.environ.get("SMTP_PASSWORD") or "").strip()
+    remitente = (os.environ.get("SMTP_FROM") or usuario).strip()
+    if not host or not puerto or not usuario or not password:
+        raise RuntimeError(
+            "Faltan las variables de entorno SMTP_HOST / SMTP_PORT / SMTP_USUARIO / SMTP_PASSWORD para enviar correos."
+        )
+
+    msg = EmailMessage()
+    msg["Subject"] = asunto
+    msg["From"] = remitente
+    msg["To"] = destinatario
+    msg.set_content("Este correo requiere un cliente de correo compatible con HTML.")
+    msg.add_alternative(cuerpo_html, subtype="html")
+    for nombre_archivo, contenido in (adjuntos or []):
+        msg.add_attachment(contenido, maintype="application", subtype="pdf", filename=nombre_archivo)
+
+    puerto = int(puerto)
+    if puerto == 465:
+        with smtplib.SMTP_SSL(host, puerto, timeout=30) as smtp:
+            smtp.login(usuario, password)
+            smtp.send_message(msg)
+    else:
+        # Office 365 y la mayoría de proveedores usan 587 con STARTTLS.
+        with smtplib.SMTP(host, puerto, timeout=30) as smtp:
+            smtp.starttls()
+            smtp.login(usuario, password)
+            smtp.send_message(msg)
 
 
 def construir_datos_dashboard(plazas_permitidas=None):
@@ -2497,6 +2647,368 @@ def comisiones_acotadas():
         por_vendedor=por_vendedor,
         por_desarrollador=por_desarrollador,
     )
+
+
+@app.route("/administracion/antiguedad-saldos")
+@login_required
+def administracion_antiguedad_saldos():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    reporte = None
+    error = None
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        error = str(e)
+
+    filas_json = json.dumps(reporte["facturas"]).replace("</", "<\\/") if reporte else "[]"
+    facturas_vencidas = sum(
+        1 for f in (reporte["facturas"] if reporte else [])
+        if f["dias_vencimiento"] is not None and f["dias_vencimiento"] < 0
+    )
+    buckets = [(b, ANTIGUEDAD_BUCKET_LABELS[b]) for b in reporte["buckets"]] if reporte else []
+
+    clientes_unicos = []
+    envio_activo = set()
+    if reporte:
+        vistos = set()
+        for f in reporte["filas"]:
+            if f["id_cliente"] and f["id_cliente"] not in vistos:
+                vistos.add(f["id_cliente"])
+                clientes_unicos.append({"id_cliente": f["id_cliente"], "cliente": f["cliente"]})
+        clientes_unicos.sort(key=lambda c: c["cliente"])
+
+        db = get_db()
+        envio_activo = {
+            r["id_cliente"]
+            for r in db.execute("SELECT id_cliente FROM antiguedad_saldos_envio_clientes WHERE activo").fetchall()
+        }
+        db.close()
+
+    return render_template(
+        "administracion_antiguedad_saldos.html",
+        reporte=reporte,
+        error=error,
+        facturas_json=filas_json,
+        buckets=buckets,
+        facturas_vencidas=facturas_vencidas,
+        clientes_unicos=clientes_unicos,
+        envio_activo=envio_activo,
+    )
+
+
+@app.route("/administracion/antiguedad-saldos/envio-semanal/guardar", methods=["POST"])
+@login_required
+def administracion_antiguedad_saldos_guardar_envio():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    seleccionados = set(request.form.getlist("cliente_envio"))
+
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        flash(f"No se pudo guardar la selección: {e}")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    nombre_por_id = {}
+    for f in reporte["filas"]:
+        if f["id_cliente"]:
+            nombre_por_id[f["id_cliente"]] = f["cliente"]
+
+    db = get_db()
+    db.execute("DELETE FROM antiguedad_saldos_envio_clientes")
+    guardados = 0
+    for id_cliente in seleccionados:
+        cliente = nombre_por_id.get(id_cliente)
+        if not cliente:
+            continue
+        db.execute(
+            "INSERT INTO antiguedad_saldos_envio_clientes (id_cliente, cliente, activo) VALUES (%s, %s, true)",
+            (id_cliente, cliente),
+        )
+        guardados += 1
+    db.commit()
+    db.close()
+
+    flash(f"Selección guardada: {guardados} cliente(s) recibirán el correo semanal de antigüedad de saldos.")
+    return redirect(url_for("administracion_antiguedad_saldos"))
+
+
+@app.route("/administracion/antiguedad-saldos/enviar-ahora", methods=["POST"])
+@login_required
+def administracion_antiguedad_saldos_enviar_ahora():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    seleccionados = set(request.form.getlist("cliente_envio"))
+    if not seleccionados:
+        flash("No seleccionaste ningún cliente para enviar.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    if not all((os.environ.get("SMTP_HOST"), os.environ.get("SMTP_PORT"),
+                os.environ.get("SMTP_USUARIO"), os.environ.get("SMTP_PASSWORD"))):
+        flash(
+            "Faltan las variables de entorno SMTP_HOST / SMTP_PORT / SMTP_USUARIO / SMTP_PASSWORD "
+            "para poder enviar correos."
+        )
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        flash(f"No se pudo preparar el envío: {e}")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+    contactos_por_id = obtener_contactos_por_cliente()
+
+    nombre_por_id = {f["id_cliente"]: f["cliente"] for f in reporte["filas"] if f["id_cliente"]}
+    fecha_envio = datetime.now(TZ_LOCAL).strftime("%d/%m/%Y")
+
+    enviados = 0
+    fallidos = []
+    for id_cliente in seleccionados:
+        cliente = nombre_por_id.get(id_cliente)
+        if not cliente:
+            fallidos.append(f"{id_cliente} (no encontrado en el reporte actual)")
+            continue
+        entrada = contactos_por_id.get(id_cliente)
+        if not entrada:
+            fallidos.append(f"{cliente} (sin correo en el catálogo de Clientes por Pagar)")
+            continue
+        contactos = [entrada]
+
+        facturas_cliente = [f for f in reporte["facturas"] if f["cliente"] == cliente]
+        if not facturas_cliente:
+            fallidos.append(f"{cliente} (sin facturas en el reporte actual)")
+            continue
+
+        adjuntos = []
+        bloques_moneda = []
+        for moneda in sorted({f["moneda"] for f in facturas_cliente}):
+            facturas_moneda = [f for f in facturas_cliente if f["moneda"] == moneda]
+            total_moneda = sum(f["total"] for f in facturas_moneda)
+            bloques_moneda.append({"moneda": moneda, "facturas": facturas_moneda, "total": total_moneda})
+            pdf_html = render_template(
+                "administracion_antiguedad_cliente_pdf.html",
+                cliente=cliente, moneda=moneda, facturas=facturas_moneda, total=total_moneda,
+                generado_en=datetime.now(TZ_LOCAL),
+            )
+            buffer_pdf = io.BytesIO()
+            resultado_pdf = pisa.CreatePDF(src=pdf_html, dest=buffer_pdf, encoding="utf-8")
+            if resultado_pdf.err:
+                fallidos.append(f"{cliente} (no se pudo generar el PDF en {moneda})")
+                continue
+            nombre_pdf = re.sub(r"[^a-zA-Z0-9]+", "_", f"Antiguedad_{cliente}_{moneda}").strip("_") + ".pdf"
+            adjuntos.append((nombre_pdf, buffer_pdf.getvalue()))
+
+        if not adjuntos:
+            continue
+
+        for nombre_contacto, correo in contactos:
+            cuerpo = render_template(
+                "administracion_antiguedad_email.html",
+                nombre_contacto=nombre_contacto or "Cliente", fecha_envio=fecha_envio,
+                bloques_moneda=bloques_moneda,
+            )
+            try:
+                enviar_correo_smtp(correo, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos)
+                enviados += 1
+            except RuntimeError as e:
+                flash(f"No se pudo enviar: {e}")
+                return redirect(url_for("administracion_antiguedad_saldos"))
+            except Exception as e:
+                fallidos.append(f"{cliente} <{correo}> ({e})")
+
+    mensaje = f"Correos enviados: {enviados}."
+    if fallidos:
+        mensaje += " No se pudo enviar a: " + "; ".join(fallidos)
+    flash(mensaje)
+    return redirect(url_for("administracion_antiguedad_saldos"))
+
+
+@app.route("/administracion/antiguedad-saldos/exportar")
+@login_required
+def administracion_antiguedad_saldos_exportar():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    formato = request.args.get("formato")
+    if formato not in ("excel", "pdf"):
+        flash("Formato de exportación inválido.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        flash(f"No se pudo generar la exportación: {e}")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    buckets = [(b, ANTIGUEDAD_BUCKET_LABELS[b]) for b in reporte["buckets"]]
+
+    if formato == "excel":
+        naranja = PatternFill(fill_type="solid", fgColor="C1502E")
+        centrado = Alignment(horizontal="center", vertical="center")
+        derecha = Alignment(horizontal="right", vertical="center")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Antigüedad de Saldos"
+
+        encabezados = ["Cliente", "Moneda"] + [label for _, label in buckets] + ["Total vencido", "Total"]
+        for col, encabezado in enumerate(encabezados, start=1):
+            celda = ws.cell(row=1, column=col, value=encabezado)
+            celda.fill = naranja
+            celda.font = Font(bold=True, color="FFFFFF")
+            celda.alignment = centrado if col <= 2 else derecha
+
+        for i, f in enumerate(reporte["filas"], start=2):
+            ws.cell(row=i, column=1, value=f["cliente"])
+            ws.cell(row=i, column=2, value=f["moneda"]).alignment = centrado
+            col = 3
+            for key, _ in buckets:
+                celda = ws.cell(row=i, column=col, value=f[key])
+                celda.number_format = "#,##0.00"
+                celda.alignment = derecha
+                col += 1
+            celda = ws.cell(row=i, column=col, value=f["total_vencido"])
+            celda.number_format = "#,##0.00"
+            celda.alignment = derecha
+            col += 1
+            celda = ws.cell(row=i, column=col, value=f["total"])
+            celda.number_format = "#,##0.00"
+            celda.alignment = derecha
+
+        ws.column_dimensions["A"].width = 40
+        for i in range(2, len(encabezados) + 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = 13
+        ws.freeze_panes = "A2"
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return send_file(
+            buffer, as_attachment=True, download_name="Antiguedad_Saldos.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    html = render_template(
+        "administracion_antiguedad_resumen_pdf.html",
+        filas=reporte["filas"], buckets=buckets, generado_en=datetime.now(TZ_LOCAL),
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name="Antiguedad_Saldos.pdf", mimetype="application/pdf")
+
+
+@app.route("/administracion/antiguedad-saldos/cliente/exportar")
+@login_required
+def administracion_antiguedad_saldos_cliente_exportar():
+    if not session.get("es_admin"):
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    formato = request.args.get("formato")
+    cliente = request.args.get("cliente")
+    moneda = request.args.get("moneda")
+    if formato not in ("excel", "pdf") or not cliente or not moneda:
+        flash("Parámetros inválidos para exportar.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        flash(f"No se pudo generar la exportación: {e}")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    facturas = [f for f in reporte["facturas"] if f["cliente"] == cliente and f["moneda"] == moneda]
+    facturas.sort(key=lambda f: f["dias_vencimiento"] if f["dias_vencimiento"] is not None else 0)
+    total = sum(f["total"] for f in facturas)
+    nombre_archivo_base = re.sub(r"[^a-zA-Z0-9]+", "_", f"Antiguedad_{cliente}_{moneda}").strip("_")
+
+    if formato == "excel":
+        naranja = PatternFill(fill_type="solid", fgColor="C1502E")
+        amarillo = PatternFill(fill_type="solid", fgColor="FFF59D")
+        centrado = Alignment(horizontal="center", vertical="center")
+        derecha = Alignment(horizontal="right", vertical="center")
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Antigüedad de Saldos"
+
+        ws.merge_cells("A1:F1")
+        titulo = ws["A1"]
+        titulo.value = f"{cliente} · {moneda}"
+        titulo.font = Font(bold=True, size=13)
+        titulo.alignment = centrado
+        ws.row_dimensions[1].height = 22
+
+        ws["A3"] = "Facturas"
+        ws["A3"].font = Font(bold=True)
+        ws["A3"].fill = amarillo
+        ws["B3"] = len(facturas)
+        ws["B3"].fill = amarillo
+        ws["D3"] = "Total"
+        ws["D3"].font = Font(bold=True)
+        ws["D3"].fill = amarillo
+        ws["E3"] = total
+        ws["E3"].number_format = "#,##0.00"
+        ws["E3"].fill = amarillo
+
+        encabezados = ["Booking", "Folio", "Fecha factura", "Vencimiento", "Estado", "Total"]
+        for col, encabezado in enumerate(encabezados, start=1):
+            celda = ws.cell(row=5, column=col, value=encabezado)
+            celda.fill = naranja
+            celda.font = Font(bold=True, color="FFFFFF")
+            celda.alignment = centrado
+
+        for i, f in enumerate(facturas, start=6):
+            ws.cell(row=i, column=1, value=f["booking"])
+            ws.cell(row=i, column=2, value=f["folio"])
+            ws.cell(row=i, column=3, value=f["fecha_factura"])
+            ws.cell(row=i, column=4, value=f["vencimiento"])
+            dias = f["dias_vencimiento"]
+            if dias is None:
+                estado = "—"
+            elif dias < 0:
+                estado = f"Vencido hace {abs(round(dias))} días"
+            else:
+                estado = f"Vence en {round(dias)} días"
+            ws.cell(row=i, column=5, value=estado)
+            celda = ws.cell(row=i, column=6, value=f["total"])
+            celda.number_format = "#,##0.00"
+            celda.alignment = derecha
+
+        for col, ancho in zip("ABCDEF", [16, 10, 14, 14, 22, 14]):
+            ws.column_dimensions[col].width = ancho
+
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return send_file(
+            buffer, as_attachment=True, download_name=f"{nombre_archivo_base}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    html = render_template(
+        "administracion_antiguedad_cliente_pdf.html",
+        cliente=cliente, moneda=moneda, facturas=facturas, total=total, generado_en=datetime.now(TZ_LOCAL),
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+    buffer.seek(0)
+    return send_file(buffer, as_attachment=True, download_name=f"{nombre_archivo_base}.pdf", mimetype="application/pdf")
 
 
 @app.route("/reportes/por-vendedor")
@@ -5383,6 +5895,90 @@ def catalogo_desarrolladores_eliminar(fila_id):
     db.commit()
     db.close()
     return redirect(url_for("catalogo_desarrolladores"))
+
+
+def obtener_clientes_disponibles_antiguedad():
+    """Clientes (id_cliente, nombre) que aparecen ahora mismo en el reporte
+    de Antigüedad de Saldos de CargoLink, para elegirlos en el catálogo de
+    Clientes por Pagar. Regresa (lista, error) — si CargoLink no responde,
+    lista viene vacía y error trae el mensaje."""
+    try:
+        reporte = descargar_antiguedad_saldos_cargolink()
+    except RuntimeError as e:
+        return [], str(e)
+    vistos = {}
+    for f in reporte["filas"]:
+        if f["id_cliente"]:
+            vistos[f["id_cliente"]] = f["cliente"]
+    clientes = sorted(({"id_cliente": k, "nombre": v} for k, v in vistos.items()), key=lambda c: c["nombre"])
+    return clientes, None
+
+
+@app.route("/catalogos/clientes-por-pagar", methods=["GET", "POST"])
+@admin_required
+def catalogo_clientes_por_pagar():
+    db = get_db()
+    if request.method == "POST":
+        id_cliente = request.form.get("id_cliente", "").strip()
+        nombre = request.form.get("nombre", "").strip()
+        correo = request.form.get("correo", "").strip()
+        telefono = request.form.get("telefono", "").strip()
+        if not id_cliente or not nombre:
+            flash("Debes elegir un cliente de la lista.")
+        else:
+            try:
+                db.execute(
+                    "INSERT INTO catalogo_clientes_por_pagar (id_cliente, nombre, correo, telefono) VALUES (%s, %s, %s, %s)",
+                    (id_cliente, nombre, correo or None, telefono or None),
+                )
+                db.commit()
+            except psycopg.errors.UniqueViolation:
+                db.rollback()
+                flash("Ese cliente ya existe en el catálogo.")
+        db.close()
+        return redirect(url_for("catalogo_clientes_por_pagar"))
+
+    filas = db.execute("SELECT * FROM catalogo_clientes_por_pagar ORDER BY nombre").fetchall()
+    db.close()
+    clientes_disponibles, error_clientes = obtener_clientes_disponibles_antiguedad()
+    ids_ya_asociados = {f["id_cliente"] for f in filas}
+    clientes_disponibles = [c for c in clientes_disponibles if c["id_cliente"] not in ids_ya_asociados]
+    return render_template(
+        "catalogo_clientes_por_pagar.html", filas=filas,
+        clientes_disponibles=clientes_disponibles, error_clientes=error_clientes,
+    )
+
+
+@app.route("/catalogos/clientes-por-pagar/<int:fila_id>/editar", methods=["GET", "POST"])
+@admin_required
+def catalogo_clientes_por_pagar_editar(fila_id):
+    db = get_db()
+    if request.method == "POST":
+        correo = request.form.get("correo", "").strip()
+        telefono = request.form.get("telefono", "").strip()
+        db.execute(
+            "UPDATE catalogo_clientes_por_pagar SET correo = %s, telefono = %s WHERE id = %s",
+            (correo or None, telefono or None, fila_id),
+        )
+        db.commit()
+        db.close()
+        return redirect(url_for("catalogo_clientes_por_pagar"))
+
+    fila = db.execute("SELECT * FROM catalogo_clientes_por_pagar WHERE id = %s", (fila_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return "No encontrado", 404
+    return render_template("catalogo_clientes_por_pagar_editar.html", fila=fila)
+
+
+@app.route("/catalogos/clientes-por-pagar/<int:fila_id>/eliminar", methods=["POST"])
+@admin_required
+def catalogo_clientes_por_pagar_eliminar(fila_id):
+    db = get_db()
+    db.execute("DELETE FROM catalogo_clientes_por_pagar WHERE id = %s", (fila_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("catalogo_clientes_por_pagar"))
 
 
 @app.route("/catalogos/presupuesto", methods=["GET", "POST"])

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: letter; margin: 2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 8pt; }
+  table { border-collapse: collapse; width: 100%; }
+  h1 { font-size: 13pt; margin: 0 0 2px; color: #1a1a1a; }
+  .sub { font-size: 8pt; color: #555555; margin: 0 0 10px; }
+  table.caja { background-color: #fff59d; margin: 8px 0 14px; }
+  table.caja td { padding: 8px 12px; font-weight: bold; border: none; }
+  th { background-color: #C1502E; color: #ffffff; font-weight: bold; padding: 5px 8px; text-align: right; }
+  th.izq { text-align: left; }
+  td { padding: 4px 8px; border-bottom: 1px solid #dddddd; text-align: right; }
+  td.izq { text-align: left; }
+  td.vencido { color: #b91c1c; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>Antigüedad de Saldos</h1>
+  <p class="sub">Generado {{ generado_en.strftime('%Y-%m-%d %H:%M') }} — datos en vivo de CargoLink</p>
+  <table class="caja">
+    <tr>
+      <td>{{ cliente }} · {{ moneda }}</td>
+      <td style="text-align:right;">{{ facturas|length }} factura(s)</td>
+      <td style="text-align:right;">Total {{ "{:,.2f}".format(total) }}</td>
+    </tr>
+  </table>
+  <table>
+    <thead>
+      <tr>
+        <th class="izq">Booking</th><th class="izq">Folio</th>
+        <th class="izq">Fecha factura</th><th class="izq">Vencimiento</th><th class="izq">Estado</th><th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in facturas %}
+      {% set dias = f.dias_vencimiento %}
+      <tr>
+        <td class="izq">{{ f.booking or "—" }}</td>
+        <td class="izq">{{ f.folio or "—" }}</td>
+        <td class="izq">{{ f.fecha_factura or "—" }}</td>
+        <td class="izq">{{ f.vencimiento or "—" }}</td>
+        {% if dias is none %}
+        <td class="izq">—</td>
+        {% elif dias < 0 %}
+        <td class="izq vencido">Vencido hace {{ (dias|abs)|round|int }} días</td>
+        {% else %}
+        <td class="izq">Vence en {{ dias|round|int }} días</td>
+        {% endif %}
+        <td>{{ "{:,.2f}".format(f.total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

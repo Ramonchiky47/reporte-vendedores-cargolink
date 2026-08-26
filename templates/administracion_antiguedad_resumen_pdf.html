@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: letter landscape; margin: 1.5cm; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 7.5pt; }
+  table { border-collapse: collapse; width: 100%; }
+  h1 { font-size: 13pt; margin: 0 0 2px; color: #1a1a1a; }
+  .sub { font-size: 7.5pt; color: #555555; margin: 0 0 10px; }
+  th { background-color: #C1502E; color: #ffffff; font-weight: bold; padding: 4px 6px; text-align: right; }
+  th.izq { text-align: left; }
+  td { padding: 3px 6px; border-bottom: 1px solid #dddddd; text-align: right; }
+  td.izq { text-align: left; }
+  td.vencido { color: #b91c1c; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>Antigüedad de Saldos</h1>
+  <p class="sub">Generado {{ generado_en.strftime('%Y-%m-%d %H:%M') }} — datos en vivo de CargoLink</p>
+  <table>
+    <thead>
+      <tr>
+        <th class="izq">Cliente</th><th class="izq">Moneda</th>
+        {% for _, label in buckets %}
+        <th>{{ label }}</th>
+        {% endfor %}
+        <th>Total vencido</th><th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td class="izq">{{ f.cliente }}</td>
+        <td class="izq">{{ f.moneda }}</td>
+        {% for key, _ in buckets %}
+        <td class="{{ 'vencido' if key != 'porvencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
+        {% endfor %}
+        <td class="vencido">{{ "{:,.2f}".format(f.total_vencido) }}</td>
+        <td>{{ "{:,.2f}".format(f.total) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

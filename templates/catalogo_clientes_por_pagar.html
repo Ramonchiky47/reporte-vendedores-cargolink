@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Catálogo de Clientes por Pagar{% endblock %}
+{% set active = "catalogos" %}
+{% block extra_head %}
+<style>
+  .cxp-form { display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+  .cxp-form .field { flex: 0 0 auto; }
+  .cxp-form .field.cliente { width: 380px; }
+  .cxp-form .field.correo { width: 260px; }
+  .cxp-form .field.telefono { width: 180px; }
+  .cxp-form select, .cxp-form input { width: 100%; }
+</style>
+{% endblock %}
+{% block content %}
+    <div class="card">
+      <h2>Asociar cliente</h2>
+      <p class="hint">
+        Elige el cliente tal como lo trae CargoLink en Antigüedad de Saldos — así el correo semanal se manda al
+        correo correcto sin depender de que los nombres coincidan exactamente.
+      </p>
+      {% if error_clientes %}
+      <p class="empty">No se pudo traer la lista de clientes de CargoLink: {{ error_clientes }}</p>
+      {% elif not clientes_disponibles %}
+      <p class="empty">Todos los clientes de Antigüedad de Saldos ya están asociados en este catálogo.</p>
+      {% else %}
+      <form method="post" action="{{ url_for('catalogo_clientes_por_pagar') }}" id="form-asociar-cliente" class="cxp-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="nombre" id="nombre-cliente-oculto">
+        <div class="field cliente">
+          <label for="id_cliente">Cliente</label>
+          <select id="id_cliente" name="id_cliente" required>
+            <option value="" disabled selected>Selecciona un cliente...</option>
+            {% for c in clientes_disponibles %}
+            <option value="{{ c.id_cliente }}">{{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field correo">
+          <label for="correo">Correo</label>
+          <input type="email" id="correo" name="correo">
+        </div>
+        <div class="field telefono">
+          <label for="telefono">Teléfono</label>
+          <input type="text" id="telefono" name="telefono">
+        </div>
+        <div class="field" style="flex:0;">
+          <button type="submit">Agregar</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Clientes registrados</h2>
+      {% if filas %}
+      <table>
+        <thead>
+          <tr><th>Nombre</th><th>Correo</th><th>Teléfono</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for fila in filas %}
+          <tr>
+            <td>{{ fila.nombre }}</td>
+            <td>{{ fila.correo or "—" }}</td>
+            <td>{{ fila.telefono or "—" }}</td>
+            <td class="actions">
+              <a class="btn small secondary" href="{{ url_for('catalogo_clientes_por_pagar_editar', fila_id=fila.id) }}">Editar</a>
+              <form class="inline" method="post" action="{{ url_for('catalogo_clientes_por_pagar_eliminar', fila_id=fila.id) }}" onsubmit="return confirm('¿Eliminar este cliente?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="small danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Todavía no hay clientes registrados.</p>
+      {% endif %}
+    </div>
+
+<script>
+(function () {
+  const select = document.getElementById("id_cliente");
+  const oculto = document.getElementById("nombre-cliente-oculto");
+  const form = document.getElementById("form-asociar-cliente");
+  if (!select || !oculto || !form) return;
+  function actualizar() {
+    const opcion = select.selectedOptions[0];
+    oculto.value = (opcion && opcion.value) ? opcion.textContent : "";
+  }
+  select.addEventListener("change", actualizar);
+  form.addEventListener("submit", actualizar);
+})();
+</script>
+{% endblock %}

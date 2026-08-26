@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, Helvetica, sans-serif; color: #222; font-size: 14px; margin:0; padding:0;">
+  <div style="max-width: 680px; margin: 0 auto; padding: 24px 20px; line-height: 1.6;">
+    <p>Estimado/a {{ nombre_contacto }},</p>
+    <p>Espero que se encuentre muy bien.</p>
+    <p>Le comparto adjunto su estado de cuenta correspondiente al {{ fecha_envio }}, donde podrá consultar el detalle de sus movimientos y saldo actual.</p>
+
+    {% for bloque in bloques_moneda %}
+    <table style="width:100%; background:#fff59d; border-radius:6px; margin:16px 0 6px;">
+      <tr>
+        <td style="padding:10px 14px; font-weight:bold;">{{ bloque.moneda }}</td>
+        <td style="padding:10px 14px; text-align:right; font-weight:bold;">{{ bloque.facturas|length }} factura(s)</td>
+        <td style="padding:10px 14px; text-align:right; font-weight:bold;">Total {{ "{:,.2f}".format(bloque.total) }}</td>
+      </tr>
+    </table>
+    <table style="width:100%; border-collapse:collapse; font-size:12.5px; margin-bottom:10px;">
+      <thead>
+        <tr style="background:#C1502E; color:#fff;">
+          <th style="padding:6px 8px; text-align:left;">Booking</th>
+          <th style="padding:6px 8px; text-align:left;">Folio</th>
+          <th style="padding:6px 8px; text-align:left;">Fecha factura</th>
+          <th style="padding:6px 8px; text-align:left;">Vencimiento</th>
+          <th style="padding:6px 8px; text-align:left;">Estado</th>
+          <th style="padding:6px 8px; text-align:right;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in bloque.facturas %}
+        {% set dias = f.dias_vencimiento %}
+        <tr style="border-bottom:1px solid #ddd;">
+          <td style="padding:5px 8px;">{{ f.booking or "—" }}</td>
+          <td style="padding:5px 8px;">{{ f.folio or "—" }}</td>
+          <td style="padding:5px 8px;">{{ f.fecha_factura or "—" }}</td>
+          <td style="padding:5px 8px;">{{ f.vencimiento or "—" }}</td>
+          {% if dias is none %}
+          <td style="padding:5px 8px;">—</td>
+          {% elif dias < 0 %}
+          <td style="padding:5px 8px; color:#b91c1c; font-weight:bold;">Vencido hace {{ (dias|abs)|round|int }} días</td>
+          {% else %}
+          <td style="padding:5px 8px;">Vence en {{ dias|round|int }} días</td>
+          {% endif %}
+          <td style="padding:5px 8px; text-align:right;">${{ "{:,.2f}".format(f.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+
+    <p style="margin-top:20px;">Quedo a su entera disposición por si tiene alguna duda o requiere alguna aclaración con la información presentada.</p>
+    <p>Saludos cordiales,<br>AV2 Logistics</p>
+
+    <p style="margin-top:20px; font-size:12px; color:#777;">
+      También te adjuntamos el estado de cuenta en PDF para tus registros.
+    </p>
+  </div>
+</body>
+</html>
