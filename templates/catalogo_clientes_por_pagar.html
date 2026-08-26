@@ -3,11 +3,12 @@
 {% set active = "catalogos" %}
 {% block extra_head %}
 <style>
+  main { max-width: 1200px; }
   .cxp-form { display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
   .cxp-form .field { flex: 0 0 auto; }
-  .cxp-form .field.cliente { width: 380px; }
-  .cxp-form .field.correo { width: 260px; }
-  .cxp-form .field.telefono { width: 180px; }
+  .cxp-form .field.cliente { width: 560px; }
+  .cxp-form .field.correo { width: 320px; }
+  .cxp-form .field.telefono { width: 200px; }
   .cxp-form select, .cxp-form input { width: 100%; }
 </style>
 {% endblock %}
@@ -16,7 +17,9 @@
       <h2>Asociar cliente</h2>
       <p class="hint">
         Elige el cliente tal como lo trae CargoLink en Antigüedad de Saldos — así el correo semanal se manda al
-        correo correcto sin depender de que los nombres coincidan exactamente.
+        correo correcto sin depender de que los nombres coincidan exactamente. Si el cliente ya tiene un correo
+        capturado en el CRM, se muestra junto al nombre y se rellena solo — los que no traen nada son los que
+        todavía necesitas capturar.
       </p>
       {% if error_clientes %}
       <p class="empty">No se pudo traer la lista de clientes de CargoLink: {{ error_clientes }}</p>
@@ -31,7 +34,9 @@
           <select id="id_cliente" name="id_cliente" required>
             <option value="" disabled selected>Selecciona un cliente...</option>
             {% for c in clientes_disponibles %}
-            <option value="{{ c.id_cliente }}">{{ c.nombre }}</option>
+            <option value="{{ c.id_cliente }}" data-nombre="{{ c.nombre }}" data-correo="{{ c.correo_crm or '' }}">
+              {{ c.nombre }}{% if c.correo_crm %} — {{ c.correo_crm }}{% endif %}
+            </option>
             {% endfor %}
           </select>
         </div>
@@ -84,12 +89,19 @@
   const select = document.getElementById("id_cliente");
   const oculto = document.getElementById("nombre-cliente-oculto");
   const form = document.getElementById("form-asociar-cliente");
+  const correoInput = document.getElementById("correo");
   if (!select || !oculto || !form) return;
   function actualizar() {
     const opcion = select.selectedOptions[0];
-    oculto.value = (opcion && opcion.value) ? opcion.textContent : "";
+    oculto.value = (opcion && opcion.value) ? opcion.dataset.nombre : "";
   }
-  select.addEventListener("change", actualizar);
+  select.addEventListener("change", () => {
+    actualizar();
+    const opcion = select.selectedOptions[0];
+    if (opcion && opcion.dataset.correo && correoInput && !correoInput.value) {
+      correoInput.value = opcion.dataset.correo;
+    }
+  });
   form.addEventListener("submit", actualizar);
 })();
 </script>

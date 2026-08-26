@@ -3,6 +3,7 @@
 {% set active = "administracion_antiguedad_saldos" %}
 {% block extra_head %}
 <style>
+  main { max-width: 1400px; }
   .adm-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
   .adm-header-row h2 { margin: 0 0 .3rem; }
   .adm-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 0; }
@@ -19,7 +20,8 @@
   .adm-resumen { width: 100%; font-variant-numeric: tabular-nums; font-size: .74rem; }
   .adm-resumen th, .adm-resumen td { text-align: right; white-space: nowrap; padding: .5rem .7rem; }
   .adm-resumen th:nth-child(2), .adm-resumen td:nth-child(2),
-  .adm-resumen th:nth-child(3), .adm-resumen td:nth-child(3) { text-align: left; }
+  .adm-resumen th:nth-child(3), .adm-resumen td:nth-child(3),
+  .adm-resumen th:nth-child(4), .adm-resumen td:nth-child(4) { text-align: left; }
   .adm-resumen th:first-child, .adm-resumen td.adm-check-col { text-align: center; white-space: normal; }
   .adm-resumen td.adm-check-col input { width: auto; accent-color: var(--accent); }
   .adm-resumen tbody tr { cursor: pointer; }
@@ -27,6 +29,7 @@
   .adm-resumen tbody tr:hover td:nth-child(2) { color: var(--accent); text-decoration: underline; }
   .adm-resumen tbody tr[hidden] { display: none; }
   .adm-resumen td.vencido { color: var(--danger-dark); font-weight: 600; }
+  .adm-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 700; background: #fef3c7; color: #92400e; white-space: nowrap; }
 
   .adm-modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
@@ -93,7 +96,7 @@
           <table class="adm-resumen">
             <thead>
               <tr>
-                <th>Enviar semanal</th><th>Cliente</th><th>Moneda</th>
+                <th>Enviar semanal</th><th>Cliente</th><th>Correo</th><th>Moneda</th>
                 {% for _, label in buckets %}
                 <th>{{ label }}</th>
                 {% endfor %}
@@ -102,6 +105,7 @@
             </thead>
             <tbody>
               {% for f in reporte.filas %}
+              {% set contacto = contactos_por_id.get(f.id_cliente) %}
               <tr data-cliente="{{ f.cliente|lower }}" data-cliente-real="{{ f.cliente }}" data-moneda="{{ f.moneda }}" data-total="{{ f.total }}">
                 <td class="adm-check-col">
                   {% if f.id_cliente %}
@@ -109,6 +113,13 @@
                   {% endif %}
                 </td>
                 <td>{{ f.cliente }}</td>
+                <td>
+                  {% if contacto %}
+                  {{ contacto[1] }}
+                  {% else %}
+                  <span class="adm-badge">falta capturar</span>
+                  {% endif %}
+                </td>
                 <td>{{ f.moneda }}</td>
                 {% for key, _ in buckets %}
                 <td class="{{ 'vencido' if key != 'porvencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>

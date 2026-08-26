@@ -2687,6 +2687,8 @@ def administracion_antiguedad_saldos():
         }
         db.close()
 
+    contactos_por_id = obtener_contactos_por_cliente()
+
     return render_template(
         "administracion_antiguedad_saldos.html",
         reporte=reporte,
@@ -2696,6 +2698,7 @@ def administracion_antiguedad_saldos():
         facturas_vencidas=facturas_vencidas,
         clientes_unicos=clientes_unicos,
         envio_activo=envio_activo,
+        contactos_por_id=contactos_por_id,
     )
 
 
@@ -5897,20 +5900,94 @@ def catalogo_desarrolladores_eliminar(fila_id):
     return redirect(url_for("catalogo_desarrolladores"))
 
 
+def obtener_nombres_completos_clientes_cargolink():
+    """{id_cliente: nombre_completo} desde el catálogo de Clientes de
+    CargoLink (Catálogos → Clientes). Antigüedad de Saldos le agrega '...'
+    al nombre de TODOS los clientes ahí (a veces sí es una truncación real
+    a media palabra), así que para mostrar el nombre completo hay que
+    traerlo de este otro catálogo."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(
+        "https://fwd.cargolink.mx/templates/antiguedadSaldoIngreso/?m=63", headers=headers, timeout=60
+    )
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión.")
+    token = match_token.group(1)
+
+    r = sesion.get(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api&fn=consultaClientes",
+        headers=headers, timeout=60,
+    )
+    if r.status_code != 200:
+        raise RuntimeError("Error al consultar el catálogo de Clientes en CargoLink.")
+    data = r.json()
+
+    nombres = {}
+    for c in data.get("valores") or []:
+        id_cliente = c.get("id_cliente")
+        nombre = (c.get("alias_cliente") or c.get("razonsocial") or "").strip().strip('"').strip()
+        if id_cliente and nombre:
+            nombres[id_cliente] = nombre
+    return nombres
+
+
 def obtener_clientes_disponibles_antiguedad():
     """Clientes (id_cliente, nombre) que aparecen ahora mismo en el reporte
     de Antigüedad de Saldos de CargoLink, para elegirlos en el catálogo de
-    Clientes por Pagar. Regresa (lista, error) — si CargoLink no responde,
-    lista viene vacía y error trae el mensaje."""
+    Clientes por Pagar. El nombre se completa con el catálogo de Clientes
+    de CargoLink cuando está disponible (Antigüedad de Saldos trae el
+    nombre con '...' agregado, a veces sí truncado a media palabra).
+    Regresa (lista, error) — si CargoLink no responde, lista viene vacía y
+    error trae el mensaje."""
     try:
         reporte = descargar_antiguedad_saldos_cargolink()
     except RuntimeError as e:
         return [], str(e)
+
+    try:
+        nombres_completos = obtener_nombres_completos_clientes_cargolink()
+    except RuntimeError:
+        nombres_completos = {}
+
+    db = get_db()
+    correos_crm_filas = db.execute("""
+        SELECT ac.razon_social, c.correo
+        FROM asignacion_de_clientes ac
+        JOIN crm_contacto_clientes cc ON cc.cliente_folio = ac.folio
+        JOIN crm_contactos c ON c.id = cc.contacto_id
+        WHERE c.correo IS NOT NULL AND c.correo <> ''
+    """).fetchall()
+    db.close()
+    correos_crm = {}
+    for f in correos_crm_filas:
+        correos_crm.setdefault(normalizar(f["razon_social"]), f["correo"].strip())
+
+    def buscar_correo_crm(nombre):
+        clave = normalizar(nombre)
+        for razon_norm, correo in correos_crm.items():
+            if razon_norm.startswith(clave) or clave.startswith(razon_norm):
+                return correo
+        return None
+
     vistos = {}
     for f in reporte["filas"]:
         if f["id_cliente"]:
-            vistos[f["id_cliente"]] = f["cliente"]
-    clientes = sorted(({"id_cliente": k, "nombre": v} for k, v in vistos.items()), key=lambda c: c["nombre"])
+            vistos[f["id_cliente"]] = nombres_completos.get(f["id_cliente"]) or f["cliente"]
+    clientes = sorted(
+        ({"id_cliente": k, "nombre": v, "correo_crm": buscar_correo_crm(v)} for k, v in vistos.items()),
+        key=lambda c: c["nombre"],
+    )
     return clientes, None
 
 
