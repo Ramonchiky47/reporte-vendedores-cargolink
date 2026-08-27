@@ -1,0 +1,917 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Venta Diaria{% endblock %}
+{% set active = "venta_diaria" %}
+{% block extra_head %}
+<style>
+  .header-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+  .header-botones { display: flex; gap: .6rem; flex-wrap: wrap; }
+  .header-titulo h2 { margin: 0 0 .25rem; }
+  .meta { font-size: .78rem; color: #64748b; margin: 0; }
+  .filtro-dia-bloque { max-width: 260px; }
+  .filtro-dia-bloque h3 {
+    margin: 0 0 .5rem; font-size: .72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #64748b;
+  }
+  input#filtro-dia {
+    width: 100%; padding: .55rem .7rem; border-radius: 8px; border: 1px solid #cbd5e1;
+    font-size: .9rem; font-weight: 600; font-family: inherit;
+  }
+
+  .grafica-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  .grafica-leyenda { display: flex; gap: 1.1rem; font-size: .78rem; color: #475569; }
+  .grafica-leyenda span { display: inline-flex; align-items: center; gap: .4rem; }
+  .grafica-leyenda i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .gp-bar-label { font-size: .7rem; fill: #475569; }
+  .gp-bar-value { font-size: .68rem; fill: #0f172a; font-weight: 700; }
+  .gp-grid-line { stroke: #e2e8f0; stroke-width: 1; }
+  .gp-bar-profit:hover, .gp-bar-ppto:hover { filter: brightness(1.08); }
+
+  .tabla-scroll { overflow-x: auto; }
+  table.reporte { width: 100%; border-collapse: collapse; font-size: .8rem; font-variant-numeric: tabular-nums; }
+  table.reporte thead th {
+    text-align: right; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em;
+    color: #64748b; font-weight: 700; padding: 0 .5rem .5rem; border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+  }
+  table.reporte thead th:first-child { text-align: left; }
+  table.reporte tbody td {
+    padding: .4rem .5rem; text-align: right; border-bottom: 1px solid #e2e8f0; white-space: nowrap;
+  }
+  table.reporte tbody td:first-child {
+    text-align: left; font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+  }
+  table.reporte tbody tr.na td:first-child { color: #94a3b8; font-style: italic; font-weight: 500; }
+  table.reporte td.dif.neg { color: #b91c1c; font-weight: 700; box-shadow: inset 3px 0 0 #f87171; }
+  table.reporte td.dif.pos { color: #166534; font-weight: 700; }
+  table.reporte td.alc.sinppto { color: #94a3b8; font-style: italic; }
+  table.reporte tfoot td {
+    padding: .55rem .5rem; text-align: right; font-weight: 700; border-top: 2px solid #0f172a;
+  }
+  table.reporte tfoot td:first-child { text-align: left; }
+  table.reporte tfoot td.dif.neg { color: #b91c1c; }
+  table.reporte tfoot td.dif.pos { color: #166534; }
+  p.subt { margin: 0 0 .7rem; font-size: .75rem; color: #64748b; }
+  p.nota { font-size: .75rem; color: #64748b; line-height: 1.5; }
+
+  table.reporte tbody tr.clicable { cursor: pointer; }
+  table.reporte tbody tr.clicable td:first-child {
+    color: #007CC3; text-decoration: underline; text-decoration-color: transparent;
+  }
+  table.reporte tbody tr.clicable:hover td:first-child { text-decoration-color: #007CC3; }
+
+  table.reporte tbody tr.margen-bajo td { color: #b91c1c; }
+  table.reporte tbody tr.margen-bajo td:first-child { color: #b91c1c; box-shadow: inset 3px 0 0 #f87171; }
+  .tag-av2 {
+    display: inline-block; font-size: .62rem; font-weight: 700; letter-spacing: .02em;
+    background: #eef6fc; color: #007CC3; border: 1px solid #bfe0f5;
+    border-radius: 999px; padding: .05rem .45rem; margin-left: .4rem; vertical-align: middle;
+  }
+  table.reporte td.sinppto { color: #94a3b8; font-style: italic; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45);
+    align-items: flex-start; justify-content: center; padding: 4vh 1.5rem; z-index: 50; overflow-y: auto;
+  }
+  .modal-overlay.abierto { display: flex; }
+  .modal-panel {
+    background: #fff; border-radius: 12px; width: 100%; max-width: 1400px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
+  }
+  .modal-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem;
+    padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;
+  }
+  .modal-head h2 { margin: 0; font-size: 1rem; }
+  .modal-head p { margin: .2rem 0 0; font-size: .78rem; color: #64748b; }
+  .modal-volver {
+    display: none; background: none; border: none; padding: 0 0 .35rem; margin: 0;
+    font-size: .78rem; color: #007CC3; cursor: pointer; font-weight: 600;
+  }
+  .modal-volver.visible { display: inline-block; }
+  .modal-volver:hover { text-decoration: underline; }
+  .modal-titulo-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .modal-accion {
+    display: none; background: #f1f5f9; border: 1px solid #cbd5e1; color: #334155;
+    font-size: .72rem; font-weight: 600; padding: .3rem .65rem; border-radius: 999px; cursor: pointer;
+  }
+  .modal-accion.visible { display: inline-block; }
+  .modal-accion:hover { border-color: #007CC3; color: #007CC3; }
+  .modal-cerrar {
+    background: none; border: none; font-size: 1.3rem; line-height: 1; color: #64748b; cursor: pointer;
+    padding: .2rem .4rem; border-radius: 6px;
+  }
+  .modal-cerrar:hover { background: #f1f5f9; color: #0f172a; }
+  .modal-body { padding: 1rem 1.5rem 1.5rem; overflow-y: auto; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not datos %}
+    <div class="card">
+      <p class="empty">Todavía no hay ningún reporte generado.</p>
+    </div>
+{% else %}
+    <div class="card">
+      <div class="header-row">
+        <div class="header-titulo">
+          <h2>Venta Diaria</h2>
+          <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
+        </div>
+        <div class="header-botones">
+          <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
+          <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
+          <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
+          <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
+          {% if puede_exportar %}<button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>{% endif %}
+          {% if puede_actualizar %}
+          <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn small">Actualizar</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      <div class="filtro-dia-bloque">
+        <h3>Fecha</h3>
+        <input type="date" id="filtro-dia" min="{{ datos.dia_min }}" max="{{ datos.dia_max }}" value="{{ datos.dia_actual }}">
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="subt" id="subt-plaza"></p>
+      <div class="tabla-scroll"><table class="reporte" id="tabla-plaza"></table></div>
+    </div>
+
+    <div class="card">
+      <div class="grafica-header">
+        <h2 style="margin:0;">Profit vs Presupuesto por Plaza</h2>
+        <div class="grafica-leyenda">
+          <span><i style="background:#007CC3;"></i> Profit</span>
+          <span><i style="background:#94a3b8;"></i> Presupuesto</span>
+        </div>
+      </div>
+      <div id="grafica-plaza"></div>
+    </div>
+
+    <div class="card">
+      <p class="nota">
+        % Alc Ppto = Profit ÷ Presupuesto · Dif Ppto = Profit − Presupuesto.
+        El Presupuesto no se captura por día: aquí es el presupuesto del mes de cada vendedor, prorrateado entre sus días.
+        "#N/D" agrupa vendedores con ventas o presupuesto sin una Plaza asignada todavía en el catálogo de Vendedores.
+        Haz clic en una Plaza para ver sus vendedores, y en un vendedor para ver el detalle de sus bookings del día.
+      </p>
+    </div>
+
+    <div class="modal-overlay" id="modal-detalle">
+      <div class="modal-panel">
+        <div class="modal-head">
+          <div>
+            <button type="button" class="modal-volver" id="modal-volver">← Volver</button>
+            <div class="modal-titulo-row">
+              <h2 id="modal-titulo">Detalle</h2>
+              <button type="button" class="modal-accion" id="btn-resumen-cliente">Resumen por cliente</button>
+              <button type="button" class="modal-accion" id="btn-resumen-plaza">Resumen por Plaza</button>
+              <button type="button" class="modal-accion" id="btn-desglosar-av2">Desglosar AV2 Customer</button>
+              {% if puede_exportar %}<button type="button" class="modal-accion visible" id="btn-exportar-detalle">Exportar</button>{% endif %}
+            </div>
+            <p id="modal-subtitulo"></p>
+          </div>
+          <button type="button" class="modal-cerrar" id="modal-cerrar" aria-label="Cerrar">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="tabla-scroll"><table class="reporte" id="tabla-detalle"></table></div>
+        </div>
+      </div>
+    </div>
+
+<script id="datos-reporte" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  "use strict";
+  const datos = JSON.parse(document.getElementById("datos-reporte").textContent);
+  const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+  const estado = { dia: datos.dia_actual };
+
+  function etiquetaDia(dia) {
+    const [anio, m, d] = dia.split("-");
+    return `${parseInt(d, 10)} de ${MESES_ES[parseInt(m, 10) - 1].toLowerCase()} de ${anio}`;
+  }
+  function diaCoincide(diaFila) {
+    return diaFila === estado.dia;
+  }
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function fmtPct(n) { return (n * 100).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + "%"; }
+  function fmtFecha(f) {
+    const [fecha, hora] = f.split(" ");
+    const [anio, mes, dia] = fecha.split("-");
+    return `${dia}/${mes}/${anio} ${hora}`;
+  }
+
+  const inputDia = document.getElementById("filtro-dia");
+  inputDia.addEventListener("change", () => {
+    if (inputDia.value) { estado.dia = inputDia.value; render(); }
+  });
+
+  function sumar(filas) {
+    return filas.reduce((acc, f) => {
+      acc.cant_book += f.cant_book; acc.venta += f.venta; acc.profit += f.profit; acc.ppto += f.ppto;
+      return acc;
+    }, { cant_book: 0, venta: 0, profit: 0, ppto: 0 });
+  }
+  function agregarPorCampo(filas, campo) {
+    const grupos = new Map();
+    filas.forEach((f) => {
+      const clave = f[campo];
+      if (!grupos.has(clave)) grupos.set(clave, []);
+      grupos.get(clave).push(f);
+    });
+    return Array.from(grupos.entries()).map(([valor, fs]) => ({ [campo]: valor, ...sumar(fs) }));
+  }
+  function celdaPresupuesto(row) {
+    const alc = row.ppto > 0 ? row.profit / row.ppto : null;
+    const dif = row.profit - row.ppto;
+    const alcTd = alc === null ? '<td class="alc sinppto">—</td>' : `<td class="alc">${fmtPct(alc)}</td>`;
+    const difClase = dif < 0 ? "neg" : "pos";
+    return `
+      <td>${row.ppto ? fmtMoneda(row.ppto) : "—"}</td>
+      ${alcTd}
+      <td class="dif ${difClase}">${fmtMoneda(dif)}</td>
+    `;
+  }
+
+  function celdaMetricas(row) {
+    return `
+      <td>${row.cant_book ? fmtEntero(row.cant_book) : (row.cant_book === 0 ? "—" : "")}</td>
+      <td>${row.venta ? fmtMoneda(row.venta) : "—"}</td>
+      <td>${row.profit ? fmtMoneda(row.profit) : "—"}</td>
+      ${celdaPresupuesto(row)}
+    `;
+  }
+
+  function fmtMonedaCompacta(n) {
+    const abs = Math.abs(n);
+    const signo = n < 0 ? "-" : "";
+    if (abs >= 1000000) return signo + "$" + (abs / 1000000).toFixed(1) + "M";
+    if (abs >= 1000) return signo + "$" + (abs / 1000).toFixed(0) + "K";
+    return fmtMoneda(n);
+  }
+
+  function renderGraficaPlaza(filasAgregadas) {
+    const cont = document.getElementById("grafica-plaza");
+    cont.innerHTML = "";
+    if (filasAgregadas.length === 0) {
+      cont.innerHTML = '<p class="empty">Sin datos para este día.</p>';
+      return;
+    }
+    const ancho = cont.clientWidth || 880;
+    const alto = 280;
+    const margen = { top: 16, right: 12, bottom: 46, left: 60 };
+    const anchoPlot = ancho - margen.left - margen.right;
+    const altoPlot = alto - margen.top - margen.bottom;
+
+    const maxValor = Math.max(...filasAgregadas.map((f) => Math.max(f.profit, f.ppto)), 1);
+    const pasoY = maxValor / 4;
+    const anchoGrupo = anchoPlot / filasAgregadas.length;
+    const anchoBarra = Math.min(anchoGrupo * 0.32, 46);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", alto);
+    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+
+    for (let i = 0; i <= 4; i++) {
+      const valor = pasoY * i;
+      const y = margen.top + altoPlot - (valor / maxValor) * altoPlot;
+      const linea = document.createElementNS(svg.namespaceURI, "line");
+      linea.setAttribute("x1", margen.left);
+      linea.setAttribute("x2", ancho - margen.right);
+      linea.setAttribute("y1", y);
+      linea.setAttribute("y2", y);
+      linea.setAttribute("class", "gp-grid-line");
+      svg.appendChild(linea);
+
+      const etiqueta = document.createElementNS(svg.namespaceURI, "text");
+      etiqueta.setAttribute("x", margen.left - 8);
+      etiqueta.setAttribute("y", y + 3);
+      etiqueta.setAttribute("text-anchor", "end");
+      etiqueta.setAttribute("class", "gp-bar-label");
+      etiqueta.textContent = fmtMonedaCompacta(valor);
+      svg.appendChild(etiqueta);
+    }
+
+    function dibujarBarra(x, valor, color, claseHover, etiquetaTitulo) {
+      const h = Math.max((valor / maxValor) * altoPlot, valor > 0 ? 2 : 0);
+      const y = margen.top + altoPlot - h;
+      const rect = document.createElementNS(svg.namespaceURI, "rect");
+      rect.setAttribute("x", x);
+      rect.setAttribute("y", y);
+      rect.setAttribute("width", anchoBarra);
+      rect.setAttribute("height", h);
+      rect.setAttribute("rx", 3);
+      rect.setAttribute("fill", color);
+      rect.setAttribute("class", claseHover);
+      const title = document.createElementNS(svg.namespaceURI, "title");
+      title.textContent = etiquetaTitulo;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+
+      if (valor > 0) {
+        const val = document.createElementNS(svg.namespaceURI, "text");
+        val.setAttribute("x", x + anchoBarra / 2);
+        val.setAttribute("y", y - 5);
+        val.setAttribute("text-anchor", "middle");
+        val.setAttribute("class", "gp-bar-value");
+        val.textContent = fmtMonedaCompacta(valor);
+        svg.appendChild(val);
+      }
+    }
+
+    filasAgregadas.forEach((f, i) => {
+      const xGrupo = margen.left + i * anchoGrupo;
+      const xProfit = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
+      const xPpto = xGrupo + anchoGrupo / 2 + 2;
+      dibujarBarra(xProfit, f.profit, "#007CC3", "gp-bar-profit", `${f.plaza} · Profit: ${fmtMoneda(f.profit)}`);
+      dibujarBarra(xPpto, f.ppto, "#94a3b8", "gp-bar-ppto", `${f.plaza} · Presupuesto: ${fmtMoneda(f.ppto)}`);
+
+      const etiquetaPlaza = document.createElementNS(svg.namespaceURI, "text");
+      etiquetaPlaza.setAttribute("x", xGrupo + anchoGrupo / 2);
+      etiquetaPlaza.setAttribute("y", alto - margen.bottom + 18);
+      etiquetaPlaza.setAttribute("text-anchor", "middle");
+      etiquetaPlaza.setAttribute("class", "gp-bar-label");
+      const nombre = f.plaza.length > 14 ? f.plaza.slice(0, 13) + "…" : f.plaza;
+      etiquetaPlaza.textContent = nombre;
+      svg.appendChild(etiquetaPlaza);
+    });
+
+    cont.appendChild(svg);
+  }
+
+  function renderTablaPlaza() {
+    const filas = datos.filas.filter((f) => diaCoincide(f.dia));
+    const porPlaza = new Map();
+    filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
+    const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
+    filasAgregadas.sort((a, b) => b.profit - a.profit);
+
+    renderGraficaPlaza(filasAgregadas);
+
+    const tabla = document.getElementById("tabla-plaza");
+    if (filasAgregadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este día.</caption>';
+      document.getElementById("subt-plaza").textContent = "";
+      return;
+    }
+    const total = sumar(filas);
+    tabla.innerHTML = `
+      <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+      <tbody>${filasAgregadas.map((r) => `<tr class="clicable ${r.plaza === '#N/D' ? 'na' : ''}" data-plaza="${r.plaza.replace(/"/g, "&quot;")}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+      <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+    `;
+    document.getElementById("subt-plaza").textContent = `${filasAgregadas.length} plaza(s) · ${etiquetaDia(estado.dia)}`;
+
+    tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+      tr.addEventListener("click", () => abrirVendedoresDePlaza(tr.dataset.plaza));
+    });
+  }
+
+  // ---- modal: navegación (Vendedores | Plaza -> Vendedores) -> Bookings -> Resumen por cliente ----
+  const modal = document.getElementById("modal-detalle");
+  const btnVolver = document.getElementById("modal-volver");
+  const btnResumenCliente = document.getElementById("btn-resumen-cliente");
+  const btnResumenPlaza = document.getElementById("btn-resumen-plaza");
+  const btnDesglosarAV2 = document.getElementById("btn-desglosar-av2");
+  let volverA = null;
+
+  function renderVendedoresEnModal(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const ordenadas = agregarPorCampo(filas, "vendedor").sort((a, b) => b.profit - a.profit);
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} vendedor(es) · ${etiquetaDia(estado.dia)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (ordenadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin vendedores para este filtro.</caption>';
+    } else {
+      const total = sumar(ordenadas);
+      tabla.innerHTML = `
+        <thead><tr><th>Vendedor</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${ordenadas.map((r) => `<tr class="clicable" data-vendedor="${r.vendedor.replace(/"/g, "&quot;")}"><td>${r.vendedor}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeVendedor(
+          tr.dataset.vendedor,
+          () => renderVendedoresEnModal(titulo, filas, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function abrirVendedoresDePlaza(plaza) {
+    const filas = datos.filas.filter((f) => diaCoincide(f.dia) && f.plaza === plaza);
+    renderVendedoresEnModal(plaza, filas, null);
+  }
+
+  function abrirTodosLosVendedores() {
+    const filas = datos.filas.filter((f) => diaCoincide(f.dia));
+    renderVendedoresEnModal("Vendedores", filas, null);
+  }
+
+  function bookingsDe(vendedor) {
+    return datos.detalle
+      .filter((d) => d.vendedor === vendedor && diaCoincide(d.dia))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+
+  function bookingsDeEjecutivo(ejecutivo) {
+    return datos.detalle
+      .filter((d) => d.ejecutivo === ejecutivo && diaCoincide(d.dia))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+  }
+
+  function abrirBookingsDeVendedor(vendedor, volverCallback) {
+    renderBookingsDeVendedor(vendedor, bookingsDe(vendedor), volverCallback, "ejecutivo");
+  }
+
+  function abrirBookingsDeEjecutivo(ejecutivo, volverCallback) {
+    renderBookingsDeVendedor(ejecutivo, bookingsDeEjecutivo(ejecutivo), volverCallback, "vendedor");
+  }
+
+  function tieneAV2Customer(filas) {
+    return filas.some((f) => (f.desarrollador || "").toUpperCase() === "AV2 CUSTOMER");
+  }
+
+  function renderDesarrolladoresEnModal(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+
+    const ordenadas = agregarPorCampo(filas, "desarrollador").sort((a, b) => b.profit - a.profit);
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent = `${ordenadas.length} desarrollador(es) · ${etiquetaDia(estado.dia)}`;
+
+    btnResumenPlaza.classList.toggle("visible", ordenadas.length > 0);
+    btnResumenPlaza.onclick = () => renderResumenPlazaDesarrolladores(
+      titulo, filas, () => renderDesarrolladoresEnModal(titulo, filas, volverCallback)
+    );
+
+    btnDesglosarAV2.classList.toggle("visible", tieneAV2Customer(filas));
+    btnDesglosarAV2.textContent = "Desglosar AV2 Customer";
+    btnDesglosarAV2.onclick = () => renderDesarrolladoresAV2Desglosado(titulo, filas, volverCallback);
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (ordenadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin desarrolladores para este filtro.</caption>';
+    } else {
+      const total = sumar(ordenadas);
+      tabla.innerHTML = `
+        <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${ordenadas.map((r) => `<tr class="clicable" data-desarrollador="${r.desarrollador.replace(/"/g, "&quot;")}"><td>${r.desarrollador}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeEjecutivo(
+          tr.dataset.desarrollador,
+          () => renderDesarrolladoresEnModal(titulo, filas, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function renderDesarrolladoresAV2Desglosado(titulo, filasOriginal, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+
+    const sinAV2 = agregarPorCampo(
+      filasOriginal.filter((f) => (f.desarrollador || "").toUpperCase() !== "AV2 CUSTOMER"),
+      "desarrollador"
+    );
+
+    const porVendedor = new Map();
+    bookingsDeEjecutivo("AV2 Customer")
+      .concat(bookingsDeEjecutivo("AV2 CUSTOMER"))
+      .forEach((b) => {
+        if (!porVendedor.has(b.vendedor)) {
+          porVendedor.set(b.vendedor, { desarrollador: b.vendedor, cant_book: 0, venta: 0, profit: 0, ppto: 0, esAV2: true });
+        }
+        const acc = porVendedor.get(b.vendedor);
+        acc.cant_book += 1;
+        acc.venta += b.venta;
+        acc.profit += b.profit;
+      });
+    const combinadas = sinAV2.concat(Array.from(porVendedor.values())).sort((a, b) => b.profit - a.profit);
+
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent =
+      `${combinadas.length} fila(s) · AV2 Customer desglosado por Vendedor, ordenado por Profit · ${etiquetaDia(estado.dia)}`;
+
+    btnDesglosarAV2.classList.add("visible");
+    btnDesglosarAV2.textContent = "Agrupar AV2 Customer";
+    btnDesglosarAV2.onclick = () => renderDesarrolladoresEnModal(titulo, filasOriginal, volverCallback);
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (combinadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este filtro.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead><tr><th>Desarrollador</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${combinadas.map((r) => `
+          <tr class="${r.esAV2 ? '' : 'clicable'}" data-desarrollador="${(r.desarrollador || '').replace(/"/g, "&quot;")}">
+            <td>${r.desarrollador}${r.esAV2 ? '<span class="tag-av2">AV2</span>' : ''}</td>
+            <td>${fmtEntero(r.cant_book)}</td>
+            <td>${fmtMoneda(r.venta)}</td>
+            <td>${fmtMoneda(r.profit)}</td>
+            ${r.esAV2
+              ? '<td class="sinppto">—</td><td class="sinppto">—</td><td class="sinppto">—</td>'
+              : celdaPresupuesto(r)}
+          </tr>
+        `).join("")}</tbody>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => abrirBookingsDeEjecutivo(
+          tr.dataset.desarrollador,
+          () => renderDesarrolladoresAV2Desglosado(titulo, filasOriginal, volverCallback)
+        ));
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function renderResumenPlazaDesarrolladores(titulo, filas, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const porPlaza = new Map();
+    filas.forEach((f) => { if (!porPlaza.has(f.plaza)) porPlaza.set(f.plaza, []); porPlaza.get(f.plaza).push(f); });
+    const filasAgregadas = Array.from(porPlaza.entries()).map(([plaza, fs]) => ({ plaza, ...sumar(fs) }));
+    filasAgregadas.sort((a, b) => b.profit - a.profit);
+
+    document.getElementById("modal-titulo").textContent = titulo;
+    document.getElementById("modal-subtitulo").textContent =
+      `Resumen por Plaza · ${filasAgregadas.length} plaza(s) · ${etiquetaDia(estado.dia)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filasAgregadas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este filtro.</caption>';
+    } else {
+      const total = sumar(filas);
+      tabla.innerHTML = `
+        <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
+        <tbody>${filasAgregadas.map((r) => `<tr class="clicable ${r.plaza === '#N/D' ? 'na' : ''}" data-plaza="${r.plaza.replace(/"/g, "&quot;")}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total general</td>${celdaMetricas(total)}</tr></tfoot>
+      `;
+      tabla.querySelectorAll("tbody tr.clicable").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          const plaza = tr.dataset.plaza;
+          const filasPlaza = filas.filter((f) => f.plaza === plaza);
+          renderDesarrolladoresEnModal(
+            plaza, filasPlaza,
+            () => renderResumenPlazaDesarrolladores(titulo, filas, volverCallback)
+          );
+        });
+      });
+    }
+    modal.classList.add("abierto");
+  }
+
+  function abrirTodosLosDesarrolladores() {
+    const filas = (datos.filas_desarrolladores || []).filter((f) => diaCoincide(f.dia));
+    renderDesarrolladoresEnModal("Customer (Desarrolladores)", filas, null);
+  }
+
+  function abrirBookingsEnCero() {
+    volverA = null;
+    btnVolver.classList.remove("visible");
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const bookings = datos.detalle
+      .filter((d) => diaCoincide(d.dia) && d.profit === 0)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+    document.getElementById("modal-titulo").textContent = "Booking en 0";
+    document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaDia(estado.dia)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (bookings.length === 0) {
+      tabla.innerHTML = '<caption>Sin bookings en 0 para el día seleccionado.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Referencia</th>
+            <th style="text-align:left;">Fecha de creación</th>
+            <th style="text-align:left;">Vendedor</th>
+            <th style="text-align:left;">Ejecutivo</th>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bookings.map((b) => `
+            <tr>
+              <td style="text-align:left;">${b.referencia}</td>
+              <td style="text-align:left;">${fmtFecha(b.fecha)}</td>
+              <td style="text-align:left;">${b.vendedor}</td>
+              <td style="text-align:left;">${b.ejecutivo}</td>
+              <td style="text-align:left;">${b.cliente_servicio}</td>
+              <td>${fmtMoneda(b.profit)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  function abrirResumenClientesGlobal() {
+    volverA = null;
+    btnVolver.classList.remove("visible");
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const bookings = datos.detalle.filter((d) => diaCoincide(d.dia));
+
+    const porClienteVendedor = new Map();
+    bookings.forEach((b) => {
+      const cliente = b.cliente_servicio || "(sin cliente)";
+      const vendedor = b.vendedor || "(sin vendedor)";
+      const clave = cliente + "||" + vendedor;
+      if (!porClienteVendedor.has(clave)) {
+        porClienteVendedor.set(clave, { cliente, vendedor, cantidad: 0, venta: 0, profit: 0 });
+      }
+      const acc = porClienteVendedor.get(clave);
+      acc.cantidad += 1;
+      acc.venta += b.venta;
+      acc.profit += b.profit;
+    });
+    const filas = Array.from(porClienteVendedor.values())
+      .map((f) => ({ ...f, margen: f.venta ? f.profit / f.venta : 0 }))
+      .sort((a, b) => b.profit - a.profit);
+
+    // Los vendedores con "ocultar_detalle" no aparecen en datos.detalle, así
+    // que sus ventas no entran a las filas de arriba — por eso el total no
+    // cuadraba contra la tabla de Plaza (que sí los incluye). Para que
+    // cuadre sin exponer a QUÉ cliente le vendieron (eso es justo lo que
+    // ocultar_detalle debe seguir ocultando), se agrega una sola fila con
+    // la diferencia, sin desglosar por cliente.
+    const filasPlazaDelMes = datos.filas.filter((f) => diaCoincide(f.dia));
+    const totalPlazaCant = filasPlazaDelMes.reduce((a, f) => a + f.cant_book, 0);
+    const totalPlazaVenta = filasPlazaDelMes.reduce((a, f) => a + f.venta, 0);
+    const totalPlazaProfit = filasPlazaDelMes.reduce((a, f) => a + f.profit, 0);
+    const visibleCant = filas.reduce((a, f) => a + f.cantidad, 0);
+    const visibleVenta = filas.reduce((a, f) => a + f.venta, 0);
+    const visibleProfit = filas.reduce((a, f) => a + f.profit, 0);
+    const ocultoCant = totalPlazaCant - visibleCant;
+    const ocultoVenta = totalPlazaVenta - visibleVenta;
+    const ocultoProfit = totalPlazaProfit - visibleProfit;
+    if (ocultoCant > 0 || Math.abs(ocultoVenta) > 0.01 || Math.abs(ocultoProfit) > 0.01) {
+      filas.push({
+        cliente: "(Vendedores con detalle oculto)",
+        vendedor: "—",
+        cantidad: ocultoCant,
+        venta: ocultoVenta,
+        profit: ocultoProfit,
+        margen: ocultoVenta ? ocultoProfit / ocultoVenta : 0,
+      });
+    }
+
+    document.getElementById("modal-titulo").textContent = "Resumen por cliente";
+    document.getElementById("modal-subtitulo").textContent = `${filas.length} fila(s) · ${etiquetaDia(estado.dia)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para el día seleccionado.</caption>';
+    } else {
+      const totalCant = filas.reduce((acc, f) => acc + f.cantidad, 0);
+      const totalVenta = filas.reduce((acc, f) => acc + f.venta, 0);
+      const totalProfit = filas.reduce((acc, f) => acc + f.profit, 0);
+      const margenTotal = totalVenta ? totalProfit / totalVenta : 0;
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th style="text-align:left;">Vendedor</th>
+            <th>Cantidad de Booking</th>
+            <th>Venta</th>
+            <th>Profit</th>
+            <th>Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filas.map((f) => `
+            <tr class="${f.margen < 0.07 ? 'margen-bajo' : ''}">
+              <td style="text-align:left;">${f.cliente}</td>
+              <td style="text-align:left;">${f.vendedor}</td>
+              <td>${fmtEntero(f.cantidad)}</td>
+              <td>${fmtMoneda(f.venta)}</td>
+              <td>${fmtMoneda(f.profit)}</td>
+              <td>${fmtPct(f.margen)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr><td>Total general</td><td></td><td>${fmtEntero(totalCant)}</td><td>${fmtMoneda(totalVenta)}</td><td>${fmtMoneda(totalProfit)}</td><td>${fmtPct(margenTotal)}</td></tr>
+        </tfoot>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  function renderBookingsDeVendedor(vendedor, bookings, volverCallback, campoComplementario) {
+    campoComplementario = campoComplementario || "ejecutivo";
+    const etiquetaComplementario = campoComplementario === "vendedor" ? "Vendedor" : "Ejecutivo";
+
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    document.getElementById("modal-titulo").textContent = vendedor;
+    document.getElementById("modal-subtitulo").textContent = `${bookings.length} booking(s) · ${etiquetaDia(estado.dia)}`;
+
+    btnResumenCliente.classList.toggle("visible", bookings.length > 0);
+    btnResumenCliente.onclick = () => renderResumenCliente(
+      vendedor, bookings, () => renderBookingsDeVendedor(vendedor, bookings, volverCallback, campoComplementario)
+    );
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (bookings.length === 0) {
+      tabla.innerHTML = '<caption>Sin bookings para este vendedor en el día seleccionado.</caption>';
+    } else {
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Referencia</th>
+            <th style="text-align:left;">Fecha de creación</th>
+            <th style="text-align:left;">${etiquetaComplementario}</th>
+            <th style="text-align:left;">Venta por</th>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Profit</th>
+            <th>Margen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${bookings.map((b) => `
+            <tr class="${b.margen < 0.07 ? 'margen-bajo' : ''}">
+              <td style="text-align:left;">${b.referencia}</td>
+              <td style="text-align:left;">${fmtFecha(b.fecha)}</td>
+              <td style="text-align:left;">${b[campoComplementario]}</td>
+              <td style="text-align:left;">${b.venta_por}</td>
+              <td style="text-align:left;">${b.cliente_servicio}</td>
+              <td>${fmtMoneda(b.profit)}</td>
+              <td>${fmtPct(b.margen)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  function renderResumenCliente(vendedor, bookings, volverCallback) {
+    volverA = volverCallback || null;
+    btnVolver.classList.toggle("visible", !!volverA);
+    btnResumenCliente.classList.remove("visible");
+    btnResumenPlaza.classList.remove("visible");
+    btnDesglosarAV2.classList.remove("visible");
+
+    const porCliente = new Map();
+    bookings.forEach((b) => {
+      const clave = b.cliente_servicio || "(sin cliente)";
+      if (!porCliente.has(clave)) porCliente.set(clave, { cliente: clave, cantidad: 0, profit: 0 });
+      const acc = porCliente.get(clave);
+      acc.cantidad += 1;
+      acc.profit += b.profit;
+    });
+    const filas = Array.from(porCliente.values()).sort((a, b) => b.profit - a.profit);
+
+    document.getElementById("modal-titulo").textContent = vendedor;
+    document.getElementById("modal-subtitulo").textContent =
+      `Resumen por cliente · ${filas.length} cliente(s) · ${etiquetaDia(estado.dia)}`;
+
+    const tabla = document.getElementById("tabla-detalle");
+    if (filas.length === 0) {
+      tabla.innerHTML = '<caption>Sin datos para este vendedor en el día seleccionado.</caption>';
+    } else {
+      const totalCant = filas.reduce((acc, f) => acc + f.cantidad, 0);
+      const totalProfit = filas.reduce((acc, f) => acc + f.profit, 0);
+      tabla.innerHTML = `
+        <thead>
+          <tr>
+            <th style="text-align:left;">Cliente servicio</th>
+            <th>Cantidad de Booking</th>
+            <th>Profit</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filas.map((f) => `
+            <tr>
+              <td style="text-align:left;">${f.cliente}</td>
+              <td>${fmtEntero(f.cantidad)}</td>
+              <td>${fmtMoneda(f.profit)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+        <tfoot>
+          <tr><td>Total general</td><td>${fmtEntero(totalCant)}</td><td>${fmtMoneda(totalProfit)}</td></tr>
+        </tfoot>
+      `;
+    }
+    modal.classList.add("abierto");
+  }
+
+  btnVolver.addEventListener("click", () => { if (volverA) volverA(); });
+  document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
+  document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
+  document.getElementById("btn-ver-booking-cero").addEventListener("click", abrirBookingsEnCero);
+  document.getElementById("btn-ver-resumen-clientes").addEventListener("click", abrirResumenClientesGlobal);
+
+  // ---- exportar tabla visible a CSV (lo abre Excel directo) ----
+  function celdaATexto(celda) {
+    const clon = celda.cloneNode(true);
+    clon.querySelectorAll(".tag-av2").forEach((el) => el.remove());
+    return clon.textContent.replace(/\s+/g, " ").trim();
+  }
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tabla = document.getElementById(tablaId);
+    const filas = tabla ? tabla.querySelectorAll("tr") : [];
+    if (filas.length === 0) return;
+
+    const lineas = Array.from(filas).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${celdaATexto(c).replace(/"/g, '""')}"`)
+        .join(",");
+    });
+
+    const metaGenerado = document.getElementById("meta-generado-en");
+    if (metaGenerado) {
+      lineas.unshift(`"\u00DAltima actualizaci\u00F3n: ${metaGenerado.textContent.trim()}"`);
+    }
+
+    const csv = "\uFEFF" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function nombreArchivoCSV(prefijo) {
+    const limpio = prefijo.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    return `${limpio}_${estado.dia}.csv`;
+  }
+
+  // Los botones de exportar no existen en el DOM si el usuario no tiene
+  // permiso puede_exportar (se omiten del lado del servidor).
+  const btnExportarPlaza = document.getElementById("btn-exportar-plaza");
+  if (btnExportarPlaza) {
+    btnExportarPlaza.addEventListener("click", () => {
+      exportarTablaCSV("tabla-plaza", nombreArchivoCSV("Venta_por_Plaza"));
+    });
+  }
+  const btnExportarDetalle = document.getElementById("btn-exportar-detalle");
+  if (btnExportarDetalle) {
+    btnExportarDetalle.addEventListener("click", () => {
+      const titulo = document.getElementById("modal-titulo").textContent || "Reporte";
+      exportarTablaCSV("tabla-detalle", nombreArchivoCSV(titulo));
+    });
+  }
+
+  function cerrarModal() { modal.classList.remove("abierto"); }
+  document.getElementById("modal-cerrar").addEventListener("click", cerrarModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+
+  function render() {
+    renderTablaPlaza();
+  }
+  render();
+  window.addEventListener("resize", render);
+})();
+</script>
+{% endif %}
+{% endblock %}

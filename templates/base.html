@@ -120,6 +120,7 @@
         <div class="nav-links">
           {% if session.get('es_admin') and not panel_scoped %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
           {% if puede_ver_ventas and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Información de Ventas</a>{% endif %}
+          {% if puede_ver_ventas and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('venta_diaria', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'venta_diaria' else '' }}">Venta Diaria</a>{% endif %}
           {% if puede_ver_reportes and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('reportes_graficas', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
           {% if puede_comisiones and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
           {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}

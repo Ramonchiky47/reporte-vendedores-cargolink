@@ -1239,6 +1239,147 @@ def construir_datos_dashboard(plazas_permitidas=None):
     }
 
 
+def construir_datos_venta_diaria(plazas_permitidas=None):
+    """Igual que construir_datos_dashboard, pero agrupado por día calendario
+    en vez de por mes. El catálogo de Presupuesto solo captura montos
+    mensuales (no existe un presupuesto diario capturado), así que el Ppto
+    de cada fila es el presupuesto del mes de ese vendedor prorrateado entre
+    los días de ese mes."""
+    db = get_db()
+    meta = db.execute(
+        "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
+    ).fetchone()
+    if meta is None:
+        db.close()
+        return None
+
+    catalogo_vendedor = {}
+    for r in db.execute("SELECT vendedor, plaza, ocultar_detalle FROM catalogo_vendedores"):
+        catalogo_vendedor[normalizar(r["vendedor"])] = {
+            "plaza": r["plaza"],
+            "nombre": r["vendedor"],
+            "ocultar_detalle": r["ocultar_detalle"],
+        }
+
+    catalogo_desarrollador = {}
+    for r in db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores"):
+        catalogo_desarrollador[normalizar(r["desarrollador"])] = {"plaza": r["plaza"], "nombre": r["desarrollador"]}
+
+    presupuesto_por_mes_vendedor = {}
+    for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
+        clave = (r["mes"], normalizar(r["vendedor"]))
+        presupuesto_por_mes_vendedor[clave] = presupuesto_por_mes_vendedor.get(clave, 0.0) + float(r["presupuesto"])
+
+    presupuesto_por_mes_desarrollador = {}
+    for r in db.execute("SELECT mes, desarrollador, presupuesto FROM catalogo_presupuesto WHERE desarrollador IS NOT NULL"):
+        clave = (r["mes"], normalizar(r["desarrollador"]))
+        presupuesto_por_mes_desarrollador[clave] = presupuesto_por_mes_desarrollador.get(clave, 0.0) + float(r["presupuesto"])
+
+    def ppto_diario(mes, monto_mensual):
+        anio, m = (int(x) for x in mes.split("-"))
+        return monto_mensual / calendar.monthrange(anio, m)[1]
+
+    bookings = db.execute(
+        "SELECT mes, vendedor, referencia, fecha, ejecutivo, venta_por, cliente_servicio, venta, profit, margen "
+        "FROM reporte_bookings"
+    ).fetchall()
+    db.close()
+
+    agregados = {}
+    agregados_desarrollador = {}
+    detalle = []
+    for r in bookings:
+        if r["fecha"] is None:
+            continue
+        dia = r["fecha"].astimezone(TZ_LOCAL).strftime("%Y-%m-%d")
+        vkey = normalizar(r["vendedor"])
+        cat = catalogo_vendedor.get(vkey)
+        plaza_vendedor = cat["plaza"] if cat else "#N/D"
+        vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
+
+        dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
+
+        if vendedor_permitido:
+            clave = (dia, vkey)
+            agg = agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0, "mes": r["mes"]})
+            agg["cant_book"] += 1
+            agg["venta"] += float(r["venta"])
+            agg["profit"] += float(r["profit"])
+
+        if dkey and vendedor_permitido:
+            agg_d = agregados_desarrollador.setdefault(
+                (dia, dkey), {"cant_book": 0, "venta": 0.0, "profit": 0.0, "mes": r["mes"]}
+            )
+            agg_d["cant_book"] += 1
+            agg_d["venta"] += float(r["venta"])
+            agg_d["profit"] += float(r["profit"])
+
+        nombre_canonico = cat["nombre"] if cat else r["vendedor"]
+        if vendedor_permitido and not (cat and cat["ocultar_detalle"]):
+            detalle.append({
+                "dia": dia,
+                "vendedor": nombre_canonico,
+                "referencia": r["referencia"] or "",
+                "fecha": r["fecha"].astimezone(TZ_LOCAL).strftime("%Y-%m-%d %H:%M"),
+                "ejecutivo": r["ejecutivo"] or "",
+                "venta_por": r["venta_por"] or "",
+                "cliente_servicio": r["cliente_servicio"] or "",
+                "venta": round(float(r["venta"]), 2),
+                "profit": round(float(r["profit"]), 2),
+                "margen": round(float(r["margen"]), 4),
+            })
+
+    filas = []
+    for (dia, vkey), agg in agregados.items():
+        cat = catalogo_vendedor.get(vkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        nombre = cat["nombre"] if cat else vkey
+        ppto_mensual = presupuesto_por_mes_vendedor.get((agg["mes"], vkey), 0.0)
+        filas.append({
+            "dia": dia,
+            "vendedor": nombre,
+            "plaza": plaza,
+            "cant_book": agg["cant_book"],
+            "venta": round(agg["venta"], 2),
+            "profit": round(agg["profit"], 2),
+            "ppto": round(ppto_diario(agg["mes"], ppto_mensual), 2),
+        })
+
+    filas_desarrolladores = []
+    for (dia, dkey), agg in agregados_desarrollador.items():
+        cat = catalogo_desarrollador.get(dkey)
+        plaza = cat["plaza"] if cat else "#N/D"
+        nombre = cat["nombre"] if cat else dkey
+        ppto_mensual = presupuesto_por_mes_desarrollador.get((agg["mes"], dkey), 0.0)
+        filas_desarrolladores.append({
+            "dia": dia,
+            "desarrollador": nombre,
+            "plaza": plaza,
+            "cant_book": agg["cant_book"],
+            "venta": round(agg["venta"], 2),
+            "profit": round(agg["profit"], 2),
+            "ppto": round(ppto_diario(agg["mes"], ppto_mensual), 2),
+        })
+
+    hoy = datetime.now(TZ_LOCAL).date()
+    dias_en_mes = calendar.monthrange(hoy.year, hoy.month)[1]
+
+    return {
+        "archivo": f"Reporte {meta['fecha_inicio']} al {meta['fecha_fin']}",
+        "generado_en": meta["generado_en"].astimezone(TZ_LOCAL).strftime("%d/%m/%Y %H:%M"),
+        "filas": filas,
+        "filas_desarrolladores": filas_desarrolladores,
+        "detalle": detalle,
+        "dia_actual": hoy.strftime("%Y-%m-%d"),
+        "dia_min": hoy.replace(day=1).strftime("%Y-%m-%d"),
+        "dia_max": hoy.replace(day=dias_en_mes).strftime("%Y-%m-%d"),
+        "plazas": sorted(set(f["plaza"] for f in filas)),
+        "vendedores": sorted(set(f["vendedor"] for f in filas)),
+        "desarrolladores": sorted(set(f["desarrollador"] for f in filas_desarrolladores)),
+    }
+
+
+
 try:
     init_db()
 except Exception as e:
@@ -2071,6 +2212,24 @@ def dashboard_plazas_vendedores():
         return render_template("dashboard_plazas_vendedores.html", datos_json="null", datos=None)
     datos_json = json.dumps(datos).replace("</", "<\\/")
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
+
+
+@app.route("/venta-diaria")
+@login_required
+def venta_diaria():
+    if not usuario_puede_ver_ventas():
+        flash("No tienes permiso para ver Información de Ventas.")
+        return redirect(url_for(primera_pagina_permitida()))
+
+    datos = construir_datos_venta_diaria(plazas_permitidas_usuario())
+    if datos is None:
+        if session.get("es_admin"):
+            flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
+            return redirect(url_for("dashboard"))
+        flash("Todavía no hay ningún reporte generado. Pídele a un administrador que genere uno.")
+        return render_template("venta_diaria.html", datos_json="null", datos=None)
+    datos_json = json.dumps(datos).replace("</", "<\\/")
+    return render_template("venta_diaria.html", datos_json=datos_json, datos=datos)
 
 
 def construir_filas_reportes(plazas_permitidas=None):
@@ -4355,6 +4514,7 @@ def clonar_cotizacion_crm(cotizacion_id):
     else:
         fecha_vencimiento = original["fecha_vencimiento"]
 
+    creado_por_user_id = session.get("usuario_id") or None
     fila_nueva = db.execute("""
         INSERT INTO crm_cotizaciones (
             id_cotizacion, nombre_cotizacion, fecha_creacion, fecha_vencimiento, vencimiento_modo,
@@ -4362,17 +4522,17 @@ def clonar_cotizacion_crm(cotizacion_id):
             origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
             incoterm_id, modalidad_id, tipo_ingreso_egreso_id,
             estibable, tiempo_traslado, via, seguro_mercancia,
-            profit_estimado, tipo_cambio, descripcion
+            profit_estimado, tipo_cambio, descripcion, creado_por_user_id
         )
         SELECT %s, nombre_cotizacion, %s, %s, vencimiento_modo,
                cliente_folio, cliente_prospecto, contacto_id,
                origen, destino, hazmat, hazmat_clase, hazmat_un_imo,
                incoterm_id, modalidad_id, tipo_ingreso_egreso_id,
                estibable, tiempo_traslado, via, seguro_mercancia,
-               profit_estimado, tipo_cambio, descripcion
+               profit_estimado, tipo_cambio, descripcion, %s
         FROM crm_cotizaciones WHERE id = %s
         RETURNING id
-    """, (nuevo_id_cotizacion, fecha_creacion, fecha_vencimiento, cotizacion_id)).fetchone()
+    """, (nuevo_id_cotizacion, fecha_creacion, fecha_vencimiento, creado_por_user_id, cotizacion_id)).fetchone()
     nuevo_id = fila_nueva["id"]
 
     db.execute("""
