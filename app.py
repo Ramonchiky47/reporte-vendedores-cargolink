@@ -1036,6 +1036,40 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
             "Faltan las variables de entorno SMTP_HOST / SMTP_PORT / SMTP_USUARIO / SMTP_PASSWORD para enviar correos."
         )
 
+    if "sendgrid" in host.lower():
+        # En Vercel las conexiones SMTP crudas (puerto 587/465) fallan de forma
+        # intermitente con errores de socket (p. ej. "Device or resource busy")
+        # por las restricciones del entorno serverless. SendGrid ofrece una API
+        # HTTPS equivalente que evita abrir sockets TCP directos.
+        payload = {
+            "personalizations": [{"to": [{"email": destinatario}]}],
+            "from": {"email": remitente},
+            "subject": asunto,
+            "content": [
+                {"type": "text/plain", "value": "Este correo requiere un cliente de correo compatible con HTML."},
+                {"type": "text/html", "value": cuerpo_html},
+            ],
+        }
+        if adjuntos:
+            payload["attachments"] = [
+                {
+                    "content": base64.b64encode(contenido).decode("ascii"),
+                    "filename": nombre_archivo,
+                    "type": "application/pdf",
+                    "disposition": "attachment",
+                }
+                for nombre_archivo, contenido in adjuntos
+            ]
+        resp = requests.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={"Authorization": f"Bearer {password}", "Content-Type": "application/json"},
+            data=json.dumps(payload),
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            raise RuntimeError(f"SendGrid respondió {resp.status_code}: {resp.text}")
+        return
+
     msg = EmailMessage()
     msg["Subject"] = asunto
     msg["From"] = remitente
