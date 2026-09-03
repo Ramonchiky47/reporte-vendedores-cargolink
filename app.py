@@ -139,6 +139,14 @@ def init_db():
     # plazas permitidas) en CRM, Ventas/Dashboard, Venta diaria y Reportes.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS vendedor_asociado text;")
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS solo_su_informacion boolean not null default false;")
+    # Excepción puntual: el correo (auth.users.email) de una persona más
+    # cuyas cotizaciones CREADAS POR ELLA también se le reflejan a este
+    # usuario — SOLO en CRM → Cotizaciones, no en Booking/Clientes/
+    # Dashboard/Reportes. No es necesariamente un vendedor del catálogo
+    # (puede ser cualquier login con acceso a CRM). Caso real: las
+    # cotizaciones que crea Fatima Lopez también deben verse reflejadas a
+    # Armando Villanueva Silva.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS cotizaciones_creador_extra text;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
@@ -1763,6 +1771,20 @@ def vendedor_forzado_usuario():
     return session.get("vendedor_asociado") or None
 
 
+def creador_extra_cotizaciones_usuario():
+    """Excepción puntual sobre vendedor_forzado_usuario(): el correo de
+    una persona más cuyas cotizaciones CREADAS POR ELLA (crm_cotizaciones.
+    creado_por_user_id) también se reflejan a este usuario, pero SOLO en
+    CRM → Cotizaciones — no en Booking, Clientes, Dashboard ni Reportes.
+    No tiene que ser un vendedor del catálogo. Se configura junto con
+    "Solo ver su información" en Catálogos → Visualización de Plazas.
+    None si no aplica (incluye el caso de administradores, que ya ven
+    todo)."""
+    if not vendedor_forzado_usuario():
+        return None
+    return session.get("cotizaciones_creador_extra") or None
+
+
 def usuario_puede_operar_tarea(vendedor_tarea):
     """True si el usuario en sesión puede ver/editar/borrar/autorizar una
     tarea de CRM → Tareas de este vendedor: respeta tanto su plaza
@@ -1781,16 +1803,26 @@ def usuario_puede_operar_tarea(vendedor_tarea):
     return (plaza["plaza"] if plaza else None) in plazas_permitidas
 
 
-def usuario_puede_ver_cotizacion(db, cliente_folio):
+def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
     """True si el usuario en sesión puede ver/editar/borrar/clonar una
-    cotización con este cliente_folio, según sus plazas permitidas y (si
-    aplica) su candado de "solo su información" — mismo criterio que el
-    listado de Cotizaciones (construir_cotizaciones_crm): las de prospecto
-    (cliente_folio None) son visibles para cualquiera con acceso al CRM;
-    las de cliente real heredan la plaza y el vendedor asignado a ese
-    cliente. El listado ya aplicaba esta regla al armar la tabla; esta
-    función la repite para las rutas que operan sobre UNA cotización
-    puntual por id (antes solo validaban que existiera)."""
+    cotización, según sus plazas permitidas y (si aplica) su candado de
+    "solo su información" — mismo criterio que el listado de Cotizaciones
+    (construir_cotizaciones_crm): las de prospecto (cliente_folio None)
+    son visibles para cualquiera con acceso al CRM; las de cliente real
+    heredan la plaza y el vendedor asignado a ese cliente. Si el usuario
+    tiene configurada la excepción de "también ver las cotizaciones que
+    cree [correo]" (Catálogos → Visualización de Plazas), esa excepción
+    aplica sin importar el cliente — por eso hace falta `cotizacion_id`
+    para poder resolver quién la creó."""
+    creador_extra = creador_extra_cotizaciones_usuario()
+    if creador_extra and cotizacion_id is not None:
+        fila_creador = db.execute(
+            "SELECT cu.email AS correo FROM crm_cotizaciones co "
+            "LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id WHERE co.id = %s",
+            (cotizacion_id,),
+        ).fetchone()
+        if fila_creador and fila_creador["correo"] and fila_creador["correo"].lower() == creador_extra.lower():
+            return True
     if cliente_folio is None:
         return True
     vendedor_forzado = vendedor_forzado_usuario()
@@ -1818,7 +1850,7 @@ def cotizacion_visible_para_usuario(db, cotizacion_id):
     fila = db.execute("SELECT cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)).fetchone()
     if fila is None:
         return False
-    return usuario_puede_ver_cotizacion(db, fila["cliente_folio"])
+    return usuario_puede_ver_cotizacion(db, fila["cliente_folio"], cotizacion_id)
 
 
 def usuario_puede_ver_contacto(db, contacto_id):
@@ -2039,7 +2071,8 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_operativos, false) AS puede_operativos,
             coalesce(p.es_master, false) AS es_master,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
-            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion
+            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
+            p.cotizaciones_creador_extra
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -2110,6 +2143,7 @@ def login():
             session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
             session["vendedor_asociado"] = fila["vendedor_asociado"]
             session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
+            session["cotizaciones_creador_extra"] = fila["cotizaciones_creador_extra"]
             destino = primera_pagina_permitida()
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
@@ -2179,7 +2213,8 @@ def sso():
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
-            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion
+            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
+            p.cotizaciones_creador_extra
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -2209,6 +2244,7 @@ def sso():
     session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
     session["vendedor_asociado"] = fila["vendedor_asociado"]
     session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
+    session["cotizaciones_creador_extra"] = fila["cotizaciones_creador_extra"]
 
     destino = _siguiente_sso_valido(request.args.get("next")) or url_for(primera_pagina_permitida())
     return redirect(destino)
@@ -4166,11 +4202,14 @@ def generar_referencia_solicitud_maritimo(db):
     return f"COT-{siguiente}"
 
 
-def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None):
+def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, creador_extra=None):
     """Cotizaciones con su cliente (o prospecto) resuelto. Una cotización con
     cliente real hereda su restricción de plaza (igual que Clientes/Contactos);
     una de prospecto no tiene plaza que restringir, así que es visible para
-    todos los que puedan ver el CRM."""
+    todos los que puedan ver el CRM. `creador_extra` es una excepción
+    puntual (Catálogos → Visualización de Plazas, correo de auth.users):
+    las cotizaciones CREADAS POR esa persona también cuentan como propias
+    aquí, aunque en el resto del CRM sigan sin verse."""
     db = get_db()
     plaza_por_vendedor = {}
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
@@ -4184,6 +4223,7 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None):
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
                co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
+               cu.email AS creador_correo,
                sp.estado_mas_reciente AS pricing_estado_mas_reciente,
                sp.visto_por_vendedor_en AS pricing_visto_en,
                sp.ultima_respuesta_en AS pricing_ultima_respuesta_en
@@ -4192,6 +4232,7 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None):
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
         LEFT JOIN LATERAL (
             SELECT s.estado AS estado_mas_reciente, s.visto_por_vendedor_en, r.ultima_respuesta_en
             FROM crm_solicitudes_maritimo_aereo s
@@ -4227,16 +4268,21 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None):
     hoy = datetime.now(TZ_LOCAL).date()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    creador_extra_lower = creador_extra.lower() if creador_extra else None
     resultado = []
     for r in filas:
+        es_creador_extra = bool(
+            creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
+        )
         es_prospecto = r["cliente_folio"] is None
         if not es_prospecto:
             vkey = normalizar(r["cliente_vendedor"])
-            plaza = plaza_por_vendedor.get(vkey, "#N/D")
-            if plazas_permitidas is not None and plaza not in plazas_permitidas:
-                continue
-            if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
-                continue
+            if not es_creador_extra:
+                plaza = plaza_por_vendedor.get(vkey, "#N/D")
+                if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                    continue
+                if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+                    continue
             cliente_texto = r["cliente_nombre"] or "#N/D"
         else:
             cliente_texto = f"Prospecto: {r['cliente_prospecto']}" if r["cliente_prospecto"] else "Prospecto"
@@ -5399,7 +5445,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     if fila is None:
         db.close()
         return None
-    if not usuario_puede_ver_cotizacion(db, fila["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, fila["cliente_folio"], cotizacion_id):
         db.close()
         return None
 
@@ -5552,7 +5598,7 @@ def clonar_cotizacion_crm(cotizacion_id):
     if original is None:
         db.close()
         return None
-    if not usuario_puede_ver_cotizacion(db, original["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, original["cliente_folio"], cotizacion_id):
         db.close()
         return None
 
@@ -5983,7 +6029,9 @@ def crm_seccion(slug):
         return render_template("crm_contactos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], contactos=contactos)
 
     if slug == "cotizaciones":
-        cotizaciones = construir_cotizaciones_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+        cotizaciones = construir_cotizaciones_crm(
+            plazas_permitidas_usuario(), vendedor_forzado_usuario(), creador_extra_cotizaciones_usuario()
+        )
         return render_template("crm_cotizaciones.html", nav_groups=nav_groups, titulo_pagina=item["texto"], cotizaciones=cotizaciones)
 
     if slug == "grupo":
@@ -6264,7 +6312,7 @@ def crm_cotizacion_editar(cotizacion_id):
     if cotizacion is None:
         db.close()
         return "No encontrado", 404
-    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
         db.close()
         return "No encontrado", 404
     tiene_bookings = db.execute(
@@ -6338,7 +6386,7 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
     if cotizacion is None:
         db.close()
         return "No encontrado", 404
-    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
         db.close()
         return "No encontrado", 404
 
@@ -6593,7 +6641,7 @@ def crm_cotizacion_aplicar_booking(cotizacion_id):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
-    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
@@ -6650,7 +6698,7 @@ def crm_cotizacion_marcar_perdida(cotizacion_id):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
-    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"]):
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
         db.close()
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
@@ -7349,7 +7397,7 @@ def visibilidad_plazas():
             coalesce(p.es_admin, false) AS es_admin,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
-            p.vendedor_asociado
+            p.vendedor_asociado, p.cotizaciones_creador_extra
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
@@ -7369,6 +7417,7 @@ def visibilidad_plazas():
             "todas_las_plazas": u["todas_las_plazas"],
             "solo_su_informacion": u["solo_su_informacion"],
             "vendedor_asociado": u["vendedor_asociado"],
+            "cotizaciones_creador_extra": u["cotizaciones_creador_extra"],
             "plazas": plazas_por_usuario.get(str(u["id"]), []),
         })
     return render_template("visibilidad_plazas.html", filas=filas)
@@ -7388,23 +7437,31 @@ def visibilidad_plazas_editar(user_id):
         plazas_seleccionadas = request.form.getlist("plazas")
         solo_su_informacion = request.form.get("solo_su_informacion") == "on"
         vendedor_asociado = request.form.get("vendedor_asociado", "").strip()
+        cotizaciones_creador_extra = request.form.get("cotizaciones_creador_extra", "").strip()
         vendedores_validos = {v["vendedor"] for v in db.execute("SELECT vendedor FROM catalogo_vendedores")}
+        correos_validos = {u["email"].lower() for u in db.execute("SELECT email FROM auth.users")}
         if not todas_las_plazas and not plazas_seleccionadas:
             flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
         elif solo_su_informacion and vendedor_asociado not in vendedores_validos:
             flash('Para marcar "Solo ver su información", elige un vendedor del catálogo.')
+        elif cotizaciones_creador_extra and cotizaciones_creador_extra.lower() not in correos_validos:
+            flash("La persona extra de Cotizaciones debe ser un usuario con acceso a la app.")
         else:
             db.execute(
                 """
-                INSERT INTO app_user_permissions (user_id, todas_las_plazas, solo_su_informacion, vendedor_asociado)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO app_user_permissions (
+                    user_id, todas_las_plazas, solo_su_informacion, vendedor_asociado, cotizaciones_creador_extra
+                )
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (user_id) DO UPDATE SET
                     todas_las_plazas = EXCLUDED.todas_las_plazas,
                     solo_su_informacion = EXCLUDED.solo_su_informacion,
                     vendedor_asociado = EXCLUDED.vendedor_asociado,
+                    cotizaciones_creador_extra = EXCLUDED.cotizaciones_creador_extra,
                     updated_at = now()
                 """,
-                (str(user_id), todas_las_plazas, solo_su_informacion, vendedor_asociado or None),
+                (str(user_id), todas_las_plazas, solo_su_informacion, vendedor_asociado or None,
+                 cotizaciones_creador_extra or None),
             )
             db.execute("DELETE FROM app_user_plazas WHERE user_id = %s", (str(user_id),))
             if not todas_las_plazas:
@@ -7420,10 +7477,11 @@ def visibilidad_plazas_editar(user_id):
     plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (str(user_id),))}
     permisos_actuales = db.execute(
         "SELECT coalesce(todas_las_plazas, false) AS todas_las_plazas, "
-        "coalesce(solo_su_informacion, false) AS solo_su_informacion, vendedor_asociado "
+        "coalesce(solo_su_informacion, false) AS solo_su_informacion, vendedor_asociado, cotizaciones_creador_extra "
         "FROM app_user_permissions WHERE user_id = %s", (str(user_id),)
     ).fetchone()
     vendedores_catalogo = [v["vendedor"] for v in db.execute("SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor")]
+    usuarios_catalogo = [u["email"] for u in db.execute("SELECT email FROM auth.users ORDER BY email")]
     db.close()
     return render_template(
         "visibilidad_plazas_editar.html",
@@ -7433,7 +7491,9 @@ def visibilidad_plazas_editar(user_id):
         sin_restriccion=bool(permisos_actuales and permisos_actuales["todas_las_plazas"]),
         solo_su_informacion_actual=bool(permisos_actuales and permisos_actuales["solo_su_informacion"]),
         vendedor_asociado_actual=(permisos_actuales["vendedor_asociado"] if permisos_actuales else None),
+        cotizaciones_creador_extra_actual=(permisos_actuales["cotizaciones_creador_extra"] if permisos_actuales else None),
         vendedores_catalogo=vendedores_catalogo,
+        usuarios_catalogo=usuarios_catalogo,
     )
 
 

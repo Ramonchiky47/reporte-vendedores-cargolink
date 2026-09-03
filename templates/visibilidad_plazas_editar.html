@@ -43,6 +43,14 @@
             <option value="{{ v }}" {% if v == vendedor_asociado_actual %}selected{% endif %}>{{ v }}</option>
             {% endfor %}
           </select>
+
+          <p class="hint" style="margin-top:1rem;">Excepción puntual: en CRM → Cotizaciones (solo ahí), también verá las cotizaciones creadas por esta persona.</p>
+          <select name="cotizaciones_creador_extra" id="vp-cotizaciones-creador-extra">
+            <option value="">— Ninguno —</option>
+            {% for correo in usuarios_catalogo %}
+            <option value="{{ correo }}" {% if correo == cotizaciones_creador_extra_actual %}selected{% endif %}>{{ correo }}</option>
+            {% endfor %}
+          </select>
         </div>
 
         <button type="submit">Aceptar</button>

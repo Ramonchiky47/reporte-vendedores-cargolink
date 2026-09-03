@@ -26,6 +26,9 @@
             <td>
               {% if not fila.es_admin and fila.solo_su_informacion and fila.vendedor_asociado %}
                 Sí — {{ fila.vendedor_asociado }}
+                {% if fila.cotizaciones_creador_extra %}
+                  <span class="hint">(+ {{ fila.cotizaciones_creador_extra }} en Cotizaciones)</span>
+                {% endif %}
               {% else %}
                 <span class="hint">No</span>
               {% endif %}
