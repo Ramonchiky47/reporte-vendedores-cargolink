@@ -179,6 +179,11 @@
       <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.profit) }}</div>
       {{ delta(kpis.profit_delta, '${:,.0f}'.format(kpis.profit_anterior), etiqueta_anterior) }}
     </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Clientes nuevos</div>
+      <div class="kpi__valor">{{ kpis.clientes_nuevos }}</div>
+      {{ delta(kpis.clientes_nuevos_delta, kpis.clientes_nuevos_anterior, etiqueta_anterior) }}
+    </div>
   </div>
 
   <div class="fila-tendencias">

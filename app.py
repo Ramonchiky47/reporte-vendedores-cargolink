@@ -1379,7 +1379,6 @@ def construir_datos_venta_diaria(plazas_permitidas=None):
     }
 
 
-
 try:
     init_db()
 except Exception as e:
@@ -3284,6 +3283,7 @@ def reportes_clientes_mensual():
 
 CRM_NAV = [
     {"grupo": None, "texto": "Inicio", "slug": "inicio"},
+    {"grupo": None, "texto": "Resultados", "slug": "resultados"},
     {"grupo": None, "texto": "Booking", "slug": "booking"},
     {"grupo": None, "texto": "Negocios", "slug": "negocios"},
     {"grupo": None, "texto": "Cotizaciones", "slug": "cotizaciones"},
@@ -3962,6 +3962,105 @@ ETIQUETA_PERIODO_ANTERIOR = {
     "hoy": "hace una semana", "semana": "la semana pasada", "mes": "el mes pasado", "personalizado": "el periodo anterior",
 }
 
+# Scorecard mensual por vendedor (CRM → Resultados). Los targets de Quotations
+# y Activities son fijos para todos los vendedores (todavía no hay un
+# catálogo para capturarlos distinto por persona); el de GP sí varía por
+# vendedor porque sale del catálogo de Presupuesto.
+SCORECARD_CATEGORIAS = [
+    {
+        "grupo": "GP", "etiqueta": "Gross Profit", "peso": 40, "campo_target": "presupuesto", "campo_logrado": "profit",
+        "es_moneda": True,
+        "nota_target": "Es el presupuesto capturado para este vendedor en el mes (Catálogos → Presupuesto).",
+        "nota_logrado": "Profit de sus bookings del mes (Venta Mensual).",
+    },
+    {
+        "grupo": "New Customer", "etiqueta": "New Customer", "peso": 20, "target_fijo": 2, "campo_logrado": "clientes_nuevos",
+        "es_moneda": False,
+        "nota_target": "Fijo: 2 clientes nuevos por vendedor al mes.",
+        "nota_logrado": "Clientes nuevos del mes, calculados por el sistema (tarjeta Clientes nuevos de Inicio).",
+    },
+    {
+        "grupo": "Quotations", "etiqueta": "Quotations", "peso": 10, "target_fijo": 40, "campo_logrado": "cotizaciones",
+        "es_moneda": False,
+        "nota_target": "Fijo: 40 cotizaciones por vendedor al mes.",
+        "nota_logrado": "Cotizaciones registradas en el mes (crm_cotizaciones).",
+    },
+    {
+        "grupo": "Activities", "etiqueta": "Customer Facing Visit", "peso": 10, "target_fijo": 10, "campo_logrado": None,
+        "es_moneda": False,
+        "nota_target": "Fijo: 10 visitas por vendedor al mes.",
+        "nota_logrado": "Pendiente: todavía no existe el registro de visitas en Tareas.",
+    },
+    {
+        "grupo": "Activities", "etiqueta": "Virtual Meeting", "peso": 20, "target_fijo": 20, "campo_logrado": None,
+        "es_moneda": False,
+        "nota_target": "Fijo: 20 reuniones virtuales por vendedor al mes.",
+        "nota_logrado": "Pendiente: todavía no existe el registro de reuniones en Tareas.",
+    },
+]
+
+
+def construir_scorecard_vendedor(resumen):
+    """Arma las filas del Scorecard (Target/Achieved/Ach%/Weight/Point) para
+    un vendedor a partir de su `resumen_vendedor` del mes (ver
+    construir_inicio_crm). `resumen` puede ser None (vendedor sin ninguna
+    actividad ese mes) — en ese caso todo queda en 0/pendiente."""
+    resumen = resumen or {}
+    filas = []
+    resultado = 0.0
+    for cat in SCORECARD_CATEGORIAS:
+        target = resumen.get(cat["campo_target"], 0.0) if "campo_target" in cat else cat["target_fijo"]
+        target = float(target or 0)
+        logrado = resumen.get(cat["campo_logrado"]) if cat["campo_logrado"] else None
+        pendiente = cat["campo_logrado"] is None
+        if pendiente or target <= 0:
+            ach_pct = None
+            point = 0.0
+        else:
+            ach_pct = (float(logrado or 0) / target) * 100
+            point = ach_pct / 100 * cat["peso"]
+        resultado += point
+        filas.append({
+            **cat, "target": target, "logrado": logrado, "ach_pct": ach_pct, "point": point,
+            "sin_presupuesto": (not pendiente and target <= 0),
+        })
+    return {"filas": filas, "resultado": round(resultado, 1)}
+
+
+def construir_scorecard_grupo(resumenes):
+    """Arma el Scorecard agregado de un grupo de vendedores (una Plaza):
+    Target, Achieved y Ach % son la SUMA de todos los vendedores del grupo
+    (Ach % = Achieved total ÷ Target total), así que cuadran directo entre
+    sí; un vendedor con un presupuesto mucho más grande pesa más en el
+    resultado del grupo, igual que pesaría más en el negocio real.
+    `resumenes` es una lista de resumen_vendedor (ver construir_inicio_crm);
+    regresa None si viene vacía."""
+    if not resumenes:
+        return None
+    scorecards = [(r["nombre"], construir_scorecard_vendedor(r)) for r in resumenes]
+
+    filas = []
+    for i, cat in enumerate(SCORECARD_CATEGORIAS):
+        target_sum = sum(sc["filas"][i]["target"] for _, sc in scorecards)
+        logrado_sum = sum((sc["filas"][i]["logrado"] or 0) for _, sc in scorecards)
+        pendiente = cat["campo_logrado"] is None
+        if pendiente or target_sum <= 0:
+            ach_pct = None
+            point = 0.0
+        else:
+            ach_pct = (logrado_sum / target_sum) * 100
+            point = ach_pct / 100 * cat["peso"]
+        filas.append({
+            **cat, "target": target_sum, "logrado": logrado_sum, "ach_pct": ach_pct, "point": point,
+            "sin_presupuesto": (not pendiente and target_sum <= 0),
+        })
+    resultado = round(sum(f["point"] for f in filas), 1)
+    roster = sorted(
+        [{"nombre": nombre, "resultado": sc["resultado"]} for nombre, sc in scorecards],
+        key=lambda r: -r["resultado"],
+    )
+    return {"filas": filas, "resultado": resultado, "roster": roster, "n_vendedores": len(scorecards)}
+
 
 def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=None):
     """Regresa (fecha_inicio, fecha_fin) como date para el periodo elegido
@@ -4024,6 +4123,17 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         (ventana_inicio.isoformat(), ventana_fin.isoformat()),
     ).fetchall()
 
+    # Para "Clientes nuevos" se necesita, por cliente, su booking más antiguo
+    # de TODA la historia (no solo de la ventana del periodo) — si no,
+    # cualquier cliente recurrente que simplemente no compró en la ventana
+    # anterior se contaría como "nuevo".
+    primer_booking_por_cliente = db.execute("""
+        SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
+        FROM reporte_bookings
+        WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
+        ORDER BY cliente_servicio, fecha ASC
+    """).fetchall()
+
     cotizaciones = db.execute("""
         SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
                co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
@@ -4039,6 +4149,9 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             FROM crm_cotizacion_bookings GROUP BY cotizacion_id
         ) cb ON cb.cotizacion_id = co.id
     """).fetchall()
+    db_presupuesto_vendedor = db.execute(
+        "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"
+    ).fetchall()
     db.close()
 
     plaza_filtro = plaza_filtro or ""
@@ -4065,6 +4178,38 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             "plaza_desarrollador": plaza_por_desarrollador.get(ejecutivo, "#N/D") if ejecutivo else None,
             "venta": float(r["venta"] or 0), "profit": float(r["profit"] or 0),
         })
+
+    def sumar_meses(fecha, meses):
+        total = fecha.year * 12 + (fecha.month - 1) + meses
+        anio, mes = total // 12, total % 12 + 1
+        return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
+
+    # Cliente nuevo = su primer booking registrado en todo el historial, y
+    # solo se cuenta si esos 15 meses previos están cubiertos por datos (si
+    # no, no hay forma de saber si de verdad no compró antes o si el
+    # historial simplemente no llega tan atrás).
+    fechas_primer_booking = [
+        r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
+    ]
+    inicio_historial = min(fechas_primer_booking) if fechas_primer_booking else None
+    primer_dia_valido = sumar_meses(inicio_historial, 15) if inicio_historial else None
+
+    filas_cliente_nuevo = []
+    for r in primer_booking_por_cliente:
+        if r["fecha"] is None:
+            continue
+        d = r["fecha"].astimezone(TZ_LOCAL).date()
+        if primer_dia_valido is None or d < primer_dia_valido:
+            continue
+        vendedor = r["vendedor"] or "#N/D"
+        plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+            continue
+        filas_cliente_nuevo.append({"d": d, "vendedor": vendedor})
 
     filas_cot = []
     for r in cotizaciones:
@@ -4103,6 +4248,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     booking_anterior = en_rango(filas_booking, fecha_inicio_anterior, fecha_fin_anterior)
     cot_periodo = en_rango(filas_cot, fecha_inicio, fecha_fin)
     cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
+    clientes_nuevos_periodo = en_rango(filas_cliente_nuevo, fecha_inicio, fecha_fin)
+    clientes_nuevos_anterior = en_rango(filas_cliente_nuevo, fecha_inicio_anterior, fecha_fin_anterior)
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
     # aplicado / cuándo se marcó perdida), no por cuándo se creó la
@@ -4134,6 +4281,9 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         "bookings_anterior": len(booking_anterior),
         "venta": venta_periodo, "venta_delta": delta_pct(venta_periodo, venta_anterior), "venta_anterior": venta_anterior,
         "profit": profit_periodo, "profit_delta": delta_pct(profit_periodo, profit_anterior), "profit_anterior": profit_anterior,
+        "clientes_nuevos": len(clientes_nuevos_periodo),
+        "clientes_nuevos_delta": delta_pct(len(clientes_nuevos_periodo), len(clientes_nuevos_anterior)),
+        "clientes_nuevos_anterior": len(clientes_nuevos_anterior),
     }
 
     dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
@@ -4147,10 +4297,48 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     resumen_vendedor = {}
     for f in booking_periodo:
         key = normalizar(f["vendedor"])
-        fila = resumen_vendedor.setdefault(key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0})
+        fila = resumen_vendedor.setdefault(
+            key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "profit": 0.0,
+                  "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0}
+        )
         fila["bookings"] += 1
         fila["venta"] += f["venta"]
         fila["profit"] += f["profit"]
+
+    # Presupuesto y Clientes nuevos por vendedor: solo tienen sentido para un
+    # mes calendario completo (el Scorecard de Resultados), pero se calculan
+    # aquí también para "hoy"/"semana" sin costo extra relevante.
+    mes_periodo = fecha_inicio.strftime("%Y-%m")
+    presupuesto_mes_vendedor = {}
+    for r in db_presupuesto_vendedor:
+        if r["mes"] != mes_periodo:
+            continue
+        clave = normalizar(r["vendedor"])
+        presupuesto_mes_vendedor[clave] = presupuesto_mes_vendedor.get(clave, 0.0) + float(r["presupuesto"])
+    for key, monto in presupuesto_mes_vendedor.items():
+        cat = next((c for c in vendedores_catalogo if normalizar(c["vendedor"]) == key), None)
+        plaza = cat["plaza"] if cat else "#N/D"
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and key != vendedor_filtro_norm:
+            continue
+        fila = resumen_vendedor.setdefault(
+            key, {"nombre": cat["vendedor"] if cat else key, "plaza": plaza, "bookings": 0, "venta": 0.0,
+                  "profit": 0.0, "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0}
+        )
+        fila["presupuesto"] = monto
+
+    for f in clientes_nuevos_periodo:
+        key = normalizar(f["vendedor"])
+        if key not in resumen_vendedor:
+            plaza = plaza_por_vendedor.get(key, "#N/D")
+            resumen_vendedor[key] = {
+                "nombre": f["vendedor"], "plaza": plaza, "bookings": 0, "venta": 0.0, "profit": 0.0,
+                "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+            }
+        resumen_vendedor[key]["clientes_nuevos"] += 1
 
     # Actividad por desarrollador: mismo patrón que Comisiones — se agrupa
     # por reporte_bookings.ejecutivo (no por vendedor). El permiso de plaza
@@ -4196,7 +4384,10 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
                 "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": datos["n"],
             }
         else:
-            resumen_vendedor[key] = {"nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": datos["n"]}
+            resumen_vendedor[key] = {
+                "nombre": datos["nombre"], "plaza": "—", "bookings": 0, "venta": 0.0, "profit": 0.0,
+                "cotizaciones": datos["n"], "presupuesto": 0.0, "clientes_nuevos": 0,
+            }
 
     ranking = sorted(resumen_vendedor.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
     ranking_desarrolladores = sorted(resumen_desarrollador.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
@@ -4229,6 +4420,7 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         # (profit $0) — la suma de la columna Cotizaciones nunca cuadraba
         # con el KPI "Cotizaciones creadas" de arriba.
         "ranking": ranking,
+        "resumen_vendedor": resumen_vendedor,
         "ranking_desarrolladores": ranking_desarrolladores,
         "por_vencer": por_vencer[:8],
         "vencidas": vencidas[:8],
@@ -4842,6 +5034,44 @@ def crm_seccion(slug):
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
             plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
             serie_json=json_para_js(datos["serie"]), **datos,
+        )
+
+    if slug == "resultados":
+        hoy = datetime.now(TZ_LOCAL).date()
+        anio_cerrado = hoy.year if hoy.month > 1 else hoy.year - 1
+        mes_cerrado = hoy.month - 1 if hoy.month > 1 else 12
+        mes_default = f"{anio_cerrado}-{mes_cerrado:02d}"
+        mes_param = request.args.get("mes", "").strip()
+        mes_seleccionado = mes_param if mes_param in MESES_VALIDOS else mes_default
+        anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
+        fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
+        fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
+        plaza_filtro = request.args.get("plaza", "").strip()
+        vendedor_filtro = request.args.get("vendedor", "").strip()
+        datos = construir_inicio_crm(
+            "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario()
+        )
+        scorecard = None
+        scorecard_tipo = None
+        scorecard_titulo = None
+        if vendedor_filtro:
+            resumen = datos["resumen_vendedor"].get(normalizar(vendedor_filtro))
+            scorecard = construir_scorecard_vendedor(resumen)
+            scorecard_tipo = "vendedor"
+            scorecard_titulo = vendedor_filtro
+        elif plaza_filtro:
+            resumenes_plaza = [r for r in datos["resumen_vendedor"].values() if r["plaza"] == plaza_filtro]
+            scorecard = construir_scorecard_grupo(resumenes_plaza)
+            scorecard_tipo = "grupo"
+            scorecard_titulo = plaza_filtro
+        return render_template(
+            "crm_resultados.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
+            mes_seleccionado=mes_seleccionado, opciones_mes=opciones_mes(), kpis=datos["kpis"],
+            fecha_inicio_larga=datos["fecha_inicio_larga"], fecha_fin_larga=datos["fecha_fin_larga"],
+            etiqueta_anterior=datos["etiqueta_anterior"],
+            plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
+            plazas_opciones=datos["plazas_opciones"], vendedores_opciones=datos["vendedores_opciones"],
+            scorecard=scorecard, scorecard_tipo=scorecard_tipo, scorecard_titulo=scorecard_titulo,
         )
 
     if slug == "tareas":

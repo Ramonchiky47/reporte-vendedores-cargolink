@@ -1,0 +1,399 @@
+{% extends "crm_layout.html" %}
+{% block extra_head %}
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
+{% endblock %}
+{% block extra_style %}
+  :root{
+    --paper:#F1F3F6; --surface:#FFFFFF; --surface-2:#E9EDF2;
+    --ink:#161A20; --ink-soft:#56606E; --ink-faint:#93A0AF;
+    --line:#DCE2E8; --line-strong:#C3CCD5;
+    --brand:#1F3A5C; --brand-soft:#E4EAF1; --brand-ink:#16283F;
+    --good:#217A55; --good-soft:#E1F0E7;
+    --warn:#A8720F; --warn-soft:#F5EAD4;
+    --bad:#B0402A; --bad-soft:#F6E1DB;
+    --pending:#8A93A0; --pending-soft:#E7EAEE;
+    --font-display:'Spectral', Georgia, 'Times New Roman', serif;
+    --font-body:'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+    --font-mono:'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+    --shadow: 0 1px 2px rgba(22,26,32,.04), 0 8px 24px -12px rgba(22,26,32,.14);
+  }
+  .resultados{ background:var(--paper); color:var(--ink); font-family:var(--font-body); font-size:15px; line-height:1.45; margin:-0.75rem; padding:2.2rem 1.75rem 3rem; border-radius:14px; }
+  .resultados .num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+  .resultados a{ color:inherit; text-decoration:none; }
+  .resultados :focus-visible{ outline:2px solid var(--brand); outline-offset:2px; border-radius:4px; }
+
+  /* header */
+  .r-eyebrow{ font-size:.7rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 .6rem; }
+  .r-head-main{ display:flex; align-items:flex-end; justify-content:space-between; gap:2rem; flex-wrap:wrap; }
+  .r-head-main h1{ font-family:var(--font-display); font-weight:600; font-size:2.2rem; letter-spacing:-.01em; margin:0; text-wrap:balance; color:var(--ink); }
+  .r-head-sub{ margin:.5rem 0 0; color:var(--ink-soft); font-size:.9rem; max-width:56ch; }
+
+  .r-filters{ display:flex; gap:.6rem; flex-wrap:wrap; margin:0; }
+  .select-pill{
+    display:flex; flex-direction:column; gap:.15rem; background:var(--surface);
+    border:1px solid var(--line-strong); border-radius:10px; padding:.4rem .85rem;
+    min-width:148px; position:relative; box-shadow:var(--shadow);
+  }
+  .select-pill__label{ font-size:.62rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .select-pill select{
+    appearance:none; -webkit-appearance:none; border:none; background:transparent; color:var(--ink);
+    font:600 .86rem/1.3 var(--font-body); padding:0 1.1rem 0 0; cursor:pointer; width:100%;
+  }
+  .select-pill::after{
+    content:""; position:absolute; right:.85rem; top:60%; width:7px; height:7px;
+    border-right:1.6px solid var(--ink-faint); border-bottom:1.6px solid var(--ink-faint);
+    transform:translateY(-60%) rotate(45deg); pointer-events:none;
+  }
+  .btn-aplicar{
+    align-self:stretch; border:1px solid var(--brand); background:var(--brand); color:#fff;
+    font:600 .84rem var(--font-body); padding:0 1.3rem; border-radius:10px; cursor:pointer; box-shadow:var(--shadow);
+  }
+  .btn-aplicar:hover{ filter:brightness(1.08); }
+
+  .r-head-range{ margin:1.1rem 0 0; font-size:.8rem; color:var(--ink-faint); border-top:1px solid var(--line); padding-top:1rem; }
+  .r-head-range b{ color:var(--ink-soft); font-weight:600; }
+
+  .view-label{ display:flex; align-items:center; gap:.6rem; margin:2rem 0 .7rem; }
+  .view-label span{ font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .view-label::after{ content:""; flex:1; height:1px; background:var(--line); }
+
+  /* ledger strip */
+  .ledger{
+    display:grid; grid-template-columns:repeat(7,1fr); margin-top:1.6rem;
+    background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  .ledger__item{ padding:1.05rem 1.1rem; border-left:1px solid var(--line); display:flex; flex-direction:column; gap:.4rem; }
+  .ledger__item:first-child{ border-left:none; }
+  .ledger__label{ font-size:.66rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); }
+  .ledger__value{ font-size:1.3rem; font-weight:600; letter-spacing:-.01em; }
+  .ledger__delta{ font-size:.72rem; display:flex; align-items:center; gap:.3rem; color:var(--ink-faint); }
+  .ledger__delta b{ font-family:var(--font-mono); font-weight:600; }
+  .ledger__delta.up b{ color:var(--good); }
+  .ledger__delta.down b{ color:var(--bad); }
+  .r-arrow{ width:8px; height:8px; display:inline-block; }
+  .r-arrow.up{ border-left:4px solid transparent; border-right:4px solid transparent; border-bottom:6px solid var(--good); }
+  .r-arrow.down{ border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid var(--bad); }
+  @media (max-width:980px){ .ledger{ grid-template-columns:repeat(4,1fr); } .ledger__item:nth-child(4n+1){ border-left:none; } }
+  @media (max-width:620px){ .ledger{ grid-template-columns:repeat(2,1fr); } .ledger__item:nth-child(odd){ border-left:none; } .ledger__item{ border-top:1px solid var(--line); } .ledger__item:nth-child(-n+2){ border-top:none; } }
+
+  /* scorecard module */
+  .scorecard{ margin-top:1.6rem; background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; }
+  .scorecard--vacio{ padding:2.4rem 1rem; text-align:center; color:var(--ink-faint); font-size:.9rem; }
+  .scorecard__head{ display:flex; align-items:center; justify-content:space-between; gap:2rem; padding:1.6rem 2rem; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .scorecard__eyebrow{ font-size:.7rem; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--brand); }
+  .scorecard__head h2{ font-family:var(--font-display); font-weight:600; font-size:1.75rem; margin:.3rem 0 0; letter-spacing:-.01em; }
+  .scorecard__period{ margin:.35rem 0 0; color:var(--ink-faint); font-size:.8rem; }
+
+  .ring-wrap{ position:relative; width:140px; height:140px; flex-shrink:0; }
+  .ring{ width:140px; height:140px; transform:rotate(-90deg); }
+  .ring__track{ fill:none; stroke:var(--surface-2); stroke-width:12; }
+  .ring__fill{ fill:none; stroke-width:12; stroke-linecap:round; stroke-dasharray:427.26; stroke-dashoffset:var(--dashoffset,427.26); }
+  @media (prefers-reduced-motion:no-preference){ .ring__fill{ animation:r-draw 1.1s cubic-bezier(.2,.7,.2,1) .1s both; } }
+  @keyframes r-draw{ from{ stroke-dashoffset:427.26; } to{ stroke-dashoffset:var(--dashoffset,427.26); } }
+  .ring__fill--good{ stroke:var(--good); }
+  .ring__fill--warn{ stroke:var(--warn); }
+  .ring__fill--bad{ stroke:var(--bad); }
+  .ring__center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ring__value{ font-family:var(--font-mono); font-weight:600; font-size:1.6rem; letter-spacing:-.02em; }
+  .ring__value.good{ color:var(--good); }
+  .ring__value.warn{ color:var(--warn); }
+  .ring__value.bad{ color:var(--bad); }
+  .ring__label{ font-size:.62rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); margin-top:.15rem; }
+
+  .composition{ padding:1.4rem 2rem 0; }
+  .composition__caption{ font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); }
+  .composition__bar{ display:flex; gap:3px; margin-top:.6rem; height:26px; }
+  .composition__seg{ flex:var(--w) 0 0; background:var(--surface-2); border-radius:5px; position:relative; overflow:hidden; }
+  .composition__seg:first-child{ border-top-left-radius:8px; border-bottom-left-radius:8px; }
+  .composition__seg:last-child{ border-top-right-radius:8px; border-bottom-right-radius:8px; }
+  .composition__fill{ position:absolute; inset:0; width:calc(var(--fill) * 100%); border-radius:inherit; }
+  .composition__seg[data-cat="gp"] .composition__fill{ background:var(--good); }
+  .composition__seg[data-cat="new"] .composition__fill{ background:var(--warn); }
+  .composition__seg[data-cat="quo"] .composition__fill{ background:var(--bad); }
+  .composition__seg--pending{ background:repeating-linear-gradient(135deg, var(--pending-soft), var(--pending-soft) 5px, var(--surface-2) 5px, var(--surface-2) 10px); }
+  .composition__overflow{ position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:.6rem; color:#fff; font-weight:700; }
+  .composition__legend{ display:flex; gap:1.2rem; margin:.7rem 0 0; flex-wrap:wrap; }
+  .composition__legend span{ font-size:.72rem; color:var(--ink-soft); display:flex; align-items:center; gap:.35rem; }
+  .swatch{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+
+  .rows{ padding:1.5rem 2rem 0; display:flex; flex-direction:column; }
+  .row{ display:grid; grid-template-columns:172px 1fr 84px 56px 64px; align-items:center; gap:1.1rem; padding:1rem 0; border-top:1px solid var(--line); }
+  .rows .row:first-child{ border-top:none; }
+  .row__group{ display:block; font-size:.64rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--brand); }
+  .row__name{ display:block; font-weight:600; font-size:.9rem; margin-top:.1rem; }
+  .row__track{ position:relative; height:8px; background:var(--surface-2); border-radius:5px; }
+  .row__fill{ position:absolute; inset:0; width:0; border-radius:5px; }
+  .row__fill--good{ background:var(--good); }
+  .row__fill--warn{ background:var(--warn); }
+  .row__fill--bad{ background:var(--bad); }
+  .row__fill--pending{ background:transparent; border:1.5px dashed var(--pending); border-radius:5px; }
+  .row__tick{ position:absolute; top:-3px; width:2px; height:14px; background:var(--ink); opacity:.35; }
+  .row__figures{ display:flex; justify-content:space-between; margin-top:.4rem; font-size:.72rem; color:var(--ink-faint); }
+  .row__figures b{ font-family:var(--font-mono); color:var(--ink-soft); font-weight:600; }
+  .pill{ justify-self:start; font-family:var(--font-mono); font-size:.78rem; font-weight:600; padding:.22rem .55rem; border-radius:20px; text-align:center; min-width:64px; }
+  .pill--good{ background:var(--good-soft); color:var(--good); }
+  .pill--warn{ background:var(--warn-soft); color:var(--warn); }
+  .pill--bad{ background:var(--bad-soft); color:var(--bad); }
+  .pill--pending{ background:var(--pending-soft); color:var(--pending); font-weight:500; }
+  .chip{ justify-self:start; font-family:var(--font-mono); font-size:.78rem; color:var(--ink-soft); background:var(--surface-2); padding:.2rem .5rem; border-radius:6px; }
+  .row__point{ font-family:var(--font-mono); font-weight:700; font-size:.96rem; text-align:right; }
+  .row--pending .row__name{ color:var(--ink-soft); }
+  .tag-pending{ display:inline-block; margin-left:.45rem; font-size:.6rem; font-weight:700; letter-spacing:.03em; color:var(--pending); background:var(--pending-soft); border-radius:20px; padding:.05rem .4rem; vertical-align:middle; }
+  @media (max-width:860px){ .row{ grid-template-columns:1fr; row-gap:.55rem; } .row > *{ justify-self:stretch !important; } .row__point{ text-align:left; } }
+
+  .roster{ padding:1.5rem 2rem 0; }
+  .roster__list{ margin-top:.7rem; display:flex; flex-direction:column; gap:.3rem; }
+  .roster__item{ display:grid; grid-template-columns:150px 1fr 64px; align-items:center; gap:.9rem; padding:.35rem .5rem; border-radius:8px; }
+  .roster__item:hover{ background:var(--surface-2); }
+  .roster__nombre{ font-size:.86rem; font-weight:600; }
+  .roster__barra{ height:7px; background:var(--surface-2); border-radius:5px; overflow:hidden; }
+  .roster__fill{ height:100%; border-radius:5px; }
+  @media (max-width:620px){ .roster__item{ grid-template-columns:1fr; row-gap:.35rem; } }
+
+  .method{ margin:1.5rem 2rem 0; border-top:1px solid var(--line); }
+  .method summary{ cursor:pointer; list-style:none; padding:1rem 0; font-size:.8rem; font-weight:600; color:var(--ink-soft); display:flex; align-items:center; gap:.4rem; }
+  .method summary::-webkit-details-marker{ display:none; }
+  .method summary::before{ content:"›"; display:inline-block; transition:transform .15s; color:var(--ink-faint); font-size:1rem; }
+  .method[open] summary::before{ transform:rotate(90deg); }
+  .method__body{ padding:0 0 1.5rem; font-size:.82rem; color:var(--ink-soft); line-height:1.75; max-width:74ch; }
+  .method__body p{ margin:0 0 .5rem; }
+  .method__body b{ color:var(--ink); }
+{% endblock %}
+{% block crm_content %}
+{% macro clase_pct(valor) %}{% if valor is none %}pending{% elif valor >= 100 %}good{% elif valor >= 70 %}warn{% else %}bad{% endif %}{% endmacro %}
+{% macro fmt_valor(valor, es_moneda) %}{% if es_moneda %}${{ '{:,.0f}'.format(valor) }}{% else %}{{ '{:.0f}'.format(valor) }}{% endif %}{% endmacro %}
+
+{% macro fila_indicador(fila, es_grupo) %}
+{% set pendiente = fila.campo_logrado is none %}
+{% set clase = clase_pct(fila.ach_pct)|trim %}
+<div class="row {{ 'row--pending' if pendiente else '' }}">
+  <div class="row__id">
+    <span class="row__group">{{ fila.grupo }}</span>
+    <span class="row__name">{{ fila.etiqueta }}{% if pendiente %}<span class="tag-pending">Pendiente</span>{% endif %}</span>
+  </div>
+  <div>
+    <div class="row__track">
+      {% if pendiente %}
+      <div class="row__fill row__fill--pending"></div>
+      {% else %}
+      <div class="row__fill row__fill--{{ clase }}" style="width:{{ 100 if fila.ach_pct >= 100 else fila.ach_pct }}%"></div>
+      <div class="row__tick" style="left:100%"></div>
+      {% endif %}
+    </div>
+    <div class="row__figures">
+      <span>Target{{ ' grupo' if es_grupo else '' }} <b class="num">{% if fila.sin_presupuesto %}—{% else %}{{ fmt_valor(fila.target, fila.es_moneda) }}{% endif %}</b></span>
+      {% if pendiente %}
+      <span>Sin registro en Tareas todavía</span>
+      {% else %}
+      <span>Achieved{{ ' grupo' if es_grupo else '' }} <b class="num">{{ fmt_valor(fila.logrado or 0, fila.es_moneda) }}</b></span>
+      {% endif %}
+    </div>
+  </div>
+  {% if pendiente %}
+  <span class="pill pill--pending num">—</span>
+  {% elif fila.sin_presupuesto %}
+  <span class="pill pill--pending num">Sin ppto</span>
+  {% else %}
+  <span class="pill pill--{{ clase }} num">{{ '%.2f'|format(fila.ach_pct) }}%</span>
+  {% endif %}
+  <span class="chip num">{{ fila.peso }}%</span>
+  <span class="row__point num">{{ '%.1f'|format(fila.point) }}%</span>
+</div>
+{% endmacro %}
+
+{% macro scorecard_body(scorecard, es_grupo) %}
+{% set circ = 427.2566 %}
+{% set offset = circ * (1 - scorecard.resultado/100) %}
+{% set clase = clase_pct(scorecard.resultado)|trim %}
+{% set gp, nc, qt, av1, av2 = scorecard.filas %}
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 160 160">
+        <circle class="ring__track" cx="80" cy="80" r="68"></circle>
+        <circle class="ring__fill ring__fill--{{ clase }}" cx="80" cy="80" r="68" style="--dashoffset:{{ '%.2f'|format(offset) }}"></circle>
+      </svg>
+      <div class="ring__center">
+        <span class="ring__value {{ clase }} num">{{ '%.1f'|format(scorecard.resultado) }}%</span>
+        <span class="ring__label">Resultado</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="composition">
+    <span class="composition__caption">De dónde viene el {{ '%.1f'|format(scorecard.resultado) }}%{{ ' (promedio del grupo)' if es_grupo else '' }}</span>
+    <div class="composition__bar">
+      <div class="composition__seg" data-cat="gp" style="--w:{{ gp.peso }};">
+        <div class="composition__fill" style="--fill:{{ 1 if (gp.ach_pct or 0) >= 100 else (gp.ach_pct or 0)/100 }}"></div>
+        {% if gp.ach_pct and gp.ach_pct > 100 %}<span class="composition__overflow">▲</span>{% endif %}
+      </div>
+      <div class="composition__seg" data-cat="new" style="--w:{{ nc.peso }};"><div class="composition__fill" style="--fill:{{ 1 if (nc.ach_pct or 0) >= 100 else (nc.ach_pct or 0)/100 }}"></div></div>
+      <div class="composition__seg" data-cat="quo" style="--w:{{ qt.peso }};"><div class="composition__fill" style="--fill:{{ 1 if (qt.ach_pct or 0) >= 100 else (qt.ach_pct or 0)/100 }}"></div></div>
+      <div class="composition__seg composition__seg--pending" style="--w:{{ av1.peso + av2.peso }};"></div>
+    </div>
+    <div class="composition__legend">
+      <span><i class="swatch" style="background:var(--good)"></i>GP · {{ '%.1f'|format(gp.point) }} pt</span>
+      <span><i class="swatch" style="background:var(--warn)"></i>New Customer · {{ '%.1f'|format(nc.point) }} pt</span>
+      <span><i class="swatch" style="background:var(--bad)"></i>Quotations · {{ '%.1f'|format(qt.point) }} pt</span>
+      <span><i class="swatch" style="background:var(--pending)"></i>Activities · pendiente de medir</span>
+    </div>
+  </div>
+
+  <div class="rows">
+    {% for fila in scorecard.filas %}{{ fila_indicador(fila, es_grupo) }}{% endfor %}
+  </div>
+{% endmacro %}
+
+  <div class="resultados">
+  <header>
+    <p class="r-eyebrow">AV2 Logistics · CRM</p>
+    <div class="r-head-main">
+      <div>
+        <h1>Resultados</h1>
+        <p class="r-head-sub">Cierre de mes: actividad de cotización y cierre de reporte_bookings, comparado contra el mes anterior.</p>
+      </div>
+      <form class="r-filters" method="get">
+        <label class="select-pill">
+          <span class="select-pill__label">Mes</span>
+          <select name="mes">
+            {% for opt in opciones_mes %}
+            <option value="{{ opt.value }}" {{ 'selected' if opt.value == mes_seleccionado else '' }}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="select-pill">
+          <span class="select-pill__label">Plaza</span>
+          <select name="plaza">
+            <option value="">Todas las plazas</option>
+            {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="select-pill">
+          <span class="select-pill__label">Vendedor</span>
+          <select name="vendedor">
+            <option value="">Todos los vendedores</option>
+            {% for v in vendedores_opciones %}<option value="{{ v }}" {{ 'selected' if vendedor_filtro == v else '' }}>{{ v }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit" class="btn-aplicar">Aplicar</button>
+      </form>
+    </div>
+    <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · elige Plaza y/o Vendedor y presiona <b>Aplicar</b> — sin vendedor, verás el Scorecard promedio de esa plaza</p>
+  </header>
+
+  {% macro delta(valor, anterior, invertir=false) %}
+    {% if valor is none %}
+      <span class="ledger__delta"><b class="num">{{ anterior }}</b>&nbsp;{{ etiqueta_anterior }}</span>
+    {% else %}
+      {% set es_bueno = (valor < 0) if invertir else (valor >= 0) %}
+      <span class="ledger__delta {{ 'up' if valor >= 0 else 'down' }}">
+        <i class="r-arrow {{ 'up' if valor >= 0 else 'down' }}"></i>
+        <b class="num" style="color:{{ 'var(--good)' if es_bueno else 'var(--bad)' }};">{{ '+' if valor >= 0 else '' }}{{ '%.1f'|format(valor) }}%</b>&nbsp;· {{ anterior }} {{ etiqueta_anterior }}
+      </span>
+    {% endif %}
+  {% endmacro %}
+
+  <section class="ledger" aria-label="Indicadores del mes, todos los vendedores">
+    <div class="ledger__item">
+      <span class="ledger__label">Cotizaciones</span>
+      <span class="ledger__value num">{{ kpis.cotizaciones }}</span>
+      {{ delta(kpis.cotizaciones_delta, kpis.cotizaciones_anterior) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Ganadas</span>
+      <span class="ledger__value num">{{ kpis.ganadas }}</span>
+      {{ delta(kpis.ganadas_delta, kpis.ganadas_anterior) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Perdidas</span>
+      <span class="ledger__value num">{{ kpis.perdidas }}</span>
+      {{ delta(kpis.perdidas_delta, kpis.perdidas_anterior, invertir=true) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Booking</span>
+      <span class="ledger__value num">{{ kpis.bookings }}</span>
+      {{ delta(kpis.bookings_delta, kpis.bookings_anterior) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Venta cerrada</span>
+      <span class="ledger__value num">${{ '{:,.0f}'.format(kpis.venta) }}</span>
+      {{ delta(kpis.venta_delta, '${:,.0f}'.format(kpis.venta_anterior)) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Profit</span>
+      <span class="ledger__value num">${{ '{:,.0f}'.format(kpis.profit) }}</span>
+      {{ delta(kpis.profit_delta, '${:,.0f}'.format(kpis.profit_anterior)) }}
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">New Clientes</span>
+      <span class="ledger__value num">{{ kpis.clientes_nuevos }}</span>
+      {{ delta(kpis.clientes_nuevos_delta, kpis.clientes_nuevos_anterior) }}
+    </div>
+  </section>
+
+  {% if scorecard_tipo == "grupo" %}
+  <div class="view-label"><span>Vista por plaza · grupo</span></div>
+  {% if scorecard %}
+  <section class="scorecard" aria-label="Scorecard mensual del grupo, Plaza {{ scorecard_titulo }}">
+    <div class="scorecard__head">
+      <div>
+        <p class="scorecard__eyebrow">Scorecard mensual · Grupo</p>
+        <h2>Plaza {{ scorecard_titulo }}</h2>
+        <p class="scorecard__period">{{ fecha_inicio_larga }} – {{ fecha_fin_larga }} · promedio de {{ scorecard.n_vendedores }} vendedor(es) con actividad</p>
+      </div>
+      {{ scorecard_body(scorecard, true) }}
+
+    <div class="roster">
+      <span class="composition__caption">Roster del grupo</span>
+      <div class="roster__list">
+        {% for r in scorecard.roster %}
+        <a class="roster__item" href="{{ url_for('crm_seccion', slug='resultados', mes=mes_seleccionado, plaza=plaza_filtro, vendedor=r.nombre) }}">
+          <span class="roster__nombre">{{ r.nombre }}</span>
+          <div class="roster__barra"><div class="roster__fill" style="width:{{ 100 if r.resultado >= 100 else r.resultado }}%; background:var(--{{ clase_pct(r.resultado)|trim }})"></div></div>
+          <span class="pill pill--{{ clase_pct(r.resultado)|trim }} num">{{ '%.1f'|format(r.resultado) }}%</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <details class="method">
+      <summary>Cómo se calcula el grupo</summary>
+      <div class="method__body">
+        <p>Target, Achieved y Ach % del grupo son la <b>suma</b> de todos los vendedores con actividad ese mes en la plaza (Ach % = Achieved total ÷ Target total) — un vendedor con un presupuesto mucho más grande pesa más en el resultado del grupo, igual que pesa más en el negocio real.</p>
+        <p>El Resultado del grupo se calcula con esos totales, no promediando los porcentajes individuales. El roster de abajo sí muestra el Resultado propio de cada vendedor — haz clic en uno para ver su Scorecard individual.</p>
+      </div>
+    </details>
+  </section>
+  {% else %}
+  <div class="scorecard scorecard--vacio">Sin actividad registrada en {{ plaza_filtro }} para este mes.</div>
+  {% endif %}
+
+  {% elif scorecard_tipo == "vendedor" %}
+  <div class="view-label"><span>Vista por vendedor</span></div>
+  <section class="scorecard" aria-label="Scorecard mensual de {{ scorecard_titulo }}">
+    <div class="scorecard__head">
+      <div>
+        <p class="scorecard__eyebrow">Scorecard mensual{{ ' · Plaza ' + plaza_filtro if plaza_filtro else '' }}</p>
+        <h2>{{ scorecard_titulo }}</h2>
+        <p class="scorecard__period">{{ fecha_inicio_larga }} – {{ fecha_fin_larga }}</p>
+      </div>
+      {{ scorecard_body(scorecard, false) }}
+
+    <details class="method">
+      <summary>Cómo se calcula cada indicador</summary>
+      <div class="method__body">
+        <p><b>Gross Profit</b> — Target: presupuesto capturado para este vendedor en Catálogos → Presupuesto. Achieved: profit de sus bookings del mes (Venta Mensual).</p>
+        <p><b>New Customer</b> — Target fijo: 2 clientes nuevos por vendedor al mes. Achieved: clientes nuevos del mes calculados por el sistema.</p>
+        <p><b>Quotations</b> — Target fijo: 40 cotizaciones por vendedor al mes. Achieved: cotizaciones registradas en el mes.</p>
+        <p><b>Activities</b> — Targets fijos de 10 visitas y 20 reuniones virtuales; todavía no existe el registro de Tareas para medir lo logrado, así que aportan 0 puntos sin penalizar de más.</p>
+        <p>Point = Ach % × Weight. Resultado = suma de todos los Point. Un Target en $0 no cuenta contra el vendedor: su Ach % queda pendiente y no resta.</p>
+      </div>
+    </details>
+  </section>
+
+  {% else %}
+  <div class="view-label"><span>Scorecard</span></div>
+  <div class="scorecard scorecard--vacio">Selecciona una Plaza (vista de grupo) o un Vendedor (vista individual) arriba para ver su Scorecard del mes.</div>
+  {% endif %}
+  </div>
+{% endblock %}
