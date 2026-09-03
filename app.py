@@ -133,6 +133,12 @@ def init_db():
     # solo se le agrega esta columna (aditivo, no rompe su propio código) para
     # el nuevo permiso de Autorizador de Minutas (CRM → Tareas).
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_autorizar_minutas boolean not null default false;")
+    # "Solo ver su información" (Catálogos → Visualización de Plazas): ata
+    # el login a UN vendedor del catálogo y, si está marcado, restringe a
+    # ese usuario a los datos de ese vendedor únicamente (además de sus
+    # plazas permitidas) en CRM, Ventas/Dashboard, Venta diaria y Reportes.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS vendedor_asociado text;")
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS solo_su_informacion boolean not null default false;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
@@ -1193,7 +1199,7 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
             smtp.send_message(msg)
 
 
-def construir_datos_dashboard(plazas_permitidas=None):
+def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None):
     db = get_db()
     meta = db.execute(
         "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
@@ -1233,11 +1239,15 @@ def construir_datos_dashboard(plazas_permitidas=None):
     agregados = {}
     agregados_desarrollador = {}
     detalle = []
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     for r in bookings:
         vkey = normalizar(r["vendedor"])
         cat = catalogo_vendedor.get(vkey)
         plaza_vendedor = cat["plaza"] if cat else "#N/D"
-        vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
+        vendedor_permitido = (
+            (plazas_permitidas is None or plaza_vendedor in plazas_permitidas)
+            and (vendedor_forzado_norm is None or vkey == vendedor_forzado_norm)
+        )
 
         dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
 
@@ -1279,14 +1289,19 @@ def construir_datos_dashboard(plazas_permitidas=None):
         _, vkey = clave
         cat = catalogo_vendedor.get(vkey)
         plaza = cat["plaza"] if cat else "#N/D"
-        if plazas_permitidas is None or plaza in plazas_permitidas:
+        if (plazas_permitidas is None or plaza in plazas_permitidas) and (vendedor_forzado_norm is None or vkey == vendedor_forzado_norm):
             agregados.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
-    for clave in presupuesto_por_mes_desarrollador:
-        _, dkey = clave
-        cat = catalogo_desarrollador.get(dkey)
-        plaza = cat["plaza"] if cat else "#N/D"
-        if plazas_permitidas is None or plaza in plazas_permitidas:
-            agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
+    # El presupuesto de un desarrollador no es de un vendedor en particular
+    # (agrega a todos los que le vendieron); con "solo su información"
+    # activo no se rellena de más, para no mostrar la meta de un mercado
+    # completo a alguien que solo debe ver lo suyo.
+    if vendedor_forzado_norm is None:
+        for clave in presupuesto_por_mes_desarrollador:
+            _, dkey = clave
+            cat = catalogo_desarrollador.get(dkey)
+            plaza = cat["plaza"] if cat else "#N/D"
+            if plazas_permitidas is None or plaza in plazas_permitidas:
+                agregados_desarrollador.setdefault(clave, {"cant_book": 0, "venta": 0.0, "profit": 0.0})
 
     filas = []
     for (mes, vkey), agg in agregados.items():
@@ -1340,7 +1355,7 @@ def construir_datos_dashboard(plazas_permitidas=None):
     }
 
 
-def construir_datos_venta_diaria(plazas_permitidas=None):
+def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None):
     """Igual que construir_datos_dashboard, pero agrupado por día calendario
     en vez de por mes. El catálogo de Presupuesto solo captura montos
     mensuales (no existe un presupuesto diario capturado), así que el Ppto
@@ -1389,6 +1404,7 @@ def construir_datos_venta_diaria(plazas_permitidas=None):
     agregados = {}
     agregados_desarrollador = {}
     detalle = []
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     for r in bookings:
         if r["fecha"] is None:
             continue
@@ -1396,7 +1412,10 @@ def construir_datos_venta_diaria(plazas_permitidas=None):
         vkey = normalizar(r["vendedor"])
         cat = catalogo_vendedor.get(vkey)
         plaza_vendedor = cat["plaza"] if cat else "#N/D"
-        vendedor_permitido = plazas_permitidas is None or plaza_vendedor in plazas_permitidas
+        vendedor_permitido = (
+            (plazas_permitidas is None or plaza_vendedor in plazas_permitidas)
+            and (vendedor_forzado_norm is None or vkey == vendedor_forzado_norm)
+        )
 
         dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
 
@@ -1729,6 +1748,39 @@ def plazas_permitidas_usuario():
     return {f["plaza"] for f in filas}
 
 
+def vendedor_forzado_usuario():
+    """None = el usuario en sesión ve la información de todos los
+    vendedores de sus plazas permitidas (comportamiento normal). Si no es
+    None, es el ÚNICO vendedor (tal cual está en catalogo_vendedores) cuya
+    información puede ver — se le une, no la reemplaza, al filtro de plaza.
+    Se activa desde Catálogos → Visualización de Plazas marcando "Solo ver
+    su información" y asociando un vendedor del catálogo; los
+    administradores nunca quedan restringidos así."""
+    if session.get("es_admin"):
+        return None
+    if not session.get("solo_su_informacion"):
+        return None
+    return session.get("vendedor_asociado") or None
+
+
+def usuario_puede_operar_tarea(vendedor_tarea):
+    """True si el usuario en sesión puede ver/editar/borrar/autorizar una
+    tarea de CRM → Tareas de este vendedor: respeta tanto su plaza
+    permitida como (si está activo) el candado de "solo su información"."""
+    vendedor_forzado = vendedor_forzado_usuario()
+    if vendedor_forzado and normalizar(vendedor_tarea) != normalizar(vendedor_forzado):
+        return False
+    plazas_permitidas = plazas_permitidas_usuario()
+    if plazas_permitidas is None:
+        return True
+    db = get_db()
+    plaza = db.execute(
+        "SELECT plaza FROM catalogo_vendedores WHERE upper(trim(vendedor)) = upper(trim(%s))", (vendedor_tarea,)
+    ).fetchone()
+    db.close()
+    return (plaza["plaza"] if plaza else None) in plazas_permitidas
+
+
 def usuario_puede_ver_cotizacion(db, cliente_folio):
     """True si el usuario en sesión puede ver/editar/borrar/clonar una
     cotización con este cliente_folio, según sus plazas permitidas —
@@ -1970,7 +2022,8 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
             coalesce(p.es_master, false) AS es_master,
-            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -2039,6 +2092,8 @@ def login():
             session["puede_pricing"] = bool(fila["puede_pricing"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
+            session["vendedor_asociado"] = fila["vendedor_asociado"]
+            session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
             destino = primera_pagina_permitida()
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
@@ -2107,7 +2162,8 @@ def sso():
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
-            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -2135,6 +2191,8 @@ def sso():
     session["puede_pricing"] = bool(fila["puede_pricing"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
     session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
+    session["vendedor_asociado"] = fila["vendedor_asociado"]
+    session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
 
     destino = _siguiente_sso_valido(request.args.get("next")) or url_for(primera_pagina_permitida())
     return redirect(destino)
@@ -2318,7 +2376,7 @@ def dashboard_plazas_vendedores():
         flash("No tienes permiso para ver Información de Ventas.")
         return redirect(url_for(primera_pagina_permitida()))
 
-    datos = construir_datos_dashboard(plazas_permitidas_usuario())
+    datos = construir_datos_dashboard(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -2336,7 +2394,7 @@ def venta_diaria():
         flash("No tienes permiso para ver Información de Ventas.")
         return redirect(url_for(primera_pagina_permitida()))
 
-    datos = construir_datos_venta_diaria(plazas_permitidas_usuario())
+    datos = construir_datos_venta_diaria(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -2347,7 +2405,7 @@ def venta_diaria():
     return render_template("venta_diaria.html", datos_json=datos_json, datos=datos)
 
 
-def construir_filas_reportes(plazas_permitidas=None):
+def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None):
     """Un registro liviano por booking (usado por /reportes y
     /reportes/por-vendedor) para que todo el filtrado y las sumas se hagan
     en el navegador, igual que en /dashboard."""
@@ -2362,6 +2420,7 @@ def construir_filas_reportes(plazas_permitidas=None):
     ).fetchall()
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     filas = []
     for r in bookings:
         fecha = r["fecha"]
@@ -2370,6 +2429,8 @@ def construir_filas_reportes(plazas_permitidas=None):
         vkey = normalizar(r["vendedor"])
         plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         filas.append({
             "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
@@ -2386,7 +2447,7 @@ def construir_filas_reportes(plazas_permitidas=None):
     return filas
 
 
-def construir_presupuesto_mensual(plazas_permitidas=None):
+def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None):
     """Suma de presupuesto por mes (mismo criterio que la tabla Venta por
     Plaza del Dashboard: presupuesto por vendedor, filtrado por plaza),
     para comparar Venta vs Presupuesto en /reportes."""
@@ -2395,10 +2456,14 @@ def construir_presupuesto_mensual(plazas_permitidas=None):
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     totales = {}
     for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
-        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         totales[r["mes"]] = totales.get(r["mes"], 0.0) + float(r["presupuesto"])
     db.close()
@@ -2409,8 +2474,9 @@ def construir_presupuesto_mensual(plazas_permitidas=None):
 @reportes_required
 def reportes_graficas():
     plazas_permitidas = plazas_permitidas_usuario()
-    filas = construir_filas_reportes(plazas_permitidas)
-    presupuesto_mensual = construir_presupuesto_mensual(plazas_permitidas)
+    vendedor_forzado = vendedor_forzado_usuario()
+    filas = construir_filas_reportes(plazas_permitidas, vendedor_forzado)
+    presupuesto_mensual = construir_presupuesto_mensual(plazas_permitidas, vendedor_forzado)
     datos_json = json.dumps(filas).replace("</", "<\\/")
     presupuesto_json = json.dumps(presupuesto_mensual).replace("</", "<\\/")
     return render_template(
@@ -3433,7 +3499,7 @@ def administracion_antiguedad_saldos_cliente_exportar():
 @app.route("/reportes/por-vendedor")
 @reportes_required
 def reportes_por_vendedor():
-    filas = construir_filas_reportes(plazas_permitidas_usuario())
+    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -3441,7 +3507,7 @@ def reportes_por_vendedor():
 @app.route("/reportes/por-cliente")
 @reportes_required
 def reportes_por_cliente():
-    filas = construir_filas_reportes(plazas_permitidas_usuario())
+    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_por_cliente.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -3479,12 +3545,16 @@ def reportes_clientes_mensual():
     db.close()
 
     plazas_permitidas = plazas_permitidas_usuario()
+    vendedor_forzado = vendedor_forzado_usuario()
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
         ckey = normalizar(r["razon_social"])
         plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         mensual = {}
         for mes, acc in mensual_por_cliente.get(ckey, {}).items():
@@ -5767,8 +5837,11 @@ def crm_seccion(slug):
             date.fromisoformat(fecha_fin_custom) if fecha_fin_custom else None,
         )
         plaza_filtro = request.args.get("plaza", "").strip()
-        vendedor_filtro = request.args.get("vendedor", "").strip()
+        vendedor_forzado = vendedor_forzado_usuario()
+        vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
         datos = construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario())
+        if vendedor_forzado:
+            datos["vendedores_opciones"] = [vendedor_forzado]
         return render_template(
             "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
@@ -5787,10 +5860,13 @@ def crm_seccion(slug):
         fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
         fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
         plaza_filtro = request.args.get("plaza", "").strip()
-        vendedor_filtro = request.args.get("vendedor", "").strip()
+        vendedor_forzado = vendedor_forzado_usuario()
+        vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
         datos = construir_inicio_crm(
             "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario()
         )
+        if vendedor_forzado:
+            datos["vendedores_opciones"] = [vendedor_forzado]
         scorecard = None
         scorecard_tipo = None
         scorecard_titulo = None
@@ -6767,6 +6843,8 @@ def _leer_formulario_tarea(db):
         error = "Captura el nombre del prospecto (máx. 100 caracteres)."
     elif not asunto:
         error = "Captura el asunto."
+    elif vendedor_forzado_usuario() and normalizar(vendedor) != normalizar(vendedor_forzado_usuario()):
+        error = "Solo puedes registrar tareas a tu propio nombre."
 
     datos = {
         "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": tipo_contacto,
@@ -6823,13 +6901,17 @@ def crm_tareas():
     fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
     fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
 
+    vendedor_forzado = vendedor_forzado_usuario()
     plaza_por_vendedor = {
         normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
     }
-    vendedores_opciones = sorted({
-        r["vendedor"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
-        if plazas_permitidas is None or r["plaza"] in plazas_permitidas
-    })
+    if vendedor_forzado:
+        vendedores_opciones = [vendedor_forzado]
+    else:
+        vendedores_opciones = sorted({
+            r["vendedor"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+            if plazas_permitidas is None or r["plaza"] in plazas_permitidas
+        })
 
     actividades = db.execute("SELECT id, nombre, meta_mensual FROM crm_actividades ORDER BY nombre").fetchall()
 
@@ -6859,7 +6941,8 @@ def crm_tareas():
             "autorizador_nombre": (f["autorizador_firma"] or nombre_desde_correo(f["autorizador_correo"])) if f["autorizada"] else None,
         }
         for f in filas
-        if plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas
+        if (plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas)
+        and (not vendedor_forzado or normalizar(f["vendedor"]) == normalizar(vendedor_forzado))
     ]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
@@ -6892,8 +6975,10 @@ def crm_tareas():
 @crm_required
 def crm_tarea_eliminar(tarea_id):
     db = get_db()
-    db.execute("DELETE FROM crm_tareas WHERE id = %s", (tarea_id,))
-    db.commit()
+    fila = db.execute("SELECT vendedor FROM crm_tareas WHERE id = %s", (tarea_id,)).fetchone()
+    if fila and usuario_puede_operar_tarea(fila["vendedor"]):
+        db.execute("DELETE FROM crm_tareas WHERE id = %s", (tarea_id,))
+        db.commit()
     db.close()
     return redirect(url_for(
         "crm_tareas", mes=request.form.get("mes", ""),
@@ -6905,6 +6990,14 @@ def crm_tarea_eliminar(tarea_id):
 @crm_required
 def crm_tarea_editar(tarea_id):
     db = get_db()
+    fila_actual = db.execute("SELECT vendedor FROM crm_tareas WHERE id = %s", (tarea_id,)).fetchone()
+    if not fila_actual or not usuario_puede_operar_tarea(fila_actual["vendedor"]):
+        db.close()
+        flash("No tienes permiso para editar esta tarea.")
+        return redirect(url_for(
+            "crm_tareas", mes=request.form.get("mes", ""),
+            mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        ))
     datos, error = _leer_formulario_tarea(db)
     if error:
         flash(error)
@@ -6951,6 +7044,10 @@ def construir_documento_minuta(tarea_id):
     """, (tarea_id,)).fetchone()
     db.close()
     if fila is None:
+        return None
+
+    vendedor_forzado = vendedor_forzado_usuario()
+    if vendedor_forzado and normalizar(fila["vendedor"]) != normalizar(vendedor_forzado):
         return None
 
     plazas_permitidas = plazas_permitidas_usuario()
@@ -7018,11 +7115,13 @@ def crm_tarea_autorizar(tarea_id):
         flash("No tienes permiso para autorizar minutas.")
         return redirect(url_for("crm_tarea_vista", tarea_id=tarea_id))
     db = get_db()
-    db.execute(
-        "UPDATE crm_tareas SET autorizada = true, autorizado_por_user_id = %s, autorizado_en = now() WHERE id = %s",
-        (session.get("usuario_id") or None, tarea_id),
-    )
-    db.commit()
+    fila = db.execute("SELECT vendedor FROM crm_tareas WHERE id = %s", (tarea_id,)).fetchone()
+    if fila and usuario_puede_operar_tarea(fila["vendedor"]):
+        db.execute(
+            "UPDATE crm_tareas SET autorizada = true, autorizado_por_user_id = %s, autorizado_en = now() WHERE id = %s",
+            (session.get("usuario_id") or None, tarea_id),
+        )
+        db.commit()
     db.close()
     return redirect(url_for("crm_tarea_vista", tarea_id=tarea_id))
 
@@ -7199,7 +7298,9 @@ def visibilidad_plazas():
         """
         SELECT u.id, u.email,
             coalesce(p.es_admin, false) AS es_admin,
-            coalesce(p.todas_las_plazas, false) AS todas_las_plazas
+            coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
+            coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
+            p.vendedor_asociado
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
@@ -7217,6 +7318,8 @@ def visibilidad_plazas():
             "email": u["email"],
             "es_admin": u["es_admin"],
             "todas_las_plazas": u["todas_las_plazas"],
+            "solo_su_informacion": u["solo_su_informacion"],
+            "vendedor_asociado": u["vendedor_asociado"],
             "plazas": plazas_por_usuario.get(str(u["id"]), []),
         })
     return render_template("visibilidad_plazas.html", filas=filas)
@@ -7234,16 +7337,25 @@ def visibilidad_plazas_editar(user_id):
     if request.method == "POST":
         todas_las_plazas = request.form.get("todas_las_plazas") == "on"
         plazas_seleccionadas = request.form.getlist("plazas")
+        solo_su_informacion = request.form.get("solo_su_informacion") == "on"
+        vendedor_asociado = request.form.get("vendedor_asociado", "").strip()
+        vendedores_validos = {v["vendedor"] for v in db.execute("SELECT vendedor FROM catalogo_vendedores")}
         if not todas_las_plazas and not plazas_seleccionadas:
             flash('Selecciona al menos una plaza, o marca "Todas las plazas".')
+        elif solo_su_informacion and vendedor_asociado not in vendedores_validos:
+            flash('Para marcar "Solo ver su información", elige un vendedor del catálogo.')
         else:
             db.execute(
                 """
-                INSERT INTO app_user_permissions (user_id, todas_las_plazas)
-                VALUES (%s, %s)
-                ON CONFLICT (user_id) DO UPDATE SET todas_las_plazas = EXCLUDED.todas_las_plazas, updated_at = now()
+                INSERT INTO app_user_permissions (user_id, todas_las_plazas, solo_su_informacion, vendedor_asociado)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    todas_las_plazas = EXCLUDED.todas_las_plazas,
+                    solo_su_informacion = EXCLUDED.solo_su_informacion,
+                    vendedor_asociado = EXCLUDED.vendedor_asociado,
+                    updated_at = now()
                 """,
-                (str(user_id), todas_las_plazas),
+                (str(user_id), todas_las_plazas, solo_su_informacion, vendedor_asociado or None),
             )
             db.execute("DELETE FROM app_user_plazas WHERE user_id = %s", (str(user_id),))
             if not todas_las_plazas:
@@ -7257,16 +7369,22 @@ def visibilidad_plazas_editar(user_id):
             return redirect(url_for("visibilidad_plazas"))
 
     plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (str(user_id),))}
-    todas_las_plazas_actual = db.execute(
-        "SELECT coalesce(todas_las_plazas, false) AS v FROM app_user_permissions WHERE user_id = %s", (str(user_id),)
+    permisos_actuales = db.execute(
+        "SELECT coalesce(todas_las_plazas, false) AS todas_las_plazas, "
+        "coalesce(solo_su_informacion, false) AS solo_su_informacion, vendedor_asociado "
+        "FROM app_user_permissions WHERE user_id = %s", (str(user_id),)
     ).fetchone()
+    vendedores_catalogo = [v["vendedor"] for v in db.execute("SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor")]
     db.close()
     return render_template(
         "visibilidad_plazas_editar.html",
         usuario=usuario,
         plazas_catalogo=get_plazas_catalogo(),
         plazas_actuales=plazas_actuales,
-        sin_restriccion=bool(todas_las_plazas_actual and todas_las_plazas_actual["v"]),
+        sin_restriccion=bool(permisos_actuales and permisos_actuales["todas_las_plazas"]),
+        solo_su_informacion_actual=bool(permisos_actuales and permisos_actuales["solo_su_informacion"]),
+        vendedor_asociado_actual=(permisos_actuales["vendedor_asociado"] if permisos_actuales else None),
+        vendedores_catalogo=vendedores_catalogo,
     )
 
 

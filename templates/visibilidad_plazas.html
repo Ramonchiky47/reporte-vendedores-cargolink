@@ -8,7 +8,7 @@
       {% if filas %}
       <table>
         <thead>
-          <tr><th>Usuario</th><th>Plazas visibles</th><th></th></tr>
+          <tr><th>Usuario</th><th>Plazas visibles</th><th>Solo su información</th><th></th></tr>
         </thead>
         <tbody>
           {% for fila in filas %}
@@ -21,6 +21,13 @@
                 {{ fila.plazas | join(", ") }}
               {% else %}
                 Ninguna
+              {% endif %}
+            </td>
+            <td>
+              {% if not fila.es_admin and fila.solo_su_informacion and fila.vendedor_asociado %}
+                Sí — {{ fila.vendedor_asociado }}
+              {% else %}
+                <span class="hint">No</span>
               {% endif %}
             </td>
             <td class="actions">

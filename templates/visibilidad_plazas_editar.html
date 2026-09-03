@@ -8,6 +8,9 @@
   .vp-plazas input[type="checkbox"] { width: auto; }
   #vp-todas { font-weight: 700; }
   .vp-plazas.deshabilitado { opacity: .45; pointer-events: none; }
+  .vp-solo-info { margin: 1.25rem 0; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
+  .vp-solo-info select { margin-top: .5rem; max-width: 320px; }
+  .vp-solo-info.deshabilitado select { opacity: .45; pointer-events: none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -30,6 +33,19 @@
           {% endfor %}
         </div>
 
+        <div class="vp-solo-info{% if not solo_su_informacion_actual %} deshabilitado{% endif %}" id="vp-solo-info">
+          <div class="field checkbox">
+            <label><input type="checkbox" id="vp-solo-su-info" name="solo_su_informacion" {% if solo_su_informacion_actual %}checked{% endif %}> Solo ver su información</label>
+          </div>
+          <p class="hint">Además de sus plazas, este usuario solo verá los datos del vendedor que elijas aquí (CRM, Dashboard, Venta diaria y Reportes) — nada del resto del equipo.</p>
+          <select name="vendedor_asociado" id="vp-vendedor-asociado">
+            <option value="">— Elige un vendedor —</option>
+            {% for v in vendedores_catalogo %}
+            <option value="{{ v }}" {% if v == vendedor_asociado_actual %}selected{% endif %}>{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
         <button type="submit">Aceptar</button>
         <a class="btn secondary" href="{{ url_for('visibilidad_plazas') }}">Cancelar</a>
       </form>
@@ -41,6 +57,12 @@
   const listaPlazas = document.getElementById("vp-lista-plazas");
   checkTodas.addEventListener("change", () => {
     listaPlazas.classList.toggle("deshabilitado", checkTodas.checked);
+  });
+
+  const checkSoloInfo = document.getElementById("vp-solo-su-info");
+  const bloqueSoloInfo = document.getElementById("vp-solo-info");
+  checkSoloInfo.addEventListener("change", () => {
+    bloqueSoloInfo.classList.toggle("deshabilitado", !checkSoloInfo.checked);
   });
 })();
 </script>
