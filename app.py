@@ -4468,7 +4468,9 @@ def construir_scorecard_grupo(resumenes):
     return {"filas": filas, "resultado": resultado, "roster": roster, "n_vendedores": len(scorecards)}
 
 
-def construir_tendencia_resultado(plaza_filtro, vendedor_filtro, mes_referencia, meses_atras, plazas_permitidas):
+def construir_tendencia_resultado(
+    plaza_filtro, vendedor_filtro, mes_referencia, meses_atras, plazas_permitidas, creador_extra_cotizaciones=None,
+):
     """Resultado del Scorecard (vendedor, grupo o compañía, según el mismo
     alcance que se esté viendo en Resultados) de los `meses_atras` meses
     más recientes, incluyendo `mes_referencia` — para graficar su
@@ -4486,7 +4488,8 @@ def construir_tendencia_resultado(plaza_filtro, vendedor_filtro, mes_referencia,
         fecha_inicio = date(anio, mes, 1)
         fecha_fin = date(anio, mes, calendar.monthrange(anio, mes)[1])
         datos_mes = construir_inicio_crm(
-            "mes", fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db
+            "mes", fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db,
+            creador_extra_cotizaciones=creador_extra_cotizaciones,
         )
         if vendedor_filtro:
             resumen = datos_mes["resumen_vendedor"].get(normalizar(vendedor_filtro))
@@ -4689,7 +4692,9 @@ def plazas_con_presupuesto(mes, plazas_permitidas=None):
     return sorted(plazas)
 
 
-def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None):
+def construir_detalle_resultados_mes(
+    fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
+):
     """Detalle a nivel cliente/cotización para CRM → Resultados, acotado al
     mes elegido: roster de clientes asociados con su venta del mes (mismo
     patrón que construir_clientes_crm, pero con cant_booking/profit DE ESE
@@ -4859,18 +4864,25 @@ def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vend
     clientes_nuevos_detalle.sort(key=lambda f: -f["profit"])
 
     # ---- Tablas de cotizaciones creadas el mes, por estatus actual ----
+    creador_extra_lower = creador_extra_cotizaciones.lower() if creador_extra_cotizaciones else None
     cotizaciones_por_estatus = {"vigente": [], "vencido": [], "ganada": [], "perdida": []}
     for r in cotizaciones_raw:
-        if r["cliente_folio"] is not None:
-            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
-        else:
-            plaza = None
-        if plazas_permitidas is not None and plaza not in plazas_permitidas:
-            continue
-        if plaza_filtro and plaza != plaza_filtro:
-            continue
+        es_creador_extra = bool(
+            creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
+        )
+        if not es_creador_extra:
+            if r["cliente_folio"] is not None:
+                plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+            else:
+                plaza = None
+            if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            if plaza_filtro and plaza != plaza_filtro:
+                continue
         identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
-        if vendedor_filtro_norm and normalizar(identidad_mostrar) != vendedor_filtro_norm:
+        if es_creador_extra and vendedor_filtro_norm:
+            identidad_mostrar = vendedor_filtro
+        elif vendedor_filtro_norm and normalizar(identidad_mostrar) != vendedor_filtro_norm:
             continue
         estatus = calcular_estatus_cotizacion(r["estatus"], r["fecha_vencimiento"], r["ganada_desde"] is not None, hoy)
         cotizaciones_por_estatus[estatus].append({
@@ -4929,7 +4941,10 @@ def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=N
     return hoy.replace(day=1), hoy
 
 
-def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, db=None):
+def construir_inicio_crm(
+    periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, db=None,
+    creador_extra_cotizaciones=None,
+):
     """Dashboard de CRM → Inicio: actividad de cotización (crm_cotizaciones)
     y de cierre (reporte_bookings) del periodo elegido, comparada contra el
     mismo tramo del periodo anterior; más una tendencia diaria fija de los
@@ -5118,22 +5133,35 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             continue
         filas_tarea.append({"d": d, "vendedor": vendedor, "actividad": normalizar(r["actividad"])})
 
+    creador_extra_lower = creador_extra_cotizaciones.lower() if creador_extra_cotizaciones else None
     filas_cot = []
     for r in cotizaciones:
         d = r["fecha_creacion"]
         if d is None:
             continue
-        if r["cliente_folio"] is not None:
-            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
-        else:
-            plaza = None
-        if plazas_permitidas is not None and plaza not in plazas_permitidas:
-            continue
-        if plaza_filtro and plaza != plaza_filtro:
-            continue
+        # Excepción puntual (Catálogos → Visualización de Plazas): las
+        # cotizaciones creadas por este correo cuentan como si fueran del
+        # vendedor filtrado (vendedor_filtro), sin importar el cliente al
+        # que pertenezcan ni su plaza — por eso se salta el filtro de
+        # plaza/identidad normal y se le reasigna la identidad.
+        es_creador_extra = bool(
+            creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
+        )
+        if not es_creador_extra:
+            if r["cliente_folio"] is not None:
+                plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+            else:
+                plaza = None
+            if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            if plaza_filtro and plaza != plaza_filtro:
+                continue
         identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
         identidad = normalizar(identidad_mostrar)
-        if vendedor_filtro_norm and identidad != vendedor_filtro_norm:
+        if es_creador_extra and vendedor_filtro_norm:
+            identidad_mostrar = vendedor_filtro
+            identidad = vendedor_filtro_norm
+        elif vendedor_filtro_norm and identidad != vendedor_filtro_norm:
             continue
         filas_cot.append({
             "d": d, "id": r["id"], "id_cotizacion": r["id_cotizacion"],
@@ -5961,7 +5989,10 @@ def crm_seccion(slug):
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
-        datos = construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario())
+        datos = construir_inicio_crm(
+            periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
+            creador_extra_cotizaciones=creador_extra_cotizaciones_usuario(),
+        )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
         return render_template(
@@ -5984,8 +6015,10 @@ def crm_seccion(slug):
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
+        creador_extra = creador_extra_cotizaciones_usuario()
         datos = construir_inicio_crm(
-            "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario()
+            "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
+            creador_extra_cotizaciones=creador_extra,
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
@@ -6013,12 +6046,14 @@ def crm_seccion(slug):
             # tendencia que graficar — construir_svg_tendencia regresa None
             # con menos de 2 meses, y la gráfica simplemente no aparece).
             puntos_tendencia = construir_tendencia_resultado(
-                plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas_usuario()
+                plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas_usuario(),
+                creador_extra_cotizaciones=creador_extra,
             )
             tendencia_svg = construir_svg_tendencia(puntos_tendencia)
 
         detalle = construir_detalle_resultados_mes(
-            fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario()
+            fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
+            creador_extra_cotizaciones=creador_extra,
         )
 
         return render_template(
