@@ -129,6 +129,10 @@ def init_db():
     (auth.users + public.app_user_permissions, mismo proyecto Supabase) en
     vez de una tabla de usuarios propia."""
     db = get_db()
+    # app_user_permissions la crea Seguimiento de Importaciones, no esta app;
+    # solo se le agrega esta columna (aditivo, no rompe su propio código) para
+    # el nuevo permiso de Autorizador de Minutas (CRM → Tareas).
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_autorizar_minutas boolean not null default false;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
@@ -413,6 +417,65 @@ def init_db():
             creado_en timestamptz not null default now()
         );
     """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_actividades (
+            id bigint generated always as identity primary key,
+            nombre text not null unique,
+            meta_mensual integer not null default 0,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    # Las dos actividades que ya usa el Scorecard de Resultados (Customer
+    # Facing Visit / Virtual Meeting) se siembran una sola vez con su meta
+    # actual; si el usuario luego edita la meta desde el catálogo, este
+    # ON CONFLICT DO NOTHING no la vuelve a pisar en el siguiente arranque.
+    db.execute("""
+        INSERT INTO crm_actividades (nombre, meta_mensual) VALUES
+            ('CUSTOMER FACING VISIT', 10),
+            ('VIRTUAL MEETING', 20)
+        ON CONFLICT (nombre) DO NOTHING;
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_tareas (
+            id bigint generated always as identity primary key,
+            actividad_id bigint not null references crm_actividades(id) on delete restrict,
+            vendedor text not null,
+            fecha date not null default current_date,
+            tipo_contacto text not null check (tipo_contacto in ('cliente', 'prospecto')),
+            cliente_folio integer references asignacion_de_clientes(folio) on delete set null,
+            prospecto_nombre text,
+            asistentes text not null default '[]',
+            asunto text,
+            acuerdos text,
+            responsables text,
+            fecha_compromiso date,
+            autorizada boolean not null default false,
+            autorizado_por_user_id uuid,
+            autorizado_en timestamptz,
+            creado_por_user_id uuid,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS responsables text;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS fecha_compromiso date;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizada boolean not null default false;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_por_user_id uuid;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_en timestamptz;")
+    # "asistentes" pasó de ser un texto libre + una "compañía" suelta a una
+    # lista de pares {nombre, compania} (JSON guardado como texto, igual
+    # que serie_json en otras vistas) para poder capturar varios asistentes
+    # de distintas compañías en una misma tarea. Migración de una sola vez:
+    # solo se dispara mientras exista la columna vieja "compania" (todavía
+    # sin datos reales en producción), para no volver a pisar "asistentes"
+    # en cada arranque una vez que ya haya tareas capturadas.
+    tiene_columna_compania_vieja = db.execute("""
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'crm_tareas' AND column_name = 'compania'
+    """).fetchone()
+    if tiene_columna_compania_vieja:
+        db.execute("ALTER TABLE crm_tareas DROP COLUMN compania;")
+        db.execute("ALTER TABLE crm_tareas DROP COLUMN IF EXISTS asistentes;")
+        db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS asistentes text NOT NULL DEFAULT '[]';")
     # Estatus de una cotización: 'vigente' y 'perdida' se guardan en esta
     # columna (perdida es la única acción manual real); "vencido" se
     # calcula al vuelo comparando fecha_vencimiento con hoy, y "ganada" se
@@ -1798,6 +1861,16 @@ def usuario_puede_ver_catalogos():
     return bool(session.get("puede_ver_catalogos"))
 
 
+def usuario_puede_autorizar_minutas():
+    """True = puede leer y autorizar una minuta de Tareas (CRM → Tareas)
+    para que cuente en el Scorecard de Resultados. Permiso individual
+    (app_user_permissions.puede_autorizar_minutas, otorgado desde
+    Catálogos → Permisos de Usuario); los administradores siempre pueden."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_autorizar_minutas"))
+
+
 def plazas_con_crm_habilitado():
     """Plazas a las que Catálogos → CRM por Plaza les dio acceso a CRM
     completo (todo usuario asignado a esa plaza en Visibilidad de Plazas
@@ -1866,6 +1939,7 @@ def inject_permisos():
         "puede_ver_catalogos": usuario_puede_ver_catalogos(),
         "puede_ver_crm": usuario_puede_ver_crm(),
         "puede_pricing": usuario_puede_pricing(),
+        "puede_autorizar_minutas": usuario_puede_autorizar_minutas(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
 
@@ -1895,7 +1969,8 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
-            coalesce(p.es_master, false) AS es_master
+            coalesce(p.es_master, false) AS es_master,
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -1963,6 +2038,7 @@ def login():
             session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
             session["puede_pricing"] = bool(fila["puede_pricing"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
+            session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
             destino = primera_pagina_permitida()
             return redirect(url_for(destino))
         flash("Correo o contraseña incorrectos.")
@@ -2030,7 +2106,8 @@ def sso():
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
-            coalesce(p.todas_las_plazas, false) AS todas_las_plazas
+            coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         WHERE lower(u.email) = lower(%(email)s)
@@ -2057,6 +2134,7 @@ def sso():
     session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
     session["puede_pricing"] = bool(fila["puede_pricing"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
+    session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
 
     destino = _siguiente_sso_valido(request.args.get("next")) or url_for(primera_pagina_permitida())
     return redirect(destino)
@@ -3449,9 +3527,6 @@ CRM_NAV = [
     {"grupo": "Administración", "texto": "Configuración", "slug": "configuracion"},
 ]
 
-# Datos de ejemplo para la vista de Tareas mientras se define la fuente de datos real.
-TAREAS_MOCK = []
-
 
 def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300):
     """Detalle a nivel booking para la pantalla CRM → Booking: mismos datos
@@ -4132,16 +4207,16 @@ SCORECARD_CATEGORIAS = [
         "nota_logrado": "Cotizaciones registradas en el mes (crm_cotizaciones).",
     },
     {
-        "grupo": "Activities", "etiqueta": "Customer Facing Visit", "peso": 10, "target_fijo": 10, "campo_logrado": None,
-        "es_moneda": False,
+        "grupo": "Activities", "etiqueta": "Customer Facing Visit", "peso": 10, "target_fijo": 10,
+        "campo_logrado": "customer_facing_visit", "es_moneda": False,
         "nota_target": "Fijo: 10 visitas por vendedor al mes.",
-        "nota_logrado": "Pendiente: todavía no existe el registro de visitas en Tareas.",
+        "nota_logrado": "Tareas de Customer Facing Visit del mes ya autorizadas por un Autorizador (CRM → Tareas).",
     },
     {
-        "grupo": "Activities", "etiqueta": "Virtual Meeting", "peso": 20, "target_fijo": 20, "campo_logrado": None,
-        "es_moneda": False,
+        "grupo": "Activities", "etiqueta": "Virtual Meeting", "peso": 20, "target_fijo": 20,
+        "campo_logrado": "virtual_meeting", "es_moneda": False,
         "nota_target": "Fijo: 20 reuniones virtuales por vendedor al mes.",
-        "nota_logrado": "Pendiente: todavía no existe el registro de reuniones en Tareas.",
+        "nota_logrado": "Tareas de Virtual Meeting del mes ya autorizadas por un Autorizador (CRM → Tareas).",
     },
 ]
 
@@ -4486,6 +4561,14 @@ def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vend
     ):
         clientes_con_cotizacion_mes.add(r["cliente_folio"])
 
+    clientes_con_tarea_mes = set()
+    for r in db.execute(
+        "SELECT DISTINCT cliente_folio FROM crm_tareas "
+        "WHERE tipo_contacto = 'cliente' AND cliente_folio IS NOT NULL AND fecha >= %s AND fecha <= %s",
+        (fecha_inicio.isoformat(), fecha_fin.isoformat()),
+    ):
+        clientes_con_tarea_mes.add(r["cliente_folio"])
+
     filas_asignacion = db.execute(
         "SELECT folio, razon_social, vendedor, desarrollador FROM asignacion_de_clientes "
         "WHERE vendedor IS NOT NULL ORDER BY razon_social"
@@ -4525,6 +4608,7 @@ def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vend
         ckey = normalizar(r["razon_social"])
         agg = booking_por_cliente_mes.get(ckey, {"cant": 0, "profit": 0.0})
         tiene_cotizacion = r["folio"] in clientes_con_cotizacion_mes
+        tiene_tarea = r["folio"] in clientes_con_tarea_mes
         meses_cliente = booking_por_cliente_por_mes.get(ckey, {})
         total_anio = sum(meses_cliente[m]["profit"] for m in meses_del_anio if m in meses_cliente)
         resumen_clientes.append({
@@ -4534,10 +4618,7 @@ def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vend
             "cant_booking": agg["cant"],
             "profit": round(agg["profit"], 2),
             "total_anio": round(total_anio, 2),
-            # "Tarea" queda pendiente: Tareas todavía no tiene una fuente de
-            # datos conectada (ver TAREAS_MOCK), así que activo solo mira
-            # booking y cotización del mes.
-            "activo": agg["cant"] > 0 or tiene_cotizacion,
+            "activo": agg["cant"] > 0 or tiene_cotizacion or tiene_tarea,
             "meses": [
                 {
                     "etiqueta": MESES_ES[m - 1][:3],
@@ -4765,6 +4846,14 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         "presupuesto_vendedor_todos", 60,
         "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL", db=db,
     )
+    tareas_autorizadas = consulta_sql_cacheada(
+        "tareas_autorizadas_todas", 30, """
+            SELECT t.fecha, t.vendedor, a.nombre AS actividad
+            FROM crm_tareas t
+            JOIN crm_actividades a ON a.id = t.actividad_id
+            WHERE t.autorizada = true
+        """, db=db,
+    )
     if db_propia:
         db.close()
 
@@ -4825,6 +4914,25 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             continue
         filas_cliente_nuevo.append({"d": d, "vendedor": vendedor})
 
+    # Achieved real de las categorías "Activities" del Scorecard (Customer
+    # Facing Visit / Virtual Meeting): solo cuentan las tareas ya
+    # autorizadas (ver crm_tarea_autorizar) — una tarea capturada pero sin
+    # autorizar no suma todavía.
+    filas_tarea = []
+    for r in tareas_autorizadas:
+        if r["fecha"] is None:
+            continue
+        d = r["fecha"]
+        vendedor = r["vendedor"] or "#N/D"
+        plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+            continue
+        filas_tarea.append({"d": d, "vendedor": vendedor, "actividad": normalizar(r["actividad"])})
+
     filas_cot = []
     for r in cotizaciones:
         d = r["fecha_creacion"]
@@ -4864,6 +4972,7 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
     clientes_nuevos_periodo = en_rango(filas_cliente_nuevo, fecha_inicio, fecha_fin)
     clientes_nuevos_anterior = en_rango(filas_cliente_nuevo, fecha_inicio_anterior, fecha_fin_anterior)
+    tareas_periodo = en_rango(filas_tarea, fecha_inicio, fecha_fin)
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
     # aplicado / cuándo se marcó perdida), no por cuándo se creó la
@@ -4913,7 +5022,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
         key = normalizar(f["vendedor"])
         fila = resumen_vendedor.setdefault(
             key, {"nombre": f["vendedor"], "plaza": f["plaza"], "bookings": 0, "venta": 0.0, "profit": 0.0,
-                  "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0}
+                  "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+                  "customer_facing_visit": 0, "virtual_meeting": 0}
         )
         fila["bookings"] += 1
         fila["venta"] += f["venta"]
@@ -4940,7 +5050,8 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             continue
         fila = resumen_vendedor.setdefault(
             key, {"nombre": cat["vendedor"] if cat else key, "plaza": plaza, "bookings": 0, "venta": 0.0,
-                  "profit": 0.0, "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0}
+                  "profit": 0.0, "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+                  "customer_facing_visit": 0, "virtual_meeting": 0}
         )
         fila["presupuesto"] = monto
 
@@ -4951,8 +5062,23 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
             resumen_vendedor[key] = {
                 "nombre": f["vendedor"], "plaza": plaza, "bookings": 0, "venta": 0.0, "profit": 0.0,
                 "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+                "customer_facing_visit": 0, "virtual_meeting": 0,
             }
         resumen_vendedor[key]["clientes_nuevos"] += 1
+
+    for f in tareas_periodo:
+        key = normalizar(f["vendedor"])
+        if key not in resumen_vendedor:
+            plaza = plaza_por_vendedor.get(key, "#N/D")
+            resumen_vendedor[key] = {
+                "nombre": f["vendedor"], "plaza": plaza, "bookings": 0, "venta": 0.0, "profit": 0.0,
+                "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+                "customer_facing_visit": 0, "virtual_meeting": 0,
+            }
+        if f["actividad"] == normalizar("CUSTOMER FACING VISIT"):
+            resumen_vendedor[key]["customer_facing_visit"] += 1
+        elif f["actividad"] == normalizar("VIRTUAL MEETING"):
+            resumen_vendedor[key]["virtual_meeting"] += 1
 
     # Actividad por desarrollador: mismo patrón que Comisiones — se agrupa
     # por reporte_bookings.ejecutivo (no por vendedor). El permiso de plaza
@@ -5708,11 +5834,6 @@ def crm_seccion(slug):
             scorecard=scorecard, scorecard_tipo=scorecard_tipo, scorecard_titulo=scorecard_titulo,
             tendencia_svg=tendencia_svg, detalle=detalle,
         )
-
-    if slug == "tareas":
-        hoy = datetime.now(TZ_LOCAL).date().isoformat()
-        tareas = [{**t, "vencida": t["fecha_compromiso"] < hoy} for t in TAREAS_MOCK]
-        return render_template("crm_tareas.html", nav_groups=nav_groups, titulo_pagina=item["texto"], tareas=tareas)
 
     if slug == "booking":
         hoy = datetime.now(TZ_LOCAL).date()
@@ -6552,6 +6673,381 @@ def crm_motivo_perdida_eliminar(motivo_id):
     return redirect(url_for("crm_motivos_perdida"))
 
 
+@app.route("/crm/actividades", methods=["GET", "POST"])
+@crm_required
+def crm_actividades():
+    """Catálogo de tipos de actividad que puede registrar un vendedor
+    (visitas, llamadas, juntas virtuales, etc.), cada una con su meta
+    mensual esperada. Es la base de la futura bitácora de Tareas y de
+    las categorías "Activities" del Scorecard de CRM → Resultados."""
+    db = get_db()
+    if request.method == "POST":
+        nombre = request.form.get("nombre", "").strip().upper()
+        meta_mensual = request.form.get("meta_mensual", type=int)
+        if not nombre or meta_mensual is None or meta_mensual < 0:
+            flash("Captura un nombre y una meta mensual válida (0 o más).")
+        else:
+            db.execute(
+                "INSERT INTO crm_actividades (nombre, meta_mensual) VALUES (%s, %s) "
+                "ON CONFLICT (nombre) DO NOTHING",
+                (nombre, meta_mensual),
+            )
+            db.commit()
+        db.close()
+        return redirect(url_for("crm_actividades"))
+
+    filas = db.execute("SELECT id, nombre, meta_mensual FROM crm_actividades ORDER BY nombre").fetchall()
+    db.close()
+    nav_groups = agrupar_nav_crm("actividades")
+    return render_template("crm_actividades.html", nav_groups=nav_groups, titulo_pagina="Actividades", actividades=filas)
+
+
+@app.route("/crm/actividades/<int:actividad_id>/editar", methods=["POST"])
+@crm_required
+def crm_actividad_editar(actividad_id):
+    db = get_db()
+    meta_mensual = request.form.get("meta_mensual", type=int)
+    if meta_mensual is None or meta_mensual < 0:
+        flash("La meta mensual debe ser un número válido (0 o más).")
+    else:
+        db.execute("UPDATE crm_actividades SET meta_mensual = %s WHERE id = %s", (meta_mensual, actividad_id))
+        db.commit()
+    db.close()
+    return redirect(url_for("crm_actividades"))
+
+
+@app.route("/crm/actividades/<int:actividad_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_actividad_eliminar(actividad_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_actividades WHERE id = %s", (actividad_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_actividades"))
+
+
+ACTIVIDADES_CON_BITACORA = {"VIRTUAL MEETING", "CUSTOMER FACING VISIT"}
+
+
+def _leer_formulario_tarea(db):
+    """Parsea y valida el formulario de Nueva/Editar tarea (mismos campos
+    en los dos casos). Regresa (datos, error): si error es None, `datos`
+    trae ya las llaves listas para el INSERT/UPDATE de crm_tareas."""
+    actividad_id = request.form.get("actividad_id", type=int)
+    vendedor = request.form.get("vendedor", "").strip()
+    fecha = fecha_valida_o_vacia(request.form.get("fecha", ""))
+    tipo_contacto = request.form.get("tipo_contacto", "").strip()
+    cliente_folio = request.form.get("cliente_folio", type=int)
+    prospecto_nombre = request.form.get("prospecto_nombre", "").strip()[:100]
+    nombres_asistentes = request.form.getlist("asistente_nombre[]")
+    companias_asistentes = request.form.getlist("asistente_compania[]")
+    asistentes = [
+        {"nombre": n.strip(), "compania": c.strip()}
+        for n, c in zip(nombres_asistentes, companias_asistentes)
+        if n.strip() or c.strip()
+    ]
+    asunto = request.form.get("asunto", "").strip()
+    acuerdos = request.form.get("acuerdos", "").strip()
+    responsables = request.form.get("responsables", "").strip()
+    fecha_compromiso = fecha_valida_o_vacia(request.form.get("fecha_compromiso", ""))
+
+    error = None
+    actividad = db.execute("SELECT id FROM crm_actividades WHERE id = %s", (actividad_id,)).fetchone() if actividad_id else None
+    if not actividad:
+        error = "Elige una actividad válida."
+    elif not vendedor:
+        error = "Elige un vendedor."
+    elif not fecha:
+        error = "Captura una fecha válida."
+    elif tipo_contacto not in ("cliente", "prospecto"):
+        error = "Indica si es Cliente o Prospecto."
+    elif tipo_contacto == "cliente" and not cliente_folio:
+        error = "Elige un cliente del catálogo."
+    elif tipo_contacto == "prospecto" and not prospecto_nombre:
+        error = "Captura el nombre del prospecto (máx. 100 caracteres)."
+    elif not asunto:
+        error = "Captura el asunto."
+
+    datos = {
+        "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": tipo_contacto,
+        "cliente_folio": cliente_folio if tipo_contacto == "cliente" else None,
+        "prospecto_nombre": prospecto_nombre if tipo_contacto == "prospecto" else None,
+        "asistentes": json.dumps(asistentes), "asunto": asunto, "acuerdos": acuerdos or None,
+        "responsables": responsables or None, "fecha_compromiso": fecha_compromiso or None,
+    }
+    return datos, error
+
+
+@app.route("/crm/tareas", methods=["GET", "POST"])
+@crm_required
+def crm_tareas():
+    """Bitácora de tareas (Virtual Meeting / Customer Facing Visit, por
+    ahora): quien registra elige Actividad y Vendedor, y para esas dos
+    actividades captura Cliente/Prospecto + Asistentes/Compañía + Asunto +
+    Acuerdos + Responsables + Fecha de compromiso. Una tarea recién creada
+    no cuenta para nada todavía: hace falta que alguien con el permiso
+    Autorizador de Minutas la lea (crm_tarea_vista) y la autorice
+    (crm_tarea_autorizar) para que sume en las categorías "Activities" del
+    Scorecard de CRM → Resultados (ver SCORECARD_CATEGORIAS y el conteo de
+    tareas_autorizadas en construir_inicio_crm)."""
+    db = get_db()
+    plazas_permitidas = plazas_permitidas_usuario()
+    nav_groups = agrupar_nav_crm("tareas")
+
+    if request.method == "POST":
+        datos, error = _leer_formulario_tarea(db)
+        if error:
+            flash(error)
+        else:
+            db.execute("""
+                INSERT INTO crm_tareas (
+                    actividad_id, vendedor, fecha, tipo_contacto, cliente_folio, prospecto_nombre,
+                    asistentes, asunto, acuerdos, responsables, fecha_compromiso, creado_por_user_id
+                ) VALUES (
+                    %(actividad_id)s, %(vendedor)s, %(fecha)s, %(tipo_contacto)s, %(cliente_folio)s, %(prospecto_nombre)s,
+                    %(asistentes)s, %(asunto)s, %(acuerdos)s, %(responsables)s, %(fecha_compromiso)s, %(creado_por_user_id)s
+                )
+            """, {**datos, "creado_por_user_id": session.get("usuario_id") or None})
+            db.commit()
+        db.close()
+        return redirect(url_for(
+            "crm_tareas", mes=request.form.get("mes", ""),
+            mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        ))
+
+    hoy = datetime.now(TZ_LOCAL).date()
+    mes_param = request.args.get("mes", "").strip()
+    mes_seleccionado = mes_param if mes_param in MESES_VALIDOS else hoy.strftime("%Y-%m")
+    mostrar_autorizadas = request.args.get("mostrar_autorizadas") == "1"
+    anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
+    fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
+    fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
+
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    vendedores_opciones = sorted({
+        r["vendedor"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+        if plazas_permitidas is None or r["plaza"] in plazas_permitidas
+    })
+
+    actividades = db.execute("SELECT id, nombre, meta_mensual FROM crm_actividades ORDER BY nombre").fetchall()
+
+    clientes_por_vendedor = {}
+    for r in db.execute("SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY razon_social"):
+        clientes_por_vendedor.setdefault(r["vendedor"], []).append({"folio": r["folio"], "nombre": r["razon_social"]})
+
+    filas = db.execute("""
+        SELECT t.id, t.actividad_id, t.fecha, t.vendedor, t.tipo_contacto, t.cliente_folio,
+               t.prospecto_nombre, t.asistentes,
+               t.asunto, t.acuerdos, t.responsables, t.fecha_compromiso, t.autorizada, t.autorizado_en,
+               a.nombre AS actividad, ac.razon_social AS cliente_nombre,
+               af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo
+        FROM crm_tareas t
+        JOIN crm_actividades a ON a.id = t.actividad_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = t.cliente_folio
+        LEFT JOIN crm_firmas af ON af.user_id = t.autorizado_por_user_id
+        LEFT JOIN auth.users au ON au.id = t.autorizado_por_user_id
+        WHERE t.fecha >= %s AND t.fecha <= %s
+        ORDER BY t.fecha DESC, t.id DESC
+    """, (fecha_inicio_mes.isoformat(), fecha_fin_mes.isoformat())).fetchall()
+    db.close()
+
+    tareas_todas = [
+        {
+            **f, "asistentes": json.loads(f["asistentes"] or "[]"),
+            "autorizador_nombre": (f["autorizador_firma"] or nombre_desde_correo(f["autorizador_correo"])) if f["autorizada"] else None,
+        }
+        for f in filas
+        if plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas
+    ]
+    autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
+    tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
+
+    tareas_editar = {
+        t["id"]: {
+            "actividad_id": t["actividad_id"], "vendedor": t["vendedor"], "fecha": t["fecha"].isoformat(),
+            "tipo_contacto": t["tipo_contacto"], "cliente_folio": t["cliente_folio"],
+            "prospecto_nombre": t["prospecto_nombre"], "asistentes": t["asistentes"],
+            "asunto": t["asunto"], "acuerdos": t["acuerdos"], "responsables": t["responsables"],
+            "fecha_compromiso": t["fecha_compromiso"].isoformat() if t["fecha_compromiso"] else "",
+        }
+        for t in tareas
+    }
+
+    return render_template(
+        "crm_tareas.html", nav_groups=nav_groups, titulo_pagina="Tareas",
+        mes_seleccionado=mes_seleccionado, opciones_mes=opciones_mes(), hoy_iso=hoy.isoformat(),
+        actividades=actividades, vendedores_opciones=vendedores_opciones,
+        clientes_por_vendedor_json=json_para_js(clientes_por_vendedor),
+        actividades_con_bitacora=sorted(ACTIVIDADES_CON_BITACORA),
+        puede_autorizar_minutas=usuario_puede_autorizar_minutas(),
+        tareas_editar_json=json_para_js(tareas_editar),
+        mostrar_autorizadas=mostrar_autorizadas, autorizadas_ocultas=autorizadas_ocultas,
+        tareas=tareas,
+    )
+
+
+@app.route("/crm/tareas/<int:tarea_id>/eliminar", methods=["POST"])
+@crm_required
+def crm_tarea_eliminar(tarea_id):
+    db = get_db()
+    db.execute("DELETE FROM crm_tareas WHERE id = %s", (tarea_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for(
+        "crm_tareas", mes=request.form.get("mes", ""),
+        mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+    ))
+
+
+@app.route("/crm/tareas/<int:tarea_id>/editar", methods=["POST"])
+@crm_required
+def crm_tarea_editar(tarea_id):
+    db = get_db()
+    datos, error = _leer_formulario_tarea(db)
+    if error:
+        flash(error)
+    else:
+        # Editar el contenido invalida una autorización previa: el
+        # Autorizador aprobó lo que leyó, no lo que se capture después.
+        db.execute("""
+            UPDATE crm_tareas SET
+                actividad_id = %(actividad_id)s, vendedor = %(vendedor)s, fecha = %(fecha)s,
+                tipo_contacto = %(tipo_contacto)s, cliente_folio = %(cliente_folio)s,
+                prospecto_nombre = %(prospecto_nombre)s, asistentes = %(asistentes)s, asunto = %(asunto)s,
+                acuerdos = %(acuerdos)s, responsables = %(responsables)s, fecha_compromiso = %(fecha_compromiso)s,
+                autorizada = false, autorizado_por_user_id = NULL, autorizado_en = NULL
+            WHERE id = %(tarea_id)s
+        """, {**datos, "tarea_id": tarea_id})
+        db.commit()
+    db.close()
+    return redirect(url_for(
+        "crm_tareas", mes=request.form.get("mes", ""),
+        mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+    ))
+
+
+def construir_documento_minuta(tarea_id):
+    """Arma la minuta imprimible de una tarea (Virtual Meeting / Customer
+    Facing Visit): quién asistió, de qué se habló y qué se acordó, más el
+    nombre de quien la elaboró — mismo criterio que las cotizaciones
+    (firma capturada en crm_firmas, si no un nombre derivado del correo
+    de login) para no dejarlo en blanco cuando no hay firma configurada."""
+    db = get_db()
+    fila = db.execute("""
+        SELECT t.*, a.nombre AS actividad, ac.razon_social AS cliente_nombre,
+               f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo,
+               cu.email AS creador_correo,
+               af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo
+        FROM crm_tareas t
+        JOIN crm_actividades a ON a.id = t.actividad_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = t.cliente_folio
+        LEFT JOIN crm_firmas f ON f.user_id = t.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
+        LEFT JOIN crm_firmas af ON af.user_id = t.autorizado_por_user_id
+        LEFT JOIN auth.users au ON au.id = t.autorizado_por_user_id
+        WHERE t.id = %s
+    """, (tarea_id,)).fetchone()
+    db.close()
+    if fila is None:
+        return None
+
+    plazas_permitidas = plazas_permitidas_usuario()
+    if plazas_permitidas is not None:
+        db2 = get_db()
+        plaza = db2.execute(
+            "SELECT plaza FROM catalogo_vendedores WHERE upper(trim(vendedor)) = upper(trim(%s))", (fila["vendedor"],)
+        ).fetchone()
+        db2.close()
+        if (plaza["plaza"] if plaza else None) not in plazas_permitidas:
+            return None
+
+    nombre_creador = fila["nombre_firma"] or nombre_desde_correo(fila["creador_correo"]) or fila["vendedor"]
+    contacto_nombre = fila["cliente_nombre"] if fila["tipo_contacto"] == "cliente" else fila["prospecto_nombre"]
+    nombre_autorizador = (
+        (fila["autorizador_firma"] or nombre_desde_correo(fila["autorizador_correo"])) if fila["autorizada"] else None
+    )
+
+    return {
+        "id": fila["id"],
+        "actividad": fila["actividad"],
+        "fecha": fila["fecha"],
+        "fecha_larga": fecha_larga_es(fila["fecha"]),
+        "vendedor": fila["vendedor"],
+        "tipo_contacto": fila["tipo_contacto"],
+        "contacto_nombre": contacto_nombre,
+        "asunto": fila["asunto"],
+        "acuerdos": fila["acuerdos"],
+        "responsables": fila["responsables"],
+        "fecha_compromiso": fila["fecha_compromiso"],
+        "fecha_compromiso_larga": fecha_larga_es(fila["fecha_compromiso"]) if fila["fecha_compromiso"] else None,
+        "asistentes": json.loads(fila["asistentes"] or "[]"),
+        "nombre_creador": nombre_creador,
+        "firma_puesto": fila["firma_puesto"],
+        "firma_telefono": fila["firma_telefono"],
+        "firma_correo": fila["firma_correo"] or fila["creador_correo"],
+        "autorizada": fila["autorizada"],
+        "autorizado_en": fila["autorizado_en"],
+        "nombre_autorizador": nombre_autorizador,
+    }
+
+
+@app.route("/crm/tareas/<int:tarea_id>/vista")
+@crm_required
+def crm_tarea_vista(tarea_id):
+    doc = construir_documento_minuta(tarea_id)
+    if doc is None:
+        flash("Tarea no encontrada.")
+        return redirect(url_for("crm_tareas"))
+    return render_template(
+        "crm_tarea_vista.html", doc=doc, tarea_id=tarea_id,
+        puede_autorizar_minutas=usuario_puede_autorizar_minutas(),
+    )
+
+
+@app.route("/crm/tareas/<int:tarea_id>/autorizar", methods=["POST"])
+@crm_required
+def crm_tarea_autorizar(tarea_id):
+    """Marca una minuta como autorizada: solo entonces cuenta para el
+    Achieved de Customer Facing Visit / Virtual Meeting en el Scorecard de
+    Resultados (ver el conteo de tareas_autorizadas en
+    construir_inicio_crm). Requiere el permiso Autorizador de Minutas
+    (Catálogos → Permisos de Usuario) — no basta con acceso a CRM."""
+    if not usuario_puede_autorizar_minutas():
+        flash("No tienes permiso para autorizar minutas.")
+        return redirect(url_for("crm_tarea_vista", tarea_id=tarea_id))
+    db = get_db()
+    db.execute(
+        "UPDATE crm_tareas SET autorizada = true, autorizado_por_user_id = %s, autorizado_en = now() WHERE id = %s",
+        (session.get("usuario_id") or None, tarea_id),
+    )
+    db.commit()
+    db.close()
+    return redirect(url_for("crm_tarea_vista", tarea_id=tarea_id))
+
+
+@app.route("/crm/tareas/<int:tarea_id>/pdf")
+@crm_required
+def crm_tarea_pdf(tarea_id):
+    doc = construir_documento_minuta(tarea_id)
+    if doc is None:
+        flash("Tarea no encontrada.")
+        return redirect(url_for("crm_tareas"))
+
+    html = render_template("crm_tarea_pdf.html", doc=doc)
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF de la minuta.")
+        return redirect(url_for("crm_tarea_vista", tarea_id=tarea_id))
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=True, download_name=f"Minuta_{doc['id']}_{doc['fecha']}.pdf",
+        mimetype="application/pdf",
+    )
+
+
 @app.route("/catalogos")
 @catalogos_required
 def catalogos():
@@ -6566,6 +7062,7 @@ PERMISOS_LISTA = [
     ("puede_pricing", "Pricing"),
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
+    ("puede_autorizar_minutas", "Autorizador de Minutas"),
 ]
 PERMISOS_TOGGLEABLES = {campo for campo, _ in PERMISOS_LISTA}
 
@@ -6584,7 +7081,8 @@ def permisos_actualizar():
             coalesce(p.puede_ver_reportes, true) AS puede_ver_reportes,
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
-            coalesce(p.puede_pricing, false) AS puede_pricing
+            coalesce(p.puede_pricing, false) AS puede_pricing,
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email

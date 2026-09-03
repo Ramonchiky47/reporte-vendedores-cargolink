@@ -1,0 +1,58 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .form-agregar-producto { display: flex; gap: 0.5rem; margin-bottom: 1rem; max-width: 520px; flex-wrap: wrap; }
+  .form-agregar-producto input[name="nombre"] { flex: 1; min-width: 200px; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem; }
+  .form-agregar-producto input[name="meta_mensual"] { width: 110px; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem; }
+  .form-agregar-producto button { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+  .tabla-scroll { overflow: auto; max-height: 70vh; border: 1px solid var(--borde); border-radius: 6px; max-width: 620px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; }
+  th { color: #555; background: #fafafa; position: sticky; top: 0; }
+  .form-meta { display: flex; gap: 0.4rem; align-items: center; }
+  .form-meta input { width: 80px; padding: 0.3rem 0.4rem; border: 1px solid var(--borde); border-radius: 4px; font: inherit; font-size: 0.82rem; }
+  .btn-guardar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: #1565c0; }
+  .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: #c0392b; }
+  .fila-acciones { display: flex; gap: 0.4rem; align-items: center; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Actividades</h2>
+  <p class="pista">Catálogo de tipos de actividad que puede registrar un vendedor (por ejemplo, visita a cliente o junta virtual), con su meta mensual esperada. Esta lista será la base del registro de Tareas y de las categorías "Activities" del Scorecard en CRM → Resultados.</p>
+  <form class="form-agregar-producto" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="nombre" placeholder="Nombre de la actividad" required>
+    <input type="number" name="meta_mensual" placeholder="Meta mensual" min="0" step="1" required>
+    <button type="submit">+ Agregar</button>
+  </form>
+  {% if actividades %}
+  <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Actividad</th><th>Meta mensual</th><th>Acciones</th></tr></thead>
+      <tbody>
+        {% for a in actividades %}
+        <tr>
+          <td>{{ a.nombre }}</td>
+          <td>
+            <form class="form-meta" method="post" action="{{ url_for('crm_actividad_editar', actividad_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="number" name="meta_mensual" value="{{ a.meta_mensual }}" min="0" step="1">
+              <button type="submit" class="btn-guardar">Guardar</button>
+            </form>
+          </td>
+          <td>
+            <div class="fila-acciones">
+              <form method="post" action="{{ url_for('crm_actividad_eliminar', actividad_id=a.id) }}" onsubmit="return confirm('¿Borrar esta actividad?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-borrar">Borrar</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="aviso-vacio">Todavía no hay actividades en el catálogo.</p>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: letter; margin: 2cm 2cm 2.2cm; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 7.5pt; }
+  table { border-collapse: collapse; width: 100%; }
+  .tabla-encabezado td { vertical-align: middle; border: none; padding: 0; }
+  table.logo-badge-tabla { width: 40px; }
+  .logo-badge {
+    width: 40px; height: 40px; border-radius: 8px; background-color: #7a1f2c; color: #ffffff;
+    text-align: center; vertical-align: middle; font-weight: bold; font-size: 8.5pt;
+  }
+  .marca-nombre p.marca-h1 { margin: 0; font-size: 12pt; font-weight: bold; letter-spacing: 0.3px; color: #1a1a1a; }
+  .marca-nombre p.marca-slogan { margin: 2px 0 0; font-size: 5.3pt; font-weight: bold; letter-spacing: 0.5px; color: #7a1f2c; text-transform: uppercase; }
+  .direccion-empresa p { margin: 1px 0; font-size: 6pt; font-weight: normal; color: #444444; }
+  .direccion-empresa p.destacado { color: #222222; font-weight: bold; }
+  table.regla-vino td { border-bottom: 2px solid #7a1f2c; padding: 0; font-size: 1px; line-height: 1px; }
+
+  table.eyebrow-tabla { margin: 10px 0 6px; }
+  table.eyebrow-tabla td { border: none; padding: 0; text-align: center; }
+  .eyebrow { font-size: 6.5pt; font-weight: bold; color: #555555; letter-spacing: 1px; }
+
+  table.caja-titulo { background-color: #fbe3e2; border-radius: 6px; margin: 10px 0 12px; }
+  table.caja-titulo > tr > td { padding: 14px 18px; border: none; }
+  .caja-titulo-nombre { font-size: 11.5pt; font-weight: bold; margin: 0 0 10px; letter-spacing: 0.3px; }
+  .caja-titulo p { margin: 1px 0; font-size: 7pt; }
+  .caja-titulo .der { text-align: right; }
+
+  .barra-vino td { background-color: #7a1f2c; color: #ffffff; font-size: 7.5pt; font-weight: bold; padding: 6px 10px; border: none; }
+
+  table.tabla-asistentes { table-layout: fixed; margin-bottom: 10px; }
+  table.tabla-asistentes th { background-color: #f4f4f4; text-align: left; padding: 5px 10px; font-size: 6.8pt; border: 1px solid #d0d0d0; }
+  table.tabla-asistentes td { padding: 5px 10px; border: 1px solid #d0d0d0; font-size: 7pt; }
+
+  .acuerdos-texto { font-size: 7pt; padding: 8px 2px 12px; line-height: 1.5; }
+  .fecha-compromiso { font-size: 7pt; margin: 0 0 8px; padding: 0 2px; }
+
+  .firma { margin: 12px 0 4px; font-size: 7pt; color: #333333; }
+  .firma p { margin: 2px 0; color: #444444; }
+  .firma .nombre { font-weight: bold; color: #222222; }
+</style>
+</head>
+<body>
+  <table class="tabla-encabezado">
+    <tr>
+      <td style="width:48px;"><table class="logo-badge-tabla"><tr><td class="logo-badge">AV2</td></tr></table></td>
+      <td class="marca-nombre">
+        <p class="marca-h1"><b>AV2 LOGISTICS</b></p>
+        <p class="marca-slogan">In logistics, your peace is our responsibility</p>
+      </td>
+      <td class="direccion-empresa" align="right">
+        <p class="destacado"><b>Av Universidad No. 1011, Col. Puerta de Hierro</b></p>
+        <p>CP 45116, Zapopan, Jalisco</p>
+        <p>R.F.C ALO171009TZ1</p>
+      </td>
+    </tr>
+  </table>
+  <table class="regla-vino"><tr><td>&nbsp;</td></tr></table>
+
+  <table class="eyebrow-tabla"><tr><td class="eyebrow">MINUTA DE REUNIÓN — {{ doc.actividad|upper }}</td></tr></table>
+
+  <table class="caja-titulo">
+    <tr>
+      <td colspan="2"><p class="caja-titulo-nombre"><b>{{ doc.asunto or "Minuta" }}</b></p></td>
+    </tr>
+    <tr>
+      <td style="width:55%;">
+        <p><b>{{ doc.contacto_nombre or "—" }}</b></p>
+        <p>{{ "Cliente" if doc.tipo_contacto == "cliente" else "Prospecto" }}</p>
+      </td>
+      <td class="der">
+        <p>Fecha: {{ doc.fecha_larga }}</p>
+        <p>Representante AV2 Logistics: <b>{{ doc.vendedor }}</b></p>
+        <p>Minuta elaborada por: <b>{{ doc.nombre_creador }}</b></p>
+      </td>
+    </tr>
+  </table>
+
+  <table class="barra-vino"><tr><td>ASISTENTES</td></tr></table>
+  <table class="tabla-asistentes">
+    <thead><tr><th style="width:55%;">Nombre</th><th style="width:45%;">Compañía</th></tr></thead>
+    <tbody>
+      {% for a in doc.asistentes %}
+      <tr><td>{{ a.nombre }}</td><td>{{ a.compania or '—' }}</td></tr>
+      {% endfor %}
+      {% if not doc.asistentes %}
+      <tr><td colspan="2" style="text-align:center; color:#999999;">Sin asistentes capturados</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <table class="barra-vino"><tr><td>ACUERDOS</td></tr></table>
+  <p class="acuerdos-texto">{{ doc.acuerdos|nl2br if doc.acuerdos else "Sin acuerdos capturados." }}</p>
+
+  <table class="barra-vino"><tr><td>RESPONSABLES</td></tr></table>
+  <p class="acuerdos-texto">{{ doc.responsables|nl2br if doc.responsables else "Sin responsables capturados." }}</p>
+  {% if doc.fecha_compromiso_larga %}
+  <p class="fecha-compromiso">Fecha de compromiso: <b>{{ doc.fecha_compromiso_larga }}</b></p>
+  {% endif %}
+
+  <div class="firma">
+    <p>¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
+    <p class="nombre">{{ doc.nombre_creador }}</p>
+    {% if doc.firma_puesto %}<p>{{ doc.firma_puesto }}</p>{% endif %}
+    {% if doc.firma_telefono %}<p>Tel {{ doc.firma_telefono }}</p>{% endif %}
+    {% if doc.firma_correo %}<p>Correo: {{ doc.firma_correo }}</p>{% endif %}
+  </div>
+</body>
+</html>

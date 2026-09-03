@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Minuta {{ doc.id }} — {{ doc.asunto or "Reunión" }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --vino: #7a1f2c; --borde: #d0d0d0; --fuente: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--fuente); color: #222; background: #f1f1f1; -webkit-font-smoothing: antialiased; }
+  .hoja { max-width: 820px; margin: 1.5rem auto; background: #fff; padding: 2rem 2.5rem 3rem; box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+
+  .barra-acciones { max-width: 820px; margin: 0 auto; padding: 0.75rem 2.5rem 0; display: flex; justify-content: flex-end; gap: 0.6rem; }
+  .barra-acciones a, .barra-acciones button {
+    padding: 0.45rem 0.9rem; border-radius: 6px; font-size: 0.85rem; font-family: system-ui, sans-serif;
+    border: 1px solid var(--borde); background: #fff; color: #333; cursor: pointer; text-decoration: none;
+  }
+  .barra-acciones .btn-pdf { background: var(--vino); color: #fff; border-color: var(--vino); }
+
+  .encabezado {
+    display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+    padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 2px solid var(--vino);
+  }
+  .marca { display: flex; align-items: center; gap: 0.85rem; }
+  .logo-badge {
+    width: 52px; height: 52px; border-radius: 12px; background: var(--vino); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.05rem;
+    letter-spacing: 0.02em; flex-shrink: 0;
+  }
+  .marca-nombre h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; color: #1a1a1a; }
+  .marca-nombre p { margin: 0.2rem 0 0; font-size: 0.68rem; font-weight: 600; color: var(--vino); letter-spacing: 0.06em; text-transform: uppercase; }
+  .direccion-empresa { text-align: right; font-size: 0.75rem; color: #555; line-height: 1.5; }
+  .direccion-empresa strong { color: #222; }
+
+  .eyebrow { text-align: center; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; margin: 1.2rem 0 0.6rem; color: #555; }
+
+  .caja-titulo { background: #fbe3e2; border-radius: 10px; padding: 1.3rem 1.6rem; margin: 1rem 0 1.4rem; }
+  .caja-titulo h2 { margin: 0 0 1rem; font-size: 1.4rem; font-weight: 700; color: #222; letter-spacing: 0.01em; text-wrap: balance; }
+  .caja-titulo .fila-datos { display: flex; justify-content: space-between; gap: 2rem; font-size: 0.85rem; }
+  .caja-titulo .fila-datos > div { flex: 1; }
+  .caja-titulo .fila-datos p { margin: 0.15rem 0; }
+  .caja-titulo .fila-datos .der { text-align: right; }
+  .caja-titulo strong { font-weight: 700; }
+  .caja-titulo .etiqueta-contacto { font-size: 0.72rem; color: #7a1f2c; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .barra-vino {
+    background: var(--vino); color: #fff; padding: 0.5rem 1rem; font-size: 0.85rem; font-weight: 700;
+    margin: 1.1rem 0 0.8rem; border-radius: 3px; letter-spacing: 0.03em;
+  }
+
+  table.tabla-asistentes { width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; }
+  table.tabla-asistentes th { background: #f4f4f4; text-align: left; padding: 0.5rem 0.75rem; font-size: 0.75rem; border: 1px solid var(--borde); color: #444; }
+  table.tabla-asistentes td { padding: 0.5rem 0.75rem; font-size: 0.85rem; border: 1px solid var(--borde); }
+  .aviso-vacio-minuta { color: #999; font-size: 0.85rem; padding: 0.6rem 0; }
+
+  .acuerdos-texto { font-size: 0.88rem; line-height: 1.6; color: #333; white-space: pre-line; }
+
+  .fecha-compromiso { font-size: 0.85rem; margin: 0.6rem 0 0; }
+
+  .panel-autorizacion { margin: 1.4rem 0; padding: 1rem 1.3rem; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .panel-autorizacion.pendiente { background: #f5ead4; }
+  .panel-autorizacion.autorizada { background: #e1f0e7; }
+  .panel-autorizacion .estado { margin: 0; font-size: 0.85rem; }
+  .panel-autorizacion.pendiente .estado { color: #a8720f; }
+  .panel-autorizacion.autorizada .estado { color: #217a55; }
+  .btn-autorizar { padding: 0.5rem 1.1rem; border: none; border-radius: 6px; background: #217a55; color: #fff; font-weight: 700; cursor: pointer; font-size: 0.85rem; }
+
+  .firma { margin: 1.4rem 0 0.4rem; font-size: 0.85rem; color: #333; }
+  .firma .pregunta { margin: 0 0 0.3rem; }
+  .firma p { margin: 0.2rem 0; color: #444; }
+  .firma .nombre { font-weight: 700; color: #222; }
+
+  @media print {
+    body { background: #fff; }
+    .hoja { box-shadow: none; margin: 0; max-width: none; }
+    .barra-acciones { display: none; }
+    .panel-autorizacion { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="barra-acciones">
+    <a href="{{ url_for('crm_tareas') }}">&larr; Volver</a>
+    <button type="button" onclick="window.print()">Imprimir</button>
+    <a class="btn-pdf" href="{{ url_for('crm_tarea_pdf', tarea_id=tarea_id) }}">Descargar PDF</a>
+  </div>
+
+  <div class="hoja">
+    <div class="encabezado">
+      <div class="marca">
+        <div class="logo-badge">AV2</div>
+        <div class="marca-nombre">
+          <h1>AV2 LOGISTICS</h1>
+          <p>In logistics, your peace is our responsibility</p>
+        </div>
+      </div>
+      <div class="direccion-empresa">
+        <strong>Av Universidad No. 1011, Col. Puerta de Hierro</strong><br>
+        CP 45116, Zapopan, Jalisco<br>
+        R.F.C ALO171009TZ1
+      </div>
+    </div>
+
+    <p class="eyebrow">MINUTA DE REUNIÓN — {{ doc.actividad|upper }}</p>
+
+    <div class="caja-titulo">
+      <h2>{{ doc.asunto or "Minuta" }}</h2>
+      <div class="fila-datos">
+        <div class="izq">
+          <p class="etiqueta-contacto">{{ "Cliente" if doc.tipo_contacto == "cliente" else "Prospecto" }}</p>
+          <p><strong>{{ doc.contacto_nombre or "—" }}</strong></p>
+        </div>
+        <div class="der">
+          <p>Fecha: {{ doc.fecha_larga }}</p>
+          <p>Representante AV2 Logistics: <strong>{{ doc.vendedor }}</strong></p>
+          <p>Minuta elaborada por: <strong>{{ doc.nombre_creador }}</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="barra-vino">ASISTENTES</div>
+    {% if doc.asistentes %}
+    <table class="tabla-asistentes">
+      <thead><tr><th style="width:55%;">Nombre</th><th style="width:45%;">Compañía</th></tr></thead>
+      <tbody>
+        {% for a in doc.asistentes %}
+        <tr><td>{{ a.nombre }}</td><td>{{ a.compania or '—' }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="aviso-vacio-minuta">Sin asistentes capturados.</p>
+    {% endif %}
+
+    <div class="barra-vino">ACUERDOS</div>
+    <p class="acuerdos-texto">{{ doc.acuerdos if doc.acuerdos else "Sin acuerdos capturados." }}</p>
+
+    <div class="barra-vino">RESPONSABLES</div>
+    <p class="acuerdos-texto">{{ doc.responsables if doc.responsables else "Sin responsables capturados." }}</p>
+    {% if doc.fecha_compromiso_larga %}
+    <p class="fecha-compromiso">Fecha de compromiso: <strong>{{ doc.fecha_compromiso_larga }}</strong></p>
+    {% endif %}
+
+    <div class="panel-autorizacion {{ 'autorizada' if doc.autorizada else 'pendiente' }}">
+      {% if doc.autorizada %}
+        <p class="estado">✓ Minuta autorizada por <strong>{{ doc.nombre_autorizador }}</strong>{% if doc.autorizado_en %} el {{ doc.autorizado_en.strftime('%d/%m/%Y %H:%M') }}{% endif %} — ya cuenta en el Scorecard.</p>
+      {% else %}
+        <p class="estado">Pendiente de autorización — todavía no cuenta en el Scorecard.</p>
+        {% if puede_autorizar_minutas %}
+        <form method="post" action="{{ url_for('crm_tarea_autorizar', tarea_id=tarea_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn-autorizar">Autorizar minuta</button>
+        </form>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="firma">
+      <p class="pregunta">¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
+      <p class="nombre">{{ doc.nombre_creador }}</p>
+      {% if doc.firma_puesto %}<p>{{ doc.firma_puesto }}</p>{% endif %}
+      {% if doc.firma_telefono %}<p>Tel {{ doc.firma_telefono }}</p>{% endif %}
+      {% if doc.firma_correo %}<p>Correo: {{ doc.firma_correo }}</p>{% endif %}
+    </div>
+  </div>
+</body>
+</html>

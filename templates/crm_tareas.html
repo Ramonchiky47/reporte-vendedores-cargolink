@@ -1,65 +1,336 @@
 {% extends "crm_layout.html" %}
 {% block extra_style %}
-  .tabs-catalogo { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
-  .tab-catalogo { background: #fff; color: inherit; border: 1px solid var(--borde); padding: 0.3rem 0.7rem; font-size: 0.85rem; border-radius: 4px; cursor: pointer; }
-  .tab-catalogo.activo { background: #1565c0; color: #fff; border-color: #1565c0; }
-  .acciones-form { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .filtro-mes { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+  .filtro-mes select { padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .filtro-check { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; margin-left: 0.5rem; cursor: pointer; }
+  .aviso-ocultas { font-size: 0.78rem; color: #a8720f; }
+  .acciones-form { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; }
   .acciones-form button { padding: 0.4rem 0.9rem; border: none; border-radius: 4px; cursor: pointer; font: inherit; font-size: 0.85rem; background: #1565c0; color: #fff; }
+
+  .panel-nueva-tarea { display: none; background: #fafafa; border: 1px solid var(--borde); border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; max-width: 760px; }
+  .panel-nueva-tarea.abierto { display: block; }
+  .panel-titulo { margin: 0 0 0.8rem; font-size: 1rem; }
+  .campos-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem 1rem; }
+  .campo { display: flex; flex-direction: column; gap: 0.25rem; }
+  .campo--ancho { grid-column: 1 / -1; }
+  .campo label { font-size: 0.78rem; color: #555; font-weight: 600; }
+  .campo input, .campo select, .campo textarea { padding: 0.45rem 0.55rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .campo textarea { resize: vertical; min-height: 4.2rem; }
+  .campo-radio { display: flex; gap: 1.2rem; align-items: center; padding-top: 0.15rem; }
+  .campo-radio label { font-weight: 400; font-size: 0.85rem; color: inherit; display: flex; align-items: center; gap: 0.35rem; }
+  .bloque-bitacora { display: none; grid-column: 1 / -1; border-top: 1px dashed var(--borde); margin-top: 0.3rem; padding-top: 0.7rem; }
+  .bloque-bitacora.visible { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem 1rem; }
+  .aviso-sin-bitacora { grid-column: 1 / -1; color: #757575; font-size: 0.8rem; }
+  #lista-asistentes { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.4rem; }
+  .fila-asistente { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: center; }
+  .fila-asistente input { padding: 0.45rem 0.55rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .btn-quitar-asistente { width: 1.8rem; height: 1.8rem; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: #757575; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .btn-agregar-asistente { align-self: flex-start; padding: 0.35rem 0.7rem; border: 1px dashed var(--borde); border-radius: 6px; background: #fff; color: #1565c0; cursor: pointer; font: inherit; font-size: 0.8rem; }
+  .form-acciones { grid-column: 1 / -1; display: flex; gap: 0.5rem; margin-top: 0.3rem; }
+  .form-acciones button { padding: 0.5rem 1.1rem; border: none; border-radius: 6px; cursor: pointer; font: inherit; font-size: 0.85rem; }
+  .btn-guardar-tarea { background: #1565c0; color: #fff; }
+  .btn-cancelar-tarea { background: #e0e0e0; color: #333; }
+
   .tabla-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.85rem; white-space: nowrap; }
-  th { color: #555; background: #fafafa; }
-  tr.fila-vencida, tr.fila-vencida td { background: rgba(192, 57, 43, 0.6) !important; color: #fff; }
-  td.acciones { display: flex; gap: 0.35rem; white-space: nowrap; }
-  .btn-editar, .btn-borrar, .btn-listo { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; }
-  .btn-listo { background: var(--exito); }
-  .btn-editar { background: var(--editar); }
-  .btn-borrar { background: var(--peligro); }
-  .aviso-mock { color: #757575; font-size: 0.78rem; margin: -0.4rem 0 0.9rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--borde); font-size: 0.82rem; }
+  th { color: #555; background: #fafafa; white-space: nowrap; }
+  td.col-acuerdos { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.col-contacto { white-space: nowrap; }
+  .badge-autorizada { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: #e1f0e7; color: #217a55; }
+  .badge-pendiente { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: #f5ead4; color: #a8720f; }
+  td.acciones { display: flex; gap: 0.4rem; align-items: center; white-space: nowrap; }
+  .btn-minuta { padding: 0.3rem 0.6rem; font-size: 0.78rem; border-radius: 4px; text-decoration: none; color: #fff; background: #7a1f2c; }
+  .btn-editar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: var(--editar); }
+  .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: var(--peligro); }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
 {% endblock %}
 {% block crm_content %}
-  <div class="tabs-catalogo">
-    <button type="button" class="tab-catalogo activo">Tareas</button>
-    <button type="button" class="tab-catalogo">Calendario</button>
-  </div>
-
   <h2>Tareas</h2>
-  <p class="pista">Base de datos de pendientes: cada uno tiene un ID único, un nombre, una fecha de compromiso y una o varias actividades asociadas.</p>
-  <p class="aviso-mock">Datos de ejemplo — todavía sin conectar a una fuente real.</p>
+  <p class="pista">Bitácora de actividades (Virtual Meeting / Customer Facing Visit) de cada vendedor. Alimenta las categorías "Activities" del Scorecard en CRM → Resultados.</p>
+
+  <form class="filtro-mes" method="get">
+    <label for="filtro-mes-tareas">Mes:</label>
+    <select id="filtro-mes-tareas" name="mes" onchange="this.form.submit()">
+      {% for op in opciones_mes %}
+      <option value="{{ op.value }}" {% if op.value == mes_seleccionado %}selected{% endif %}>{{ op.label }}</option>
+      {% endfor %}
+    </select>
+    <label class="filtro-check">
+      <input type="checkbox" name="mostrar_autorizadas" value="1" {% if mostrar_autorizadas %}checked{% endif %} onchange="this.form.submit()">
+      Mostrar autorizadas
+    </label>
+    {% if not mostrar_autorizadas and autorizadas_ocultas %}
+    <span class="aviso-ocultas">{{ autorizadas_ocultas }} autorizada{{ 's' if autorizadas_ocultas != 1 else '' }} oculta{{ 's' if autorizadas_ocultas != 1 else '' }} este mes</span>
+    {% endif %}
+  </form>
 
   <div class="acciones-form">
-    <button type="button">+ Agregar tarea</button>
-    <button type="button">Sincronizar con Google</button>
+    <button type="button" id="btn-nueva-tarea">+ Nueva tarea</button>
   </div>
 
+  <form class="panel-nueva-tarea" id="panel-nueva-tarea" method="post" action="{{ url_for('crm_tareas') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="mes" value="{{ mes_seleccionado }}">
+    <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
+    <h3 id="panel-titulo" class="panel-titulo">Nueva tarea</h3>
+    <div class="campos-grid">
+      <div class="campo">
+        <label for="actividad_id">Actividad</label>
+        <select id="actividad_id" name="actividad_id" required>
+          <option value="">— Elige una —</option>
+          {% for a in actividades %}
+          <option value="{{ a.id }}" data-nombre="{{ a.nombre }}">{{ a.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="vendedor">Vendedor</label>
+        <select id="vendedor" name="vendedor" required>
+          <option value="">— Elige uno —</option>
+          {% for v in vendedores_opciones %}
+          <option value="{{ v }}">{{ v }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha" name="fecha" value="{{ hoy_iso }}" required>
+      </div>
+
+      <div class="bloque-bitacora" id="bloque-bitacora">
+        <div class="campo campo--ancho">
+          <label>¿Cliente o Prospecto?</label>
+          <div class="campo-radio">
+            <label><input type="radio" name="tipo_contacto" value="cliente" checked> Cliente</label>
+            <label><input type="radio" name="tipo_contacto" value="prospecto"> Prospecto</label>
+          </div>
+        </div>
+        <div class="campo" id="campo-cliente">
+          <label for="cliente_folio">Cliente</label>
+          <select id="cliente_folio" name="cliente_folio">
+            <option value="">— Elige un vendedor primero —</option>
+          </select>
+        </div>
+        <div class="campo" id="campo-prospecto" style="display:none;">
+          <label for="prospecto_nombre">Prospecto</label>
+          <input type="text" id="prospecto_nombre" name="prospecto_nombre" maxlength="100" placeholder="Nombre del prospecto (máx. 100 caracteres)">
+        </div>
+        <div class="campo campo--ancho">
+          <label>Asistentes y Compañía</label>
+          <div id="lista-asistentes">
+            <div class="fila-asistente">
+              <input type="text" name="asistente_nombre[]" placeholder="Asistente" autocomplete="off">
+              <input type="text" name="asistente_compania[]" placeholder="Compañía" autocomplete="off">
+              <button type="button" class="btn-quitar-asistente" title="Quitar">×</button>
+            </div>
+          </div>
+          <button type="button" id="btn-agregar-asistente" class="btn-agregar-asistente">+ Agregar asistente</button>
+        </div>
+        <div class="campo campo--ancho">
+          <label for="asunto">Asunto</label>
+          <input type="text" id="asunto" name="asunto" required>
+        </div>
+        <div class="campo campo--ancho">
+          <label for="acuerdos">Acuerdos</label>
+          <textarea id="acuerdos" name="acuerdos"></textarea>
+        </div>
+        <div class="campo campo--ancho">
+          <label for="responsables">Responsables</label>
+          <textarea id="responsables" name="responsables" placeholder="Quién queda a cargo de cada acuerdo"></textarea>
+        </div>
+        <div class="campo">
+          <label for="fecha_compromiso">Fecha de compromiso</label>
+          <input type="date" id="fecha_compromiso" name="fecha_compromiso">
+        </div>
+      </div>
+      <p class="aviso-sin-bitacora" id="aviso-sin-bitacora">Esta actividad no requiere el detalle de Cliente/Prospecto — solo Vendedor y Fecha.</p>
+
+      <div class="form-acciones">
+        <button type="submit" class="btn-guardar-tarea">Guardar</button>
+        <button type="button" class="btn-cancelar-tarea" id="btn-cancelar-tarea">Cancelar</button>
+      </div>
+    </div>
+  </form>
+
+  {% if tareas %}
   <div class="tabla-scroll">
-    <table class="tabla-ordenable">
+    <table>
       <thead>
         <tr>
-          <th data-campo="id" data-tipo="num">ID</th><th data-campo="nombre">Nombre</th>
-          <th data-campo="creado_en">Fecha de creación</th><th data-campo="fecha_compromiso">Fecha de compromiso</th>
-          <th data-campo="actividad">Actividades</th><th>Acciones</th>
+          <th>Fecha</th><th>Vendedor</th><th>Actividad</th><th>Cliente / Prospecto</th>
+          <th>Asunto</th><th>Asistentes / Compañía</th><th>Acuerdos</th><th>Compromiso</th><th>Estatus</th><th>Acciones</th>
         </tr>
       </thead>
       <tbody>
         {% for t in tareas %}
-        <tr {% if t.vencida %}class="fila-vencida"{% endif %}>
-          <td>{{ t.id }}</td>
-          <td>{{ t.nombre }}</td>
-          <td>{{ t.creado_en }}</td>
-          <td>{{ t.fecha_compromiso }}</td>
+        <tr>
+          <td>{{ t.fecha }}</td>
+          <td>{{ t.vendedor }}</td>
           <td>{{ t.actividad }}</td>
+          <td class="col-contacto">{{ t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre }}</td>
+          <td>{{ t.asunto }}</td>
+          <td>
+            {% if t.asistentes %}
+              {% for a in t.asistentes %}
+                <div>{{ a.nombre }}{% if a.compania %} <span style="color:#757575;">({{ a.compania }})</span>{% endif %}</div>
+              {% endfor %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="col-acuerdos" title="{{ t.acuerdos or '' }}">{{ t.acuerdos or '—' }}</td>
+          <td>{{ t.fecha_compromiso or '—' }}</td>
+          <td>
+            {% if t.autorizada %}
+              <span class="badge-autorizada" title="Autorizada por {{ t.autorizador_nombre }}">Autorizada</span>
+            {% else %}
+              <span class="badge-pendiente">Pendiente</span>
+            {% endif %}
+          </td>
           <td class="acciones">
-            <button class="btn-listo" type="button">Listo</button>
-            <button class="btn-editar" type="button">Editar</button>
-            <button class="btn-borrar" type="button">Borrar</button>
+            <a class="btn-minuta" href="{{ url_for('crm_tarea_vista', tarea_id=t.id) }}">Minuta</a>
+            <button type="button" class="btn-editar" onclick="abrirEdicionTarea({{ t.id }})">Editar</button>
+            <form method="post" action="{{ url_for('crm_tarea_eliminar', tarea_id=t.id) }}" onsubmit="return confirm('¿Borrar esta tarea?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="mes" value="{{ mes_seleccionado }}">
+              <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
+              <button type="submit" class="btn-borrar">Borrar</button>
+            </form>
           </td>
         </tr>
         {% endfor %}
-        {% if not tareas %}
-        <tr><td colspan="6" style="text-align:center; color:#757575; white-space:normal;">Sin tareas registradas.</td></tr>
-        {% endif %}
       </tbody>
     </table>
   </div>
+  {% else %}
+    <p class="aviso-vacio">Sin tareas registradas este mes.</p>
+  {% endif %}
+{% endblock %}
+{% block extra_script %}
+  <script>
+    const CLIENTES_POR_VENDEDOR = {{ clientes_por_vendedor_json|safe }};
+    const ACTIVIDADES_CON_BITACORA = {{ actividades_con_bitacora|tojson }};
+    const TAREAS_EDITAR = {{ tareas_editar_json|safe }};
+
+    const panel = document.getElementById('panel-nueva-tarea');
+    const panelTitulo = document.getElementById('panel-titulo');
+    const URL_CREAR = panel.getAttribute('action');
+
+    document.getElementById('btn-nueva-tarea').addEventListener('click', () => {
+      resetPanelACrear();
+      panel.classList.add('abierto');
+    });
+    document.getElementById('btn-cancelar-tarea').addEventListener('click', () => {
+      panel.classList.remove('abierto');
+      resetPanelACrear();
+    });
+
+    const selActividad = document.getElementById('actividad_id');
+    const bloqueBitacora = document.getElementById('bloque-bitacora');
+    const avisoSinBitacora = document.getElementById('aviso-sin-bitacora');
+    function actualizarBitacora() {
+      const opt = selActividad.options[selActividad.selectedIndex];
+      const nombre = opt ? (opt.dataset.nombre || '') : '';
+      const requiereBitacora = ACTIVIDADES_CON_BITACORA.includes(nombre);
+      bloqueBitacora.classList.toggle('visible', requiereBitacora);
+      avisoSinBitacora.style.display = requiereBitacora ? 'none' : '';
+      document.getElementById('asunto').required = requiereBitacora;
+    }
+    selActividad.addEventListener('change', actualizarBitacora);
+    actualizarBitacora();
+
+    const selVendedor = document.getElementById('vendedor');
+    const selCliente = document.getElementById('cliente_folio');
+    function actualizarClientes() {
+      const clientes = CLIENTES_POR_VENDEDOR[selVendedor.value] || [];
+      selCliente.innerHTML = '';
+      if (!clientes.length) {
+        selCliente.appendChild(new Option('— Sin clientes asignados —', ''));
+        return;
+      }
+      selCliente.appendChild(new Option('— Elige un cliente —', ''));
+      clientes.forEach(c => selCliente.appendChild(new Option(c.nombre, c.folio)));
+    }
+    selVendedor.addEventListener('change', actualizarClientes);
+
+    const listaAsistentes = document.getElementById('lista-asistentes');
+    function filaAsistenteHTML() {
+      const fila = document.createElement('div');
+      fila.className = 'fila-asistente';
+      fila.innerHTML = `
+        <input type="text" name="asistente_nombre[]" placeholder="Asistente" autocomplete="off">
+        <input type="text" name="asistente_compania[]" placeholder="Compañía" autocomplete="off">
+        <button type="button" class="btn-quitar-asistente" title="Quitar">×</button>
+      `;
+      return fila;
+    }
+    document.getElementById('btn-agregar-asistente').addEventListener('click', () => {
+      listaAsistentes.appendChild(filaAsistenteHTML());
+    });
+    listaAsistentes.addEventListener('click', (ev) => {
+      if (!ev.target.classList.contains('btn-quitar-asistente')) return;
+      if (listaAsistentes.children.length > 1) {
+        ev.target.closest('.fila-asistente').remove();
+      } else {
+        ev.target.closest('.fila-asistente').querySelectorAll('input').forEach(i => i.value = '');
+      }
+    });
+
+    const radiosContacto = document.querySelectorAll('input[name="tipo_contacto"]');
+    const campoCliente = document.getElementById('campo-cliente');
+    const campoProspecto = document.getElementById('campo-prospecto');
+    function actualizarTipoContacto() {
+      const esCliente = document.querySelector('input[name="tipo_contacto"]:checked').value === 'cliente';
+      campoCliente.style.display = esCliente ? '' : 'none';
+      campoProspecto.style.display = esCliente ? 'none' : '';
+      selCliente.required = esCliente && bloqueBitacora.classList.contains('visible');
+      document.getElementById('prospecto_nombre').required = !esCliente && bloqueBitacora.classList.contains('visible');
+    }
+    radiosContacto.forEach(r => r.addEventListener('change', actualizarTipoContacto));
+    actualizarTipoContacto();
+
+    function poblarAsistentes(lista) {
+      listaAsistentes.innerHTML = '';
+      const filas = (lista && lista.length) ? lista : [{ nombre: '', compania: '' }];
+      filas.forEach(a => {
+        const fila = filaAsistenteHTML();
+        fila.querySelector('input[name="asistente_nombre[]"]').value = a.nombre || '';
+        fila.querySelector('input[name="asistente_compania[]"]').value = a.compania || '';
+        listaAsistentes.appendChild(fila);
+      });
+    }
+
+    function resetPanelACrear() {
+      panel.setAttribute('action', URL_CREAR);
+      panelTitulo.textContent = 'Nueva tarea';
+      panel.reset();
+      poblarAsistentes([]);
+      actualizarClientes();
+      actualizarBitacora();
+      actualizarTipoContacto();
+    }
+
+    function abrirEdicionTarea(id) {
+      const t = TAREAS_EDITAR[id];
+      if (!t) return;
+      panel.setAttribute('action', `/crm/tareas/${id}/editar`);
+      panelTitulo.textContent = 'Editar tarea';
+      selActividad.value = t.actividad_id;
+      selVendedor.value = t.vendedor;
+      actualizarClientes();
+      document.getElementById('fecha').value = t.fecha;
+      const radio = document.querySelector(`input[name="tipo_contacto"][value="${t.tipo_contacto}"]`);
+      if (radio) radio.checked = true;
+      actualizarTipoContacto();
+      if (t.tipo_contacto === 'cliente') selCliente.value = t.cliente_folio;
+      document.getElementById('prospecto_nombre').value = t.prospecto_nombre || '';
+      poblarAsistentes(t.asistentes);
+      document.getElementById('asunto').value = t.asunto || '';
+      document.getElementById('acuerdos').value = t.acuerdos || '';
+      document.getElementById('responsables').value = t.responsables || '';
+      document.getElementById('fecha_compromiso').value = t.fecha_compromiso || '';
+      actualizarBitacora();
+      panel.classList.add('abierto');
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  </script>
 {% endblock %}
