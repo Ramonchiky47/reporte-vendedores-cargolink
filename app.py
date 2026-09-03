@@ -1783,22 +1783,30 @@ def usuario_puede_operar_tarea(vendedor_tarea):
 
 def usuario_puede_ver_cotizacion(db, cliente_folio):
     """True si el usuario en sesión puede ver/editar/borrar/clonar una
-    cotización con este cliente_folio, según sus plazas permitidas —
-    mismo criterio que el listado de Cotizaciones (construir_cotizaciones_crm):
-    las de prospecto (cliente_folio None) son visibles para cualquiera con
-    acceso al CRM; las de cliente real heredan la plaza del vendedor
-    asignado a ese cliente. El listado ya aplicaba esta regla al armar la
-    tabla; esta función la repite para las rutas que operan sobre UNA
-    cotización puntual por id (antes solo validaban que existiera)."""
+    cotización con este cliente_folio, según sus plazas permitidas y (si
+    aplica) su candado de "solo su información" — mismo criterio que el
+    listado de Cotizaciones (construir_cotizaciones_crm): las de prospecto
+    (cliente_folio None) son visibles para cualquiera con acceso al CRM;
+    las de cliente real heredan la plaza y el vendedor asignado a ese
+    cliente. El listado ya aplicaba esta regla al armar la tabla; esta
+    función la repite para las rutas que operan sobre UNA cotización
+    puntual por id (antes solo validaban que existiera)."""
+    if cliente_folio is None:
+        return True
+    vendedor_forzado = vendedor_forzado_usuario()
     plazas_permitidas = plazas_permitidas_usuario()
-    if plazas_permitidas is None or cliente_folio is None:
+    if plazas_permitidas is None and not vendedor_forzado:
         return True
     fila = db.execute("""
-        SELECT cv.plaza
+        SELECT ac.vendedor, cv.plaza
         FROM asignacion_de_clientes ac
         LEFT JOIN catalogo_vendedores cv ON upper(trim(cv.vendedor)) = upper(trim(ac.vendedor))
         WHERE ac.folio = %s
     """, (cliente_folio,)).fetchone()
+    if vendedor_forzado and normalizar(fila["vendedor"] if fila else None) != normalizar(vendedor_forzado):
+        return False
+    if plazas_permitidas is None:
+        return True
     plaza = (fila["plaza"] if fila else None) or "#N/D"
     return plaza in plazas_permitidas
 
@@ -1815,23 +1823,31 @@ def cotizacion_visible_para_usuario(db, cotizacion_id):
 
 def usuario_puede_ver_contacto(db, contacto_id):
     """True si el usuario en sesión puede ver/editar/borrar este contacto,
-    según sus plazas permitidas — mismo criterio que el listado de
-    Contactos (construir_contactos_crm): uno sin ningún cliente asociado es
-    visible para cualquiera con acceso al CRM; si tiene clientes, basta con
-    que UNO caiga en una plaza permitida."""
+    según sus plazas permitidas y (si aplica) su candado de "solo su
+    información" — mismo criterio que el listado de Contactos
+    (construir_contactos_crm): uno sin ningún cliente asociado es visible
+    para cualquiera con acceso al CRM; si tiene clientes, basta con que
+    UNO caiga en una plaza/vendedor permitido."""
     plazas_permitidas = plazas_permitidas_usuario()
-    if plazas_permitidas is None:
+    vendedor_forzado = vendedor_forzado_usuario()
+    if plazas_permitidas is None and not vendedor_forzado:
         return True
     filas = db.execute("""
-        SELECT DISTINCT cv.plaza
+        SELECT DISTINCT ac.vendedor, cv.plaza
         FROM crm_contacto_clientes cc
         JOIN asignacion_de_clientes ac ON ac.folio = cc.cliente_folio
         LEFT JOIN catalogo_vendedores cv ON upper(trim(cv.vendedor)) = upper(trim(ac.vendedor))
         WHERE cc.contacto_id = %s
     """, (contacto_id,)).fetchall()
-    plazas_contacto = {(f["plaza"] or "#N/D") for f in filas}
-    if not plazas_contacto:
+    if not filas:
         return True
+    if vendedor_forzado:
+        vendedores_contacto = {normalizar(f["vendedor"]) for f in filas}
+        if normalizar(vendedor_forzado) not in vendedores_contacto:
+            return False
+    if plazas_permitidas is None:
+        return True
+    plazas_contacto = {(f["plaza"] or "#N/D") for f in filas}
     return bool(plazas_contacto & plazas_permitidas)
 
 
@@ -3598,7 +3614,7 @@ CRM_NAV = [
 ]
 
 
-def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300):
+def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300, vendedor_forzado=None):
     """Detalle a nivel booking para la pantalla CRM → Booking: mismos datos
     (tabla reporte_bookings) y mismo filtro de plazas que Reporte de Ventas,
     pero mostrados fila por fila en vez de agregados. `limite` acota la
@@ -3628,13 +3644,17 @@ def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=N
     ).fetchall()
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     filas = []
     for r in bookings:
         fecha = r["fecha"]
         if fecha is None:
             continue
-        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         filas.append({
             "referencia": r["referencia"] or "#N/D",
@@ -3652,7 +3672,7 @@ def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=N
     return filas[:limite], total
 
 
-def construir_clientes_crm(plazas_permitidas=None):
+def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None):
     """Cliente + vendedor + desarrollador asignado para CRM → Clientes:
     misma fuente (asignacion_de_clientes) y filtro de plazas que Reportes →
     Clientes Asignados, pero solo con las columnas que pidió mostrar aquí.
@@ -3692,10 +3712,14 @@ def construir_clientes_crm(plazas_permitidas=None):
     ).fetchall()
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     filas = []
     for r in filas_clientes:
-        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]), "#N/D")
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         filas.append({
             "folio": r["folio"],
@@ -3753,7 +3777,7 @@ def construir_cotizaciones_resumen_crm(cliente_folio=None, contacto_id=None):
     return resultado
 
 
-def construir_cliente_detalle_crm(folio, plazas_permitidas=None):
+def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzado=None):
     """Info de un cliente (asignacion_de_clientes) + sus bookings reales
     (reporte_bookings, casados por nombre de cliente) para la página de
     detalle de CRM → Clientes. Regresa None si el folio no existe o si el
@@ -3774,6 +3798,9 @@ def construir_cliente_detalle_crm(folio, plazas_permitidas=None):
 
     plaza = plaza_por_vendedor.get(normalizar(cliente["vendedor"]), "#N/D")
     if plazas_permitidas is not None and plaza not in plazas_permitidas:
+        db.close()
+        return None
+    if vendedor_forzado and normalizar(cliente["vendedor"]) != normalizar(vendedor_forzado):
         db.close()
         return None
 
@@ -3804,7 +3831,7 @@ def construir_cliente_detalle_crm(folio, plazas_permitidas=None):
     }
 
 
-def construir_contactos_crm(plazas_permitidas=None):
+def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None):
     """Contactos del CRM con sus clientes y grupos asociados (muchos-a-muchos).
     Un contacto sin ningún cliente asociado todavía es visible para todos
     (no hay plaza que restringir); si tiene clientes, solo es visible si
@@ -3843,10 +3870,14 @@ def construir_contactos_crm(plazas_permitidas=None):
     """).fetchall()
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     resultado = []
     for r in filas:
-        plazas_contacto = {plaza_por_vendedor.get(normalizar(v), "#N/D") for v in r["vendedores"]}
+        vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
+        plazas_contacto = {plaza_por_vendedor.get(v, "#N/D") for v in vendedores_contacto}
         if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+            continue
+        if vendedor_forzado_norm is not None and vendedores_contacto and vendedor_forzado_norm not in vendedores_contacto:
             continue
         tiene_booking = any(normalizar(cl) in clientes_con_booking for cl in r["clientes"])
         resultado.append({
@@ -3879,7 +3910,7 @@ def sincronizar_contactos_grupo(db, grupo_id):
     """, (grupo_id, grupo_id))
 
 
-def construir_grupos_crm(plazas_permitidas=None):
+def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None):
     """Grupos de clientes (crm_grupos) con cuántos clientes y contactos
     tiene cada uno. Un grupo es visible si al menos uno de sus clientes cae
     en una plaza permitida (mismo criterio que Clientes/Contactos)."""
@@ -3900,17 +3931,21 @@ def construir_grupos_crm(plazas_permitidas=None):
     }
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     clientes_visibles_por_grupo = {}
     for m in miembros:
-        plaza = plaza_por_vendedor.get(normalizar(m["vendedor"]), "#N/D")
+        vkey = normalizar(m["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
 
     resultado = []
     for g in grupos:
         n_clientes = clientes_visibles_por_grupo.get(g["id"], 0)
-        if plazas_permitidas is not None and n_clientes == 0:
+        if (plazas_permitidas is not None or vendedor_forzado_norm is not None) and n_clientes == 0:
             continue
         resultado.append({
             "id": g["id"], "nombre": g["nombre"], "creado_en": g["creado_en"],
@@ -3919,7 +3954,7 @@ def construir_grupos_crm(plazas_permitidas=None):
     return resultado
 
 
-def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None):
+def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forzado=None):
     """Un grupo con sus clientes miembro y los contactos que se le asociaron
     automáticamente (vía sincronizar_contactos_grupo)."""
     db = get_db()
@@ -3949,10 +3984,14 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None):
     """, (grupo_id,)).fetchall()
     db.close()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     miembros = []
     for m in miembros_raw:
-        plaza = plaza_por_vendedor.get(normalizar(m["vendedor"]), "#N/D")
+        vkey = normalizar(m["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
         miembros.append({"folio": m["folio"], "cliente": m["razon_social"], "vendedor": m["vendedor"] or "#N/D"})
 
@@ -3971,7 +4010,7 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None):
     }
 
 
-def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None):
+def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor_forzado=None):
     """Info de un contacto + sus clientes/grupos asociados + los bookings
     reales de esos clientes (reporte_bookings, casados por nombre), para la
     página de detalle de CRM → Contactos."""
@@ -3995,6 +4034,10 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None):
 
     plazas_contacto = {plaza_por_vendedor.get(normalizar(c["vendedor"]), "#N/D") for c in clientes}
     if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+        db.close()
+        return None
+    vendedores_contacto = {normalizar(c["vendedor"]) for c in clientes}
+    if vendedor_forzado and vendedores_contacto and normalizar(vendedor_forzado) not in vendedores_contacto:
         db.close()
         return None
 
@@ -4123,7 +4166,7 @@ def generar_referencia_solicitud_maritimo(db):
     return f"COT-{siguiente}"
 
 
-def construir_cotizaciones_crm(plazas_permitidas=None):
+def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None):
     """Cotizaciones con su cliente (o prospecto) resuelto. Una cotización con
     cliente real hereda su restricción de plaza (igual que Clientes/Contactos);
     una de prospecto no tiene plaza que restringir, así que es visible para
@@ -4183,12 +4226,16 @@ def construir_cotizaciones_crm(plazas_permitidas=None):
     db.close()
     hoy = datetime.now(TZ_LOCAL).date()
 
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     resultado = []
     for r in filas:
         es_prospecto = r["cliente_folio"] is None
         if not es_prospecto:
-            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+            vkey = normalizar(r["cliente_vendedor"])
+            plaza = plaza_por_vendedor.get(vkey, "#N/D")
             if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
                 continue
             cliente_texto = r["cliente_nombre"] or "#N/D"
         else:
@@ -5917,7 +5964,9 @@ def crm_seccion(slug):
         fecha_fin_default = hoy.isoformat()
         fecha_inicio = fecha_valida_o_vacia(request.args.get("fecha_inicio", "")) or fecha_inicio_default
         fecha_fin = fecha_valida_o_vacia(request.args.get("fecha_fin", "")) or fecha_fin_default
-        bookings, total_bookings = construir_booking_crm(plazas_permitidas_usuario(), fecha_inicio, fecha_fin)
+        bookings, total_bookings = construir_booking_crm(
+            plazas_permitidas_usuario(), fecha_inicio, fecha_fin, vendedor_forzado=vendedor_forzado_usuario()
+        )
         return render_template(
             "crm_booking.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             bookings=bookings, total_bookings=total_bookings,
@@ -5926,19 +5975,19 @@ def crm_seccion(slug):
         )
 
     if slug == "clientes":
-        clientes = construir_clientes_crm(plazas_permitidas_usuario())
+        clientes = construir_clientes_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
         return render_template("crm_clientes.html", nav_groups=nav_groups, titulo_pagina=item["texto"], clientes=clientes)
 
     if slug == "contactos":
-        contactos = construir_contactos_crm(plazas_permitidas_usuario())
+        contactos = construir_contactos_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
         return render_template("crm_contactos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], contactos=contactos)
 
     if slug == "cotizaciones":
-        cotizaciones = construir_cotizaciones_crm(plazas_permitidas_usuario())
+        cotizaciones = construir_cotizaciones_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
         return render_template("crm_cotizaciones.html", nav_groups=nav_groups, titulo_pagina=item["texto"], cotizaciones=cotizaciones)
 
     if slug == "grupo":
-        grupos = construir_grupos_crm(plazas_permitidas_usuario())
+        grupos = construir_grupos_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
         return render_template("crm_grupos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], grupos=grupos)
 
     return render_template("crm_placeholder.html", nav_groups=nav_groups, titulo_pagina=item["texto"])
@@ -6008,7 +6057,7 @@ def crm_grupo_nuevo():
 @app.route("/crm/grupos/<int:grupo_id>")
 @crm_required
 def crm_grupo_detalle(grupo_id):
-    grupo = construir_grupo_detalle_crm(grupo_id, plazas_permitidas_usuario())
+    grupo = construir_grupo_detalle_crm(grupo_id, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if grupo is None:
         flash("Grupo no encontrado.")
         return redirect(url_for("crm_seccion", slug="grupo"))
@@ -6080,7 +6129,7 @@ def crm_grupo_eliminar(grupo_id):
 @app.route("/crm/clientes/<int:folio>")
 @crm_required
 def crm_cliente_detalle(folio):
-    cliente = construir_cliente_detalle_crm(folio, plazas_permitidas_usuario())
+    cliente = construir_cliente_detalle_crm(folio, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if cliente is None:
         flash("Cliente no encontrado o sin permiso para verlo.")
         return redirect(url_for("crm_seccion", slug="clientes"))
@@ -6114,7 +6163,7 @@ def crm_contacto_nuevo():
 @app.route("/crm/contactos/<int:contacto_id>")
 @crm_required
 def crm_contacto_detalle(contacto_id):
-    contacto = construir_contacto_detalle_crm(contacto_id, plazas_permitidas_usuario())
+    contacto = construir_contacto_detalle_crm(contacto_id, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if contacto is None:
         flash("Contacto no encontrado o sin permiso para verlo.")
         return redirect(url_for("crm_seccion", slug="contactos"))
