@@ -2690,15 +2690,17 @@ def comisiones_cobros_cargar():
 def calcular_comisiones_acotadas(
     filas, cobros_por_booking, tasa_usd, tasa_eur, dias_umbral,
     pct_vendedor_arriba, pct_vendedor_debajo, pct_desarrollador_arriba, pct_desarrollador_debajo,
+    cliente_por_booking,
 ):
-    """Comisión 'acotada': por cada booking se reparte el profit entre sus
+    """Modo 'Por días': por cada booking se reparte el profit entre sus
     cobros según su % de participación en MXN (convirtiendo USD/EUR con la
     tasa dada), agrupando ese % en dos buckets según dias_diferencia
     (> dias_umbral o <= dias_umbral). A cada bucket se le aplica una tasa
     distinta para vendedor y desarrollador, y la comisión es la suma de
-    ambos. Si el booking no tiene cobros utilizables (sin registros, sin
-    dias_diferencia, o en una moneda sin tasa) se mantiene su comisión
-    actual sin cambios."""
+    ambos. Se aplica a TODOS los bookings del folio (sin filtro de
+    cliente). Si el booking no tiene cobros utilizables (sin registros,
+    sin dias_diferencia, o en una moneda sin tasa) se mantiene su
+    comisión actual sin cambios."""
     tasas_moneda = {"MXN": 1.0, "USD": tasa_usd, "EUR": tasa_eur}
     resultado = []
     for f in filas:
@@ -2706,6 +2708,7 @@ def calcular_comisiones_acotadas(
         profit = float(f["profit"])
         total_vendedor_actual = float(f["total_vendedor"])
         total_desarrollador_actual = float(f["total_desarrollador"])
+        cliente = cliente_por_booking.get(booking)
 
         cobros_raw = cobros_por_booking.get(booking) or []
         filas_calc = []
@@ -2718,6 +2721,7 @@ def calcular_comisiones_acotadas(
         usables = [v for v in filas_calc if v["usable"]]
         suma_mxn = sum(v["monto_mxn"] for v in usables)
         con_regla = bool(usables) and suma_mxn != 0
+        motivo_sin_regla = None if con_regla else "cobros"
 
         if con_regla:
             for v in usables:
@@ -2768,13 +2772,85 @@ def calcular_comisiones_acotadas(
 
         resultado.append({
             "booking": booking, "vendedor": f["vendedor"], "desarrollador": f["desarrollador"],
+            "cliente": cliente,
             "profit": profit,
             "pct_arriba": round(pct_arriba, 2) if pct_arriba is not None else None,
             "pct_debajo": round(pct_debajo, 2) if pct_debajo is not None else None,
+            "pct_vendedor_aplicado": None,
+            "pct_desarrollador_aplicado": None,
             "total_vendedor_actual": total_vendedor_actual, "total_vendedor_acotada": total_vendedor_acotada,
             "total_desarrollador_actual": total_desarrollador_actual,
             "total_desarrollador_acotada": total_desarrollador_acotada,
             "con_regla": con_regla,
+            "motivo_sin_regla": motivo_sin_regla,
+            "cobros": cobros_out,
+        })
+    return resultado
+
+
+def calcular_comisiones_por_cliente(filas, cobros_por_booking, cliente_por_booking, tasas_por_cliente):
+    """Modo 'Por cliente': para cada cliente marcado se captura un % fijo
+    de comisión de vendedor y de desarrollador (tasas_por_cliente:
+    {cliente: (pct_vendedor, pct_desarrollador)}), aplicado directo sobre
+    el profit del booking — sin días ni buckets. Los bookings cuyo
+    cliente no está en tasas_por_cliente mantienen su comisión actual
+    sin cambios."""
+    resultado = []
+    for f in filas:
+        booking = f["booking"]
+        profit = float(f["profit"])
+        total_vendedor_actual = float(f["total_vendedor"])
+        total_desarrollador_actual = float(f["total_desarrollador"])
+        cliente = cliente_por_booking.get(booking)
+        tasas = tasas_por_cliente.get(cliente)
+        con_regla = tasas is not None
+        pct_vendedor_aplicado = pct_desarrollador_aplicado = None
+
+        if con_regla:
+            pct_vendedor_aplicado, pct_desarrollador_aplicado = tasas
+            total_vendedor_acotada = round(profit * pct_vendedor_aplicado / 100, 2)
+            total_desarrollador_acotada = round(profit * pct_desarrollador_aplicado / 100, 2)
+        else:
+            total_vendedor_acotada = total_vendedor_actual
+            total_desarrollador_acotada = total_desarrollador_actual
+
+        cobros_out = []
+        for c in cobros_por_booking.get(booking) or []:
+            cobros_out.append({
+                "folio_cobro": c["folio_cobro"],
+                "folio_factura": c["folio_factura"],
+                "uuid": c["uuid"],
+                "tipo_docto": c["tipo_docto"],
+                "tipo_referencia": c["tipo_referencia"],
+                "cliente": c["cliente"],
+                "fecha_factura": c["fecha_factura"].strftime("%Y-%m-%d") if c["fecha_factura"] else None,
+                "fecha_cobro": c["fecha_cobro"].strftime("%Y-%m-%d") if c["fecha_cobro"] else None,
+                "dias_diferencia": c["dias_diferencia"],
+                "fecha_timbre": c["fecha_timbre"],
+                "banco": c["banco"],
+                "moneda": c["moneda"],
+                "subtotal": float(c["subtotal"]),
+                "iva": float(c["iva"]),
+                "descuento": float(c["descuento"]),
+                "retencion": float(c["retencion"]),
+                "total": float(c["total"]),
+                "monto_mxn": None,
+                "pct_participacion": None,
+                "bucket": None,
+            })
+
+        resultado.append({
+            "booking": booking, "vendedor": f["vendedor"], "desarrollador": f["desarrollador"],
+            "cliente": cliente,
+            "profit": profit,
+            "pct_arriba": None, "pct_debajo": None,
+            "pct_vendedor_aplicado": pct_vendedor_aplicado,
+            "pct_desarrollador_aplicado": pct_desarrollador_aplicado,
+            "total_vendedor_actual": total_vendedor_actual, "total_vendedor_acotada": total_vendedor_acotada,
+            "total_desarrollador_actual": total_desarrollador_actual,
+            "total_desarrollador_acotada": total_desarrollador_acotada,
+            "con_regla": con_regla,
+            "motivo_sin_regla": None if con_regla else "cliente",
             "cobros": cobros_out,
         })
     return resultado
@@ -2804,10 +2880,16 @@ def comisiones_acotadas():
     pct_desarrollador_arriba = 1.0 if pct_desarrollador_arriba is None else pct_desarrollador_arriba
     pct_vendedor_debajo = 7.0
     pct_desarrollador_debajo = 2.0
+    modo = request.args.get("modo") or "dias"
+    if modo not in ("dias", "cliente"):
+        modo = "dias"
+    clientes_seleccionados = [c for c in request.args.getlist("cliente") if c]
 
     filas = []
     descripcion = None
     resultados = []
+    clientes_disponibles = []
+    tasas_por_cliente = {}
     if folio_actual is not None:
         filas = db.execute(
             "SELECT * FROM comisiones_liquidacion_detalle WHERE folio = %s ORDER BY booking", (folio_actual,)
@@ -2825,14 +2907,35 @@ def comisiones_acotadas():
             ):
                 cobros_por_booking.setdefault(r["referencia"], []).append(r)
 
-            if tasa_usd and tasa_eur:
+            cliente_por_booking = {}
+            for r in db.execute(
+                "SELECT referencia, cliente_servicio FROM reporte_bookings WHERE referencia = ANY(%s)",
+                (bookings,),
+            ):
+                cliente_por_booking[r["referencia"]] = r["cliente_servicio"]
+            clientes_disponibles = sorted({c for c in cliente_por_booking.values() if c})
+
+            for c in clientes_seleccionados:
+                pct_v = request.args.get(f"pct_v__{c}", type=float)
+                pct_d = request.args.get(f"pct_d__{c}", type=float)
+                if pct_v is not None and pct_d is not None:
+                    tasas_por_cliente[c] = (pct_v, pct_d)
+
+            if modo == "dias" and tasa_usd and tasa_eur:
                 resultados = calcular_comisiones_acotadas(
                     filas, cobros_por_booking, tasa_usd, tasa_eur, dias_umbral,
                     pct_vendedor_arriba, pct_vendedor_debajo, pct_desarrollador_arriba, pct_desarrollador_debajo,
+                    cliente_por_booking,
+                )
+            elif modo == "cliente" and tasas_por_cliente:
+                resultados = calcular_comisiones_por_cliente(
+                    filas, cobros_por_booking, cliente_por_booking, tasas_por_cliente
                 )
     db.close()
 
     con_regla = sum(1 for r in resultados if r["con_regla"])
+    sin_regla_cliente = sum(1 for r in resultados if r["motivo_sin_regla"] == "cliente")
+    sin_regla_cobros = sum(1 for r in resultados if r["motivo_sin_regla"] == "cobros")
     total_vendedor_actual = sum(r["total_vendedor_actual"] for r in resultados)
     total_vendedor_acotada = sum(r["total_vendedor_acotada"] for r in resultados)
     total_desarrollador_actual = sum(r["total_desarrollador_actual"] for r in resultados)
@@ -2865,11 +2968,16 @@ def comisiones_acotadas():
         pct_vendedor_debajo=pct_vendedor_debajo,
         pct_desarrollador_arriba=pct_desarrollador_arriba,
         pct_desarrollador_debajo=pct_desarrollador_debajo,
+        modo=modo,
+        clientes_disponibles=clientes_disponibles,
+        clientes_seleccionados=clientes_seleccionados,
+        tasas_por_cliente=tasas_por_cliente,
         resultados=resultados,
         resultados_json=resultados_json,
         total_bookings=len(filas),
         con_regla=con_regla,
-        sin_regla=len(resultados) - con_regla,
+        sin_regla_cliente=sin_regla_cliente,
+        sin_regla_cobros=sin_regla_cobros,
         total_vendedor_actual=total_vendedor_actual,
         total_vendedor_acotada=total_vendedor_acotada,
         total_desarrollador_actual=total_desarrollador_actual,

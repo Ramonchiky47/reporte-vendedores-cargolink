@@ -9,19 +9,46 @@
   .com-header-row h2 { margin: 0 0 .3rem; }
   .com-header-row select { padding: .5rem .7rem; border-radius: 8px; border: 1px solid var(--border-strong); font-weight: 600; }
 
-  .com-tasas-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+  .com-modo-switch { display: flex; gap: .5rem; margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+  .com-modo-opt {
+    display: flex; align-items: center; gap: .4rem; padding: .5rem 1rem; border-radius: 8px;
+    border: 1px solid var(--border-strong); font-size: .85rem; font-weight: 600; color: var(--ink-2); cursor: pointer;
+  }
+  .com-modo-opt input { width: auto; accent-color: var(--accent); }
+  .com-modo-opt.activa { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  .com-tasas-form { margin-top: 1rem; display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
   .com-tasas-form .field { width: 150px; flex: 0 0 auto; }
   .com-tasas-form .field.folio { width: 320px; }
   .com-tasas-form select, .com-tasas-form input { width: 100%; }
-  .com-tasas-form select { text-overflow: ellipsis; }
+  .com-modo-grupo { display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+  .com-modo-grupo[hidden] { display: none; }
+
+  .com-clientes-picker { width: 100%; max-width: 620px; }
+  .com-clientes-picker input[type="text"] {
+    margin-bottom: .5rem; padding: .5rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font-size: .85rem;
+  }
+  .com-clientes-lista {
+    border: 1px solid var(--border-strong); border-radius: 8px; max-height: 260px; overflow-y: auto; background: var(--surface);
+  }
+  .com-cliente-row { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
+  .com-cliente-row:last-child { border-bottom: none; }
+  .com-cliente-row[hidden] { display: none; }
+  .com-cliente-check { display: flex; align-items: center; gap: .5rem; flex: 1; min-width: 0; font-size: .82rem; cursor: pointer; }
+  .com-cliente-check input { width: auto; flex: 0 0 auto; accent-color: var(--accent); }
+  .com-cliente-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .com-cliente-pct { width: 68px !important; flex: 0 0 auto; padding: .3rem .4rem; font-size: .78rem; }
 
   .com-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
   .com-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
   .com-kpi .label { font-size: .72rem; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
   .com-kpi .value { font-size: 1.4rem; font-weight: 700; color: var(--ink); margin-top: .25rem; font-variant-numeric: tabular-nums; }
 
-  .com-comisiones { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
-  .com-comision-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem; position: relative; overflow: hidden; }
+  .com-comisiones { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+  .com-comision-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.25rem 1.5rem; position: relative; overflow: hidden;
+  }
   .com-comision-card::before { content: ""; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: var(--accent); }
   .com-comision-card .etiqueta { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); }
   .com-comparativa { display: flex; gap: 1.25rem; margin-top: .5rem; align-items: baseline; flex-wrap: wrap; }
@@ -38,6 +65,7 @@
   .com-resumen th:nth-child(3), .com-resumen td:nth-child(3) { text-align: left; }
   .com-resumen tfoot td { font-weight: 700; border-top: 2px solid var(--ink); }
   .com-badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px; font-size: .68rem; font-weight: 700; background: #fef3c7; color: #92400e; }
+  .com-badge.ok { background: #dcfce7; color: #166534; }
 
   .com-tabs { display: flex; gap: .5rem; margin-bottom: 1.5rem; }
   .com-tab {
@@ -109,7 +137,10 @@
         <div>
           <h2>Comisiones Acotadas</h2>
           {% if folio_actual %}
-          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b> — comisión repartida por antigüedad de cobro (≤{{ dias_umbral }} días / &gt;{{ dias_umbral }} días)</p>
+          {% if modo == "cliente" %}
+          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b> — modo <b>Por cliente</b>: % fijo de comisión capturado para cada cliente marcado</p>
+          {% else %}
+          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b> — modo <b>Por días</b>: comisión repartida por antigüedad de cobro (≤{{ dias_umbral }} días / &gt;{{ dias_umbral }} días), aplicada a todos los bookings</p>
           {% if resultados %}
           <p class="com-descripcion" style="margin:.2rem 0 0;">
             ≤{{ dias_umbral }} días: Vendedor {{ "{:g}".format(pct_vendedor_debajo) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_debajo) }}%
@@ -117,64 +148,117 @@
             &gt;{{ dias_umbral }} días: Vendedor {{ "{:g}".format(pct_vendedor_arriba) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_arriba) }}%
           </p>
           {% endif %}
+          {% endif %}
           {% else %}
           <p class="empty" style="padding:0;">Todavía no hay ningún folio cargado en Comisiones.</p>
           {% endif %}
         </div>
       </div>
 
-      <form method="get" action="{{ url_for('comisiones_acotadas') }}" class="com-tasas-form">
+      <form method="get" action="{{ url_for('comisiones_acotadas') }}" id="form-acotadas">
         {% if folios_disponibles|length > 1 %}
-        <div class="field folio">
-          <label for="folio">Folio</label>
-          <select id="folio" name="folio">
-            {% for f in folios_disponibles %}
-            <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
-            {% endfor %}
-          </select>
+        <div class="com-tasas-form" style="margin-top:1.25rem; padding-top:1.25rem; border-top:1px solid var(--border);">
+          <div class="field folio">
+            <label for="folio">Folio</label>
+            <select id="folio" name="folio">
+              {% for f in folios_disponibles %}
+              <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         {% elif folio_actual %}
         <input type="hidden" name="folio" value="{{ folio_actual }}">
         {% endif %}
-        <div class="field">
-          <label for="usd">Tipo de cambio USD</label>
-          <input type="number" step="0.0001" min="0" id="usd" name="usd" value="{{ tasa_usd if tasa_usd else '' }}" placeholder="Ej. 17.00" required>
+
+        <div class="com-modo-switch">
+          <label class="com-modo-opt {{ 'activa' if modo == 'dias' else '' }}" id="modo-opt-dias">
+            <input type="radio" name="modo" value="dias" {{ 'checked' if modo == 'dias' else '' }}> Por días
+          </label>
+          <label class="com-modo-opt {{ 'activa' if modo == 'cliente' else '' }}" id="modo-opt-cliente">
+            <input type="radio" name="modo" value="cliente" {{ 'checked' if modo == 'cliente' else '' }}> Por cliente
+          </label>
         </div>
-        <div class="field">
-          <label for="eur">Tipo de cambio EUR</label>
-          <input type="number" step="0.0001" min="0" id="eur" name="eur" value="{{ tasa_eur if tasa_eur else '' }}" placeholder="Ej. 21.00" required>
+
+        <div class="com-modo-grupo" id="grupo-modo-dias">
+          <div class="field">
+            <label for="usd">Tipo de cambio USD</label>
+            <input type="number" step="0.0001" min="0" id="usd" name="usd" value="{{ tasa_usd if tasa_usd else '' }}" placeholder="Ej. 17.00">
+          </div>
+          <div class="field">
+            <label for="eur">Tipo de cambio EUR</label>
+            <input type="number" step="0.0001" min="0" id="eur" name="eur" value="{{ tasa_eur if tasa_eur else '' }}" placeholder="Ej. 21.00">
+          </div>
+          <div class="field">
+            <label for="dias">A partir de cuántos días</label>
+            <input type="number" step="1" min="0" id="dias" name="dias" value="{{ dias_umbral }}" placeholder="Ej. 35">
+          </div>
+          <div class="field">
+            <label for="pct_v_arriba">% Vendedor arriba de esos días</label>
+            <input type="number" step="0.01" min="0" max="100" id="pct_v_arriba" name="pct_v_arriba" value="{{ pct_vendedor_arriba }}" placeholder="Ej. 5">
+          </div>
+          <div class="field">
+            <label for="pct_d_arriba">% Desarrollador arriba de esos días</label>
+            <input type="number" step="0.01" min="0" max="100" id="pct_d_arriba" name="pct_d_arriba" value="{{ pct_desarrollador_arriba }}" placeholder="Ej. 1">
+          </div>
         </div>
-        <div class="field">
-          <label for="dias">A partir de cuántos días</label>
-          <input type="number" step="1" min="0" id="dias" name="dias" value="{{ dias_umbral }}" placeholder="Ej. 35" required>
+
+        <div class="com-modo-grupo" id="grupo-modo-cliente" hidden>
+          <div class="com-clientes-picker">
+            <label>Clientes y su % de comisión (Vendedor / Desarrollador)</label>
+            <input type="text" id="cliente-buscador" placeholder="Buscar cliente..." autocomplete="off">
+            <div class="com-clientes-lista">
+              {% for c in clientes_disponibles %}
+              <div class="com-cliente-row" data-nombre="{{ c|lower }}">
+                <label class="com-cliente-check">
+                  <input type="checkbox" name="cliente" value="{{ c }}" {{ 'checked' if c in clientes_seleccionados else '' }} class="com-cliente-toggle">
+                  <span>{{ c }}</span>
+                </label>
+                <input type="number" step="0.01" min="0" max="100" name="pct_v__{{ c }}" placeholder="% Vend" class="com-cliente-pct" value="{{ request.args.get('pct_v__' ~ c, '') }}">
+                <input type="number" step="0.01" min="0" max="100" name="pct_d__{{ c }}" placeholder="% Dev" class="com-cliente-pct" value="{{ request.args.get('pct_d__' ~ c, '') }}">
+              </div>
+              {% endfor %}
+            </div>
+          </div>
         </div>
-        <div class="field">
-          <label for="pct_v_arriba">% Vendedor arriba de esos días</label>
-          <input type="number" step="0.01" min="0" max="100" id="pct_v_arriba" name="pct_v_arriba" value="{{ pct_vendedor_arriba }}" placeholder="Ej. 5" required>
-        </div>
-        <div class="field">
-          <label for="pct_d_arriba">% Desarrollador arriba de esos días</label>
-          <input type="number" step="0.01" min="0" max="100" id="pct_d_arriba" name="pct_d_arriba" value="{{ pct_desarrollador_arriba }}" placeholder="Ej. 1" required>
-        </div>
-        <div class="field" style="flex:0;">
+
+        <div class="field" style="flex:0; margin-top:1rem;">
           <button type="submit">Calcular</button>
         </div>
       </form>
       <p class="hint" style="margin-top:.75rem;">
-        Los tipos de cambio y los % arriba del umbral se piden cada vez porque no se guardan: este cálculo es una simulación, no reemplaza a la liquidación oficial de Comisiones.
-        Debajo del umbral la comisión se calcula al 100% (Vendedor {{ "{:g}".format(pct_vendedor_debajo) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_debajo) }}%, fijo).
+        Nada de esto se guarda: este cálculo es una simulación, no reemplaza a la liquidación oficial de Comisiones.
       </p>
+      {% if modo == "dias" %}
+      <p class="hint" style="margin-top:.35rem;">
+        Modo "Por días": se aplica a TODOS los bookings del folio. Debajo del umbral la comisión se calcula al 100% (Vendedor {{ "{:g}".format(pct_vendedor_debajo) }}% · Desarrollador {{ "{:g}".format(pct_desarrollador_debajo) }}%, fijo).
+      </p>
+      {% else %}
+      <p class="hint" style="margin-top:.35rem;">
+        Modo "Por cliente": marca 1 o más clientes y captura su % de Vendedor y Desarrollador — es obligatorio. Los bookings de clientes no marcados (o sin ambos % capturados) mantienen su comisión actual, sin cambio.
+      </p>
+      {% endif %}
     </div>
 
     {% if folio_actual and not resultados %}
-    <div class="card"><p class="empty">Ingresa el tipo de cambio de USD y EUR y presiona "Calcular" para ver el desglose.</p></div>
+    <div class="card">
+      {% if modo == "cliente" %}
+      <p class="empty">Marca al menos un cliente y captura su % de Vendedor y Desarrollador, luego presiona "Calcular".</p>
+      {% else %}
+      <p class="empty">Ingresa el tipo de cambio de USD y EUR y presiona "Calcular" para ver el desglose.</p>
+      {% endif %}
+    </div>
     {% endif %}
 
     {% if resultados %}
     <div class="com-kpis">
       <div class="com-kpi"><div class="label">Bookings</div><div class="value">{{ total_bookings }}</div></div>
       <div class="com-kpi"><div class="label">Con regla acotada</div><div class="value">{{ con_regla }}</div></div>
-      <div class="com-kpi"><div class="label">Sin datos de cobro</div><div class="value">{{ sin_regla }}</div></div>
+      {% if modo == "cliente" %}
+      <div class="com-kpi"><div class="label">Cliente no seleccionado</div><div class="value">{{ sin_regla_cliente }}</div></div>
+      {% else %}
+      <div class="com-kpi"><div class="label">Sin datos de cobro</div><div class="value">{{ sin_regla_cobros }}</div></div>
+      {% endif %}
     </div>
 
     <div class="com-comisiones">
@@ -248,7 +332,11 @@
           <thead>
             <tr>
               <th>Booking</th><th>Vendedor</th><th>Desarrollador</th><th>Profit</th>
+              {% if modo == "cliente" %}
+              <th>Cliente</th><th>Tasa aplicada</th>
+              {% else %}
               <th>% &gt;{{ dias_umbral }} días</th><th>% ≤{{ dias_umbral }} días</th>
+              {% endif %}
               <th>Com. Vend. actual</th><th>Com. Vend. acotada</th>
               <th>Com. Dev. actual</th><th>Com. Dev. acotada</th>
             </tr>
@@ -260,11 +348,20 @@
               <td>{{ r.vendedor or "—" }}</td>
               <td>{{ r.desarrollador or "—" }}</td>
               <td>${{ "{:,.2f}".format(r.profit) }}</td>
+              {% if modo == "cliente" %}
+              <td>{{ r.cliente or "—" }}</td>
+              {% if r.con_regla %}
+              <td><span class="com-badge ok">V {{ "{:g}".format(r.pct_vendedor_aplicado) }}% · D {{ "{:g}".format(r.pct_desarrollador_aplicado) }}%</span></td>
+              {% else %}
+              <td><span class="com-badge">cliente no seleccionado</span></td>
+              {% endif %}
+              {% else %}
               {% if r.con_regla %}
               <td>{{ "{:,.2f}".format(r.pct_arriba) }}%</td>
               <td>{{ "{:,.2f}".format(r.pct_debajo) }}%</td>
               {% else %}
               <td colspan="2"><span class="com-badge">sin datos de cobro</span></td>
+              {% endif %}
               {% endif %}
               <td>${{ "{:,.2f}".format(r.total_vendedor_actual) }}</td>
               <td>${{ "{:,.2f}".format(r.total_vendedor_acotada) }}</td>
@@ -323,6 +420,32 @@
 <script id="datos-comisiones-acotadas" type="application/json">{{ resultados_json | safe }}</script>
 <script>
 (function () {
+  // ---- switch de modo (Por días / Por cliente) ----
+  const gruposModo = { dias: document.getElementById("grupo-modo-dias"), cliente: document.getElementById("grupo-modo-cliente") };
+  const optsModo = { dias: document.getElementById("modo-opt-dias"), cliente: document.getElementById("modo-opt-cliente") };
+  function aplicarModo(modo) {
+    Object.entries(gruposModo).forEach(([key, el]) => { if (el) el.hidden = key !== modo; });
+    Object.entries(optsModo).forEach(([key, el]) => { if (el) el.classList.toggle("activa", key === modo); });
+    const usd = document.getElementById("usd"), eur = document.getElementById("eur");
+    if (usd) usd.required = modo === "dias";
+    if (eur) eur.required = modo === "dias";
+  }
+  document.querySelectorAll('input[name="modo"]').forEach((r) => {
+    r.addEventListener("change", () => aplicarModo(r.value));
+  });
+  const modoInicial = document.querySelector('input[name="modo"]:checked');
+  aplicarModo(modoInicial ? modoInicial.value : "dias");
+
+  const buscador = document.getElementById("cliente-buscador");
+  if (buscador) {
+    buscador.addEventListener("input", () => {
+      const q = buscador.value.trim().toLowerCase();
+      document.querySelectorAll(".com-cliente-row").forEach((row) => {
+        row.hidden = q.length > 0 && !row.dataset.nombre.includes(q);
+      });
+    });
+  }
+
   const tabs = document.querySelectorAll(".com-tab");
   tabs.forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -339,6 +462,7 @@
   const datosEl = document.getElementById("datos-comisiones-acotadas");
   const RESULTADOS = JSON.parse(datosEl.textContent);
   const DIAS_UMBRAL = {{ dias_umbral | tojson }};
+  const MODO = {{ modo | tojson }};
   const contenidoBooking = document.getElementById("com-modal-booking-contenido");
   let cobrosActuales = [];
   let bookingActual = null;
@@ -356,7 +480,13 @@
   }
 
   function distribucionBadge(r) {
-    if (!r.con_regla) return `<span class="com-distribucion dsin">sin datos</span>`;
+    if (!r.con_regla) {
+      const texto = r.motivo_sin_regla === "cliente" ? "cliente no seleccionado" : "sin datos de cobro";
+      return `<span class="com-distribucion dsin">${texto}</span>`;
+    }
+    if (MODO === "cliente") {
+      return `<span class="com-distribucion d100-debajo">V ${fmtPct(r.pct_vendedor_aplicado)} · D ${fmtPct(r.pct_desarrollador_aplicado)}</span>`;
+    }
     if (r.pct_arriba >= 99.99) return `<span class="com-distribucion d100-arriba">100% &gt;${DIAS_UMBRAL} días</span>`;
     if (r.pct_debajo >= 99.99) return `<span class="com-distribucion d100-debajo">100% &le;${DIAS_UMBRAL} días</span>`;
     return `<span class="com-distribucion dmixto">${fmtPct(r.pct_debajo)} actual · ${fmtPct(r.pct_arriba)} reducido</span>`;
@@ -449,16 +579,24 @@
         <p class="hint" style="margin-top:.6rem;">Clic en un cobro para ver el desglose completo de la factura.</p>`
       : `<p class="empty">Sin cobros vinculados a este booking.</p>`;
 
+    const comisionKpisHtml = MODO === "cliente"
+      ? `<div class="com-kpis" style="margin-bottom:0;">
+          <div class="com-kpi"><div class="label">Profit</div><div class="value">${fmtMoneda(r.profit)}</div></div>
+          <div class="com-kpi"><div class="label">Cliente</div><div class="value" style="font-size:1rem;">${r.cliente || "—"}</div></div>
+          <div class="com-kpi"><div class="label">Tasa aplicada</div><div class="value" style="font-size:1rem;">${r.con_regla ? `V ${fmtPct(r.pct_vendedor_aplicado)} · D ${fmtPct(r.pct_desarrollador_aplicado)}` : "—"}</div></div>
+        </div>`
+      : `<div class="com-kpis" style="margin-bottom:0;">
+          <div class="com-kpi"><div class="label">Profit</div><div class="value">${fmtMoneda(r.profit)}</div></div>
+          <div class="com-kpi"><div class="label">% &gt;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_arriba)}</div></div>
+          <div class="com-kpi"><div class="label">% &le;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_debajo)}</div></div>
+        </div>`;
+
     contenidoBooking.innerHTML = `
       <p class="com-booking-titulo">${r.booking}</p>
       <p class="com-booking-sub">${r.vendedor || "—"} · ${r.desarrollador || "—"}</p>
 
       <p class="com-booking-seccion">Comisión</p>
-      <div class="com-kpis" style="margin-bottom:0;">
-        <div class="com-kpi"><div class="label">Profit</div><div class="value">${fmtMoneda(r.profit)}</div></div>
-        <div class="com-kpi"><div class="label">% &gt;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_arriba)}</div></div>
-        <div class="com-kpi"><div class="label">% &le;${DIAS_UMBRAL} días</div><div class="value">${fmtPct(r.pct_debajo)}</div></div>
-      </div>
+      ${comisionKpisHtml}
       <div class="com-comisiones" style="margin-bottom:0; margin-top:1rem;">
         <div class="com-comision-card">
           <div class="etiqueta">Comisión Vendedor</div>

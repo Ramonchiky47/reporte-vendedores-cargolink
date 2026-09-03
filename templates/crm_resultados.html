@@ -57,6 +57,9 @@
 
   .r-head-range{ margin:1.1rem 0 0; font-size:.8rem; color:var(--ink-faint); border-top:1px solid var(--line); padding-top:1rem; }
   .r-head-range b{ color:var(--ink-soft); font-weight:600; }
+  .r-contexto{ display:flex; align-items:center; gap:.6rem; margin-top:.9rem; }
+  .r-contexto-badge{ font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#fff; background:var(--brand); padding:.25rem .6rem; border-radius:20px; }
+  .r-contexto-nombre{ font-family:var(--font-display); font-weight:600; font-size:1.1rem; color:var(--ink); }
   .r-filtro-aviso{
     margin:.6rem 0 0; font-size:.8rem; font-weight:600; color:var(--warn); background:var(--warn-soft);
     padding:.55rem .8rem; border-radius:8px;
@@ -93,65 +96,64 @@
   .scorecard--vacio{ padding:2.4rem 1rem; text-align:center; color:var(--ink-faint); font-size:.9rem; }
   .scorecard__head{ display:flex; align-items:center; justify-content:space-between; gap:2rem; padding:1.6rem 2rem; border-bottom:1px solid var(--line); flex-wrap:wrap; }
   .scorecard__eyebrow{ font-size:.7rem; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--brand); }
-  .scorecard__head h2{ font-family:var(--font-display); font-weight:600; font-size:1.75rem; margin:.3rem 0 0; letter-spacing:-.01em; }
+  .scorecard__head h2{ font-family:var(--font-display); font-weight:600; font-size:1.56rem; margin:.3rem 0 0; letter-spacing:-.01em; }
   .scorecard__period{ margin:.35rem 0 0; color:var(--ink-faint); font-size:.8rem; }
 
-  .ring-wrap{ position:relative; width:140px; height:140px; flex-shrink:0; }
-  .ring{ width:140px; height:140px; transform:rotate(-90deg); }
-  .ring__track{ fill:none; stroke:var(--surface-2); stroke-width:12; }
-  .ring__fill{ fill:none; stroke-width:12; stroke-linecap:round; stroke-dasharray:427.26; stroke-dashoffset:var(--dashoffset,427.26); }
-  @media (prefers-reduced-motion:no-preference){ .ring__fill{ animation:r-draw 1.1s cubic-bezier(.2,.7,.2,1) .1s both; } }
-  @keyframes r-draw{ from{ stroke-dashoffset:427.26; } to{ stroke-dashoffset:var(--dashoffset,427.26); } }
-  .ring__fill--good{ stroke:var(--good); }
-  .ring__fill--warn{ stroke:var(--warn); }
-  .ring__fill--bad{ stroke:var(--bad); }
-  .ring__center{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  .ring__value{ font-family:var(--font-mono); font-weight:600; font-size:1.6rem; letter-spacing:-.02em; }
-  .ring__value.good{ color:var(--good); }
-  .ring__value.warn{ color:var(--warn); }
-  .ring__value.bad{ color:var(--bad); }
-  .ring__label{ font-size:.62rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); margin-top:.15rem; }
-
-  .composition{ padding:1.4rem 2rem 0; }
   .composition__caption{ font-size:.72rem; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); }
-  .composition__bar{ display:flex; gap:3px; margin-top:.6rem; height:26px; }
-  .composition__seg{ flex:var(--w) 0 0; background:var(--surface-2); border-radius:5px; position:relative; overflow:hidden; }
-  .composition__seg:first-child{ border-top-left-radius:8px; border-bottom-left-radius:8px; }
-  .composition__seg:last-child{ border-top-right-radius:8px; border-bottom-right-radius:8px; }
-  .composition__fill{ position:absolute; inset:0; width:calc(var(--fill) * 100%); border-radius:inherit; }
-  .composition__seg[data-cat="gp"] .composition__fill{ background:var(--good); }
-  .composition__seg[data-cat="new"] .composition__fill{ background:var(--warn); }
-  .composition__seg[data-cat="quo"] .composition__fill{ background:var(--bad); }
-  .composition__seg--pending{ background:repeating-linear-gradient(135deg, var(--pending-soft), var(--pending-soft) 5px, var(--surface-2) 5px, var(--surface-2) 10px); }
-  .composition__overflow{ position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:.6rem; color:#fff; font-weight:700; }
-  .composition__legend{ display:flex; gap:1.2rem; margin:.7rem 0 0; flex-wrap:wrap; }
-  .composition__legend span{ font-size:.72rem; color:var(--ink-soft); display:flex; align-items:center; gap:.35rem; }
-  .swatch{ width:8px; height:8px; border-radius:2px; display:inline-block; }
-
-  .rows{ padding:1.5rem 2rem 0; display:flex; flex-direction:column; }
-  .row{ display:grid; grid-template-columns:172px 1fr 84px 56px 64px; align-items:center; gap:1.1rem; padding:1rem 0; border-top:1px solid var(--line); }
-  .rows .row:first-child{ border-top:none; }
-  .row__group{ display:block; font-size:.64rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--brand); }
-  .row__name{ display:block; font-weight:600; font-size:.9rem; margin-top:.1rem; }
-  .row__track{ position:relative; height:8px; background:var(--surface-2); border-radius:5px; }
-  .row__fill{ position:absolute; inset:0; width:0; border-radius:5px; }
-  .row__fill--good{ background:var(--good); }
-  .row__fill--warn{ background:var(--warn); }
-  .row__fill--bad{ background:var(--bad); }
-  .row__fill--pending{ background:transparent; border:1.5px dashed var(--pending); border-radius:5px; }
-  .row__tick{ position:absolute; top:-3px; width:2px; height:14px; background:var(--ink); opacity:.35; }
-  .row__figures{ display:flex; justify-content:space-between; margin-top:.4rem; font-size:.72rem; color:var(--ink-faint); }
-  .row__figures b{ font-family:var(--font-mono); color:var(--ink-soft); font-weight:600; }
   .pill{ justify-self:start; font-family:var(--font-mono); font-size:.78rem; font-weight:600; padding:.22rem .55rem; border-radius:20px; text-align:center; min-width:64px; }
   .pill--good{ background:var(--good-soft); color:var(--good); }
   .pill--warn{ background:var(--warn-soft); color:var(--warn); }
   .pill--bad{ background:var(--bad-soft); color:var(--bad); }
   .pill--pending{ background:var(--pending-soft); color:var(--pending); font-weight:500; }
-  .chip{ justify-self:start; font-family:var(--font-mono); font-size:.78rem; color:var(--ink-soft); background:var(--surface-2); padding:.2rem .5rem; border-radius:6px; }
-  .row__point{ font-family:var(--font-mono); font-weight:700; font-size:.96rem; text-align:right; }
-  .row--pending .row__name{ color:var(--ink-soft); }
-  .tag-pending{ display:inline-block; margin-left:.45rem; font-size:.6rem; font-weight:700; letter-spacing:.03em; color:var(--pending); background:var(--pending-soft); border-radius:20px; padding:.05rem .4rem; vertical-align:middle; }
-  @media (max-width:860px){ .row{ grid-template-columns:1fr; row-gap:.55rem; } .row > *{ justify-self:stretch !important; } .row__point{ text-align:left; } }
+
+  /* Resultado (encabezado, sin gráfico) */
+  .sc-resultado{ display:flex; flex-direction:column; align-items:flex-end; }
+  .sc-resultado__etiqueta{ font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+  .sc-resultado__valor{ font-weight:700; font-size:2rem; letter-spacing:-.02em; }
+  .sc-resultado__valor.good{ color:var(--good); }
+  .sc-resultado__valor.warn{ color:var(--warn); }
+  .sc-resultado__valor.bad{ color:var(--bad); }
+
+  /* Anillos (compartidos entre la tarjeta hero y las tarjetas modulares) */
+  .sc-anillo-svg{ width:100%; height:100%; transform:rotate(-90deg); display:block; }
+  .sc-anillo-track{ fill:none; stroke:var(--surface-2); stroke-width:10; }
+  .sc-anillo-fill{ fill:none; stroke-width:10; stroke-linecap:round; }
+  .sc-anillo-fill--good{ stroke:var(--good); }
+  .sc-anillo-fill--warn{ stroke:var(--warn); }
+  .sc-anillo-fill--bad{ stroke:var(--bad); }
+  .sc-pendiente-color{ color:var(--pending) !important; }
+
+  /* Cuadrícula de tarjetas: hero (Gross Profit) + 4 tarjetas modulares */
+  .sc-grid{ padding:1.6rem 2rem; display:grid; grid-template-columns:repeat(6,1fr); gap:1rem; }
+  @media (max-width:980px){ .sc-grid{ grid-template-columns:repeat(3,1fr); } }
+  @media (max-width:620px){ .sc-grid{ grid-template-columns:repeat(2,1fr); } }
+
+  .sc-hero{ grid-column:span 2; grid-row:span 2; background:linear-gradient(160deg, var(--brand-soft), var(--surface) 60%); border:1px solid var(--line); border-radius:14px; padding:1.2rem; display:flex; flex-direction:column; }
+  .sc-hero__nombre{ font-family:var(--font-display); font-weight:600; font-size:1.1rem; margin:0 0 .5rem; }
+  .sc-hero__anillo{ align-self:center; position:relative; width:112px; height:112px; margin:.3rem 0 .8rem; }
+  .sc-hero__anillo .sc-anillo-fill{ stroke-width:10; }
+  .sc-hero__anillo-centro{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .sc-hero__anillo-centro .valor{ font-family:var(--font-mono); font-weight:700; font-size:1.35rem; }
+  .sc-hero__anillo-centro .etiqueta{ font-size:.6rem; color:var(--ink-faint); font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+
+  .sc-tile{ grid-column:span 2; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:1rem 1.1rem; display:flex; flex-direction:column; gap:.55rem; position:relative; }
+  @media (max-width:620px){ .sc-tile{ grid-column:span 1; } }
+  .sc-tile__cab{ display:flex; align-items:center; gap:.55rem; }
+  .sc-mono{ width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700; font-size:.66rem; color:#fff; flex-shrink:0; }
+  .sc-mono--good{ background:var(--good); }
+  .sc-mono--warn{ background:var(--warn); }
+  .sc-mono--bad{ background:var(--bad); }
+  .sc-mono--pending{ background:var(--pending); }
+  .sc-tile__nombre{ font-weight:700; font-size:.86rem; line-height:1.2; }
+  .sc-tile__anillo{ position:relative; width:52px; height:52px; margin-left:auto; flex-shrink:0; }
+  .sc-tile__anillo .sc-anillo-track, .sc-tile__anillo .sc-anillo-fill{ stroke-width:6; }
+  .sc-tile__anillo-valor{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700; font-size:.64rem; }
+  .sc-tile__cifras{ display:flex; justify-content:space-between; font-size:.74rem; color:var(--ink-faint); }
+  .sc-tile__cifras b{ font-family:var(--font-mono); color:var(--ink-soft); font-weight:600; }
+  .sc-tile__pie{ display:flex; justify-content:space-between; align-items:center; font-size:.7rem; }
+  .sc-chip{ color:var(--ink-faint); background:var(--surface-2); padding:.12rem .45rem; border-radius:6px; }
+  .sc-point{ font-weight:700; color:var(--brand); }
+  .sc-badge-pend{ position:absolute; top:.7rem; right:.7rem; font-size:.58rem; font-weight:700; color:var(--pending); background:var(--pending-soft); border-radius:20px; padding:.1rem .45rem; letter-spacing:.03em; text-transform:uppercase; }
 
   .tendencia{ padding:1.4rem 2rem 0; }
   .tendencia-cabecera{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
@@ -243,78 +245,73 @@
 {% macro clase_pct(valor) %}{% if valor is none %}pending{% elif valor >= 100 %}good{% elif valor >= 70 %}warn{% else %}bad{% endif %}{% endmacro %}
 {% macro fmt_valor(valor, es_moneda) %}{% if es_moneda %}${{ '{:,.0f}'.format(valor) }}{% else %}{{ '{:.0f}'.format(valor) }}{% endif %}{% endmacro %}
 
-{% macro fila_indicador(fila, es_grupo) %}
+{% macro anillo(fila, radio, viewbox) %}
 {% set pendiente = fila.campo_logrado is none %}
 {% set clase = clase_pct(fila.ach_pct)|trim %}
-<div class="row {{ 'row--pending' if pendiente else '' }}">
-  <div class="row__id">
-    <span class="row__group">{{ fila.grupo }}</span>
-    <span class="row__name">{{ fila.etiqueta }}{% if pendiente %}<span class="tag-pending">Pendiente</span>{% endif %}</span>
-  </div>
-  <div>
-    <div class="row__track">
-      {% if pendiente %}
-      <div class="row__fill row__fill--pending"></div>
-      {% else %}
-      <div class="row__fill row__fill--{{ clase }}" style="width:{{ 100 if fila.ach_pct >= 100 else fila.ach_pct }}%"></div>
-      <div class="row__tick" style="left:100%"></div>
-      {% endif %}
-    </div>
-    <div class="row__figures">
-      <span>Target{{ ' grupo' if es_grupo else '' }} <b class="num">{% if fila.sin_presupuesto %}—{% else %}{{ fmt_valor(fila.target, fila.es_moneda) }}{% endif %}</b></span>
-      {% if pendiente %}
-      <span>Sin registro en Tareas todavía</span>
-      {% else %}
-      <span>Achieved{{ ' grupo' if es_grupo else '' }} <b class="num">{{ fmt_valor(fila.logrado or 0, fila.es_moneda) }}</b></span>
-      {% endif %}
-    </div>
-  </div>
-  {% if pendiente %}
-  <span class="pill pill--pending num">—</span>
-  {% elif fila.sin_presupuesto %}
-  <span class="pill pill--pending num">Sin ppto</span>
-  {% else %}
-  <span class="pill pill--{{ clase }} num">{{ '%.2f'|format(fila.ach_pct) }}%</span>
+{% set circ = 2 * 3.14159265 * radio %}
+{% set frac = 0 if pendiente else (1 if fila.ach_pct >= 100 else fila.ach_pct / 100) %}
+<svg viewBox="0 0 {{ viewbox }} {{ viewbox }}" class="sc-anillo-svg">
+  <circle class="sc-anillo-track" cx="{{ viewbox // 2 }}" cy="{{ viewbox // 2 }}" r="{{ radio }}"></circle>
+  {% if not pendiente %}
+  <circle class="sc-anillo-fill sc-anillo-fill--{{ clase }}" cx="{{ viewbox // 2 }}" cy="{{ viewbox // 2 }}" r="{{ radio }}"
+    stroke-dasharray="{{ '%.2f'|format(circ) }}" stroke-dashoffset="{{ '%.2f'|format(circ * (1 - frac)) }}"></circle>
   {% endif %}
-  <span class="chip num">{{ fila.peso }}%</span>
-  <span class="row__point num">{{ '%.1f'|format(fila.point) }}%</span>
+</svg>
+{% endmacro %}
+
+{% macro tarjeta_sc(fila) %}
+{% set pendiente = fila.campo_logrado is none %}
+{% set clase = clase_pct(fila.ach_pct)|trim %}
+<div class="sc-tile {{ 'sc-tile--pending' if pendiente else '' }}">
+  {% if pendiente %}<span class="sc-badge-pend">Pendiente</span>{% endif %}
+  <div class="sc-tile__cab">
+    <span class="sc-mono sc-mono--{{ clase }}">{{ fila.etiqueta[:2]|upper }}</span>
+    <span class="sc-tile__nombre">{{ fila.etiqueta }}</span>
+    <div class="sc-tile__anillo">
+      {{ anillo(fila, 26, 60) }}
+      <span class="sc-tile__anillo-valor num {{ 'sc-pendiente-color' if pendiente else '' }}">{% if pendiente %}—{% else %}{{ '%.0f'|format(fila.ach_pct) }}%{% endif %}</span>
+    </div>
+  </div>
+  <div class="sc-tile__cifras">
+    <span>Target <b class="num">{% if fila.sin_presupuesto %}—{% else %}{{ fmt_valor(fila.target, fila.es_moneda) }}{% endif %}</b></span>
+    {% if pendiente %}<span>Sin registro en Tareas</span>{% else %}<span>Achieved <b class="num">{{ fmt_valor(fila.logrado or 0, fila.es_moneda) }}</b></span>{% endif %}
+  </div>
+  <div class="sc-tile__pie">
+    <span class="sc-chip num">Weight {{ fila.peso }}%</span>
+    <span class="sc-point num {{ 'sc-pendiente-color' if pendiente else '' }}">+{{ '%.1f'|format(fila.point) }} pt</span>
+  </div>
 </div>
 {% endmacro %}
 
 {% macro scorecard_body(scorecard, es_grupo, tendencia_svg) %}
-{% set circ = 427.2566 %}
-{% set offset = circ * (1 - scorecard.resultado/100) %}
 {% set clase = clase_pct(scorecard.resultado)|trim %}
 {% set gp, nc, qt, av1, av2 = scorecard.filas %}
-    <div class="ring-wrap">
-      <svg class="ring" viewBox="0 0 160 160">
-        <circle class="ring__track" cx="80" cy="80" r="68"></circle>
-        <circle class="ring__fill ring__fill--{{ clase }}" cx="80" cy="80" r="68" style="--dashoffset:{{ '%.2f'|format(offset) }}"></circle>
-      </svg>
-      <div class="ring__center">
-        <span class="ring__value {{ clase }} num">{{ '%.1f'|format(scorecard.resultado) }}%</span>
-        <span class="ring__label">Resultado</span>
-      </div>
+    <div class="sc-resultado">
+      <span class="sc-resultado__etiqueta">Resultado</span>
+      <span class="sc-resultado__valor {{ clase }} num">{{ '%.1f'|format(scorecard.resultado) }}%</span>
     </div>
   </div>
 
-  <div class="composition">
-    <span class="composition__caption">De dónde viene el {{ '%.1f'|format(scorecard.resultado) }}%{{ ' (promedio del grupo)' if es_grupo else '' }}</span>
-    <div class="composition__bar">
-      <div class="composition__seg" data-cat="gp" style="--w:{{ gp.peso }};">
-        <div class="composition__fill" style="--fill:{{ 1 if (gp.ach_pct or 0) >= 100 else (gp.ach_pct or 0)/100 }}"></div>
-        {% if gp.ach_pct and gp.ach_pct > 100 %}<span class="composition__overflow">▲</span>{% endif %}
+  <div class="sc-grid">
+    <div class="sc-hero">
+      <p class="sc-hero__nombre">{{ gp.etiqueta }}</p>
+      <div class="sc-hero__anillo">
+        {{ anillo(gp, 52, 120) }}
+        <div class="sc-hero__anillo-centro">
+          <span class="valor num sc-anillo-fill--{{ clase_pct(gp.ach_pct)|trim }}">{{ '%.1f'|format(gp.ach_pct) if gp.ach_pct is not none else '—' }}{{ '%' if gp.ach_pct is not none else '' }}</span>
+          <span class="etiqueta">Ach %</span>
+        </div>
       </div>
-      <div class="composition__seg" data-cat="new" style="--w:{{ nc.peso }};"><div class="composition__fill" style="--fill:{{ 1 if (nc.ach_pct or 0) >= 100 else (nc.ach_pct or 0)/100 }}"></div></div>
-      <div class="composition__seg" data-cat="quo" style="--w:{{ qt.peso }};"><div class="composition__fill" style="--fill:{{ 1 if (qt.ach_pct or 0) >= 100 else (qt.ach_pct or 0)/100 }}"></div></div>
-      <div class="composition__seg composition__seg--pending" style="--w:{{ av1.peso + av2.peso }};"></div>
+      <div class="sc-tile__cifras" style="border-top:1px solid var(--line); padding-top:.7rem;">
+        <span>Target <b class="num">{% if gp.sin_presupuesto %}—{% else %}{{ fmt_valor(gp.target, gp.es_moneda) }}{% endif %}</b></span>
+        <span>Achieved <b class="num">{{ fmt_valor(gp.logrado or 0, gp.es_moneda) }}</b></span>
+      </div>
+      <div class="sc-tile__pie" style="margin-top:.3rem;">
+        <span class="sc-chip num">Weight {{ gp.peso }}%</span>
+        <span class="sc-point num">+{{ '%.1f'|format(gp.point) }} pt</span>
+      </div>
     </div>
-    <div class="composition__legend">
-      <span><i class="swatch" style="background:var(--good)"></i>GP · {{ '%.1f'|format(gp.point) }} pt</span>
-      <span><i class="swatch" style="background:var(--warn)"></i>New Customer · {{ '%.1f'|format(nc.point) }} pt</span>
-      <span><i class="swatch" style="background:var(--bad)"></i>Quotations · {{ '%.1f'|format(qt.point) }} pt</span>
-      <span><i class="swatch" style="background:var(--pending)"></i>Activities · pendiente de medir</span>
-    </div>
+    {% for fila in [nc, qt, av1, av2] %}{{ tarjeta_sc(fila) }}{% endfor %}
   </div>
 
   {% if tendencia_svg %}
@@ -329,10 +326,6 @@
     <div class="tendencia-wrap">{{ tendencia_svg | safe }}</div>
   </div>
   {% endif %}
-
-  <div class="rows">
-    {% for fila in scorecard.filas %}{{ fila_indicador(fila, es_grupo) }}{% endfor %}
-  </div>
 {% endmacro %}
 
   <div class="resultados">
@@ -368,6 +361,10 @@
       </form>
     </div>
     <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · sin nada elegido verás el Scorecard de toda la compañía; con solo Plaza, el del grupo (Vendedor se limita a esa plaza); con Vendedor, el individual</p>
+    <div class="r-contexto">
+      <span class="r-contexto-badge">{{ 'Compañía' if scorecard_tipo == 'compania' else ('Plaza' if scorecard_tipo == 'grupo' else 'Vendedor') }}</span>
+      <span class="r-contexto-nombre">{{ scorecard_titulo }}</span>
+    </div>
   </header>
 
   {% macro delta(valor, anterior, invertir=false) %}
@@ -422,9 +419,10 @@
 
   <section class="ledger ledger--secundario" aria-label="Cobertura de clientes del mes">
     <div class="ledger__item">
-      <span class="ledger__label">Clientes con venta</span>
-      <span class="ledger__value num">{{ detalle.clientes_distintos_venta }}</span>
-      <span class="ledger__delta">clientes distintos con al menos 1 booking este mes</span>
+      <span class="ledger__label">Margen</span>
+      {% set margen = (kpis.profit / kpis.venta * 100) if kpis.venta else none %}
+      <span class="ledger__value num">{{ '%.1f'|format(margen) ~ '%' if margen is not none else '—' }}</span>
+      <span class="ledger__delta">Profit ÷ Venta del mes</span>
     </div>
     <div class="ledger__item">
       <span class="ledger__label">Cobertura de cartera</span>
