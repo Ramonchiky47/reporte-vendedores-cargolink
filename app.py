@@ -3649,6 +3649,28 @@ CRM_NAV = [
     {"grupo": "Administración", "texto": "Configuración", "slug": "configuracion"},
 ]
 
+# Todos los catálogos de CRM son solo para administradores, EXCEPTO
+# Contactos (sigue abierto a cualquiera con acceso a CRM).
+CRM_CATALOGOS_SOLO_ADMIN = {
+    item["slug"] for item in CRM_NAV if item["grupo"] == "Catálogos" and item["slug"] != "contactos"
+}
+
+
+def crm_catalogo_admin_required(view):
+    """Bloquea un catálogo de CRM (ver CRM_CATALOGOS_SOLO_ADMIN) a quien no
+    sea administrador — usarlo junto a @crm_required en las rutas
+    dedicadas de esos catálogos (Motivos de Pérdida, Actividades, ...).
+    El dispatcher genérico /crm/<slug> (crm_seccion) aplica el mismo
+    criterio inline, para los catálogos que no tienen ruta propia."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("es_admin"):
+            flash("Ese catálogo es solo para administradores.")
+            return redirect(url_for("crm_seccion", slug="inicio"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
 
 def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300, vendedor_forzado=None):
     """Detalle a nivel booking para la pantalla CRM → Booking: mismos datos
@@ -5890,13 +5912,17 @@ def guardar_lineas_cotizacion_crm(db, cotizacion_id):
 
 def agrupar_nav_crm(slug_activo):
     """Arma la barra lateral del CRM agrupada (sin grupo, Catálogos, Administración),
-    marcando como activo el item que corresponde a la sección actual."""
+    marcando como activo el item que corresponde a la sección actual. Los
+    catálogos de CRM_CATALOGOS_SOLO_ADMIN ni siquiera se listan para quien
+    no sea administrador (Contactos es la excepción, sigue visible)."""
+    es_admin = bool(session.get("es_admin"))
     grupos_orden = [None, "Catálogos", "Administración"]
     grupos = []
     for nombre_grupo in grupos_orden:
         items = [
             {**item, "activo": item["slug"] == slug_activo}
-            for item in CRM_NAV if item["grupo"] == nombre_grupo
+            for item in CRM_NAV
+            if item["grupo"] == nombre_grupo and (es_admin or item["slug"] not in CRM_CATALOGOS_SOLO_ADMIN)
         ]
         if items:
             grupos.append({"nombre": nombre_grupo, "elementos": items})
@@ -5915,6 +5941,9 @@ def crm_seccion(slug):
     item = next((i for i in CRM_NAV if i["slug"] == slug), None)
     if item is None:
         return redirect(url_for("crm_seccion", slug="tareas"))
+    if slug in CRM_CATALOGOS_SOLO_ADMIN and not session.get("es_admin"):
+        flash("Ese catálogo es solo para administradores.")
+        return redirect(url_for("crm_seccion", slug="inicio"))
 
     nav_groups = agrupar_nav_crm(slug)
     if slug == "inicio":
@@ -6043,6 +6072,7 @@ def crm_seccion(slug):
 
 @app.route("/crm/grupos/buscar-clientes")
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupos_buscar_clientes():
     """Búsqueda en vivo de clientes para agregarlos a un grupo — nunca se
     manda la lista completa (son miles) al navegador, solo coincidencias."""
@@ -6082,6 +6112,7 @@ def crm_grupos_buscar_clientes():
 
 @app.route("/crm/grupos/nuevo", methods=["GET", "POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupo_nuevo():
     if request.method == "POST":
         nombre = (request.form.get("nombre", "") or "").strip()[:120]
@@ -6104,6 +6135,7 @@ def crm_grupo_nuevo():
 
 @app.route("/crm/grupos/<int:grupo_id>")
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupo_detalle(grupo_id):
     grupo = construir_grupo_detalle_crm(grupo_id, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if grupo is None:
@@ -6116,6 +6148,7 @@ def crm_grupo_detalle(grupo_id):
 
 @app.route("/crm/grupos/<int:grupo_id>/renombrar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupo_renombrar(grupo_id):
     nombre = (request.form.get("nombre", "") or "").strip()[:120]
     if not nombre:
@@ -6134,6 +6167,7 @@ def crm_grupo_renombrar(grupo_id):
 
 @app.route("/crm/grupos/<int:grupo_id>/miembros", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupo_miembros(grupo_id):
     accion = request.form.get("accion")
     folio_raw = (request.form.get("cliente_folio", "") or "").strip()
@@ -6165,6 +6199,7 @@ def crm_grupo_miembros(grupo_id):
 
 @app.route("/crm/grupos/<int:grupo_id>/eliminar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_grupo_eliminar(grupo_id):
     db = get_db()
     db.execute("DELETE FROM crm_grupos WHERE id = %s", (grupo_id,))
@@ -6176,6 +6211,7 @@ def crm_grupo_eliminar(grupo_id):
 
 @app.route("/crm/clientes/<int:folio>")
 @crm_required
+@crm_catalogo_admin_required
 def crm_cliente_detalle(folio):
     cliente = construir_cliente_detalle_crm(folio, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if cliente is None:
@@ -6769,6 +6805,7 @@ def crm_cotizacion_pdf(cotizacion_id):
 
 @app.route("/crm/productos", methods=["GET", "POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_productos():
     """Catálogo Productos = Tipo Ingreso/Egreso (crm_tipos_ingreso_egreso):
     un solo catálogo, visible aquí y usado como Producto en Cotizaciones."""
@@ -6804,6 +6841,7 @@ def crm_productos():
 
 @app.route("/crm/productos/<int:producto_id>/eliminar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_producto_eliminar(producto_id):
     db = get_db()
     db.execute("DELETE FROM crm_tipos_ingreso_egreso WHERE id = %s", (producto_id,))
@@ -6814,6 +6852,7 @@ def crm_producto_eliminar(producto_id):
 
 @app.route("/crm/motivos-perdida", methods=["GET", "POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_motivos_perdida():
     """Catálogo de motivos por los que se puede perder una cotización;
     obligatorio para poder marcarla como Perdida (CRM → Cotizaciones)."""
@@ -6838,6 +6877,7 @@ def crm_motivos_perdida():
 
 @app.route("/crm/motivos-perdida/<int:motivo_id>/eliminar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_motivo_perdida_eliminar(motivo_id):
     db = get_db()
     db.execute("DELETE FROM crm_motivos_perdida WHERE id = %s", (motivo_id,))
@@ -6848,6 +6888,7 @@ def crm_motivo_perdida_eliminar(motivo_id):
 
 @app.route("/crm/actividades", methods=["GET", "POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_actividades():
     """Catálogo de tipos de actividad que puede registrar un vendedor
     (visitas, llamadas, juntas virtuales, etc.), cada una con su meta
@@ -6877,6 +6918,7 @@ def crm_actividades():
 
 @app.route("/crm/actividades/<int:actividad_id>/editar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_actividad_editar(actividad_id):
     db = get_db()
     meta_mensual = request.form.get("meta_mensual", type=int)
@@ -6891,6 +6933,7 @@ def crm_actividad_editar(actividad_id):
 
 @app.route("/crm/actividades/<int:actividad_id>/eliminar", methods=["POST"])
 @crm_required
+@crm_catalogo_admin_required
 def crm_actividad_eliminar(actividad_id):
     db = get_db()
     db.execute("DELETE FROM crm_actividades WHERE id = %s", (actividad_id,))
