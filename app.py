@@ -1840,7 +1840,7 @@ def usuario_puede_ver_contacto(db, contacto_id):
         WHERE cc.contacto_id = %s
     """, (contacto_id,)).fetchall()
     if not filas:
-        return True
+        return not vendedor_forzado
     if vendedor_forzado:
         vendedores_contacto = {normalizar(f["vendedor"]) for f in filas}
         if normalizar(vendedor_forzado) not in vendedores_contacto:
@@ -3877,7 +3877,7 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None):
         plazas_contacto = {plaza_por_vendedor.get(v, "#N/D") for v in vendedores_contacto}
         if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
             continue
-        if vendedor_forzado_norm is not None and vendedores_contacto and vendedor_forzado_norm not in vendedores_contacto:
+        if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
         tiene_booking = any(normalizar(cl) in clientes_con_booking for cl in r["clientes"])
         resultado.append({
@@ -4037,7 +4037,7 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
         db.close()
         return None
     vendedores_contacto = {normalizar(c["vendedor"]) for c in clientes}
-    if vendedor_forzado and vendedores_contacto and normalizar(vendedor_forzado) not in vendedores_contacto:
+    if vendedor_forzado and normalizar(vendedor_forzado) not in vendedores_contacto:
         db.close()
         return None
 
