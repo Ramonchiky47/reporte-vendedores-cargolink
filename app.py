@@ -84,6 +84,44 @@ def get_db():
     return psycopg.connect(DATABASE_URL, row_factory=dict_row)
 
 
+_cache_consultas = {}
+
+
+def consulta_cacheada(clave, ttl_segundos, fn):
+    """Memoriza en proceso (sin persistencia) el resultado de `fn` por
+    `ttl_segundos`. Pensado para consultas que no dependen del periodo
+    pedido (catálogos, historial completo) y que si no se repiten muchas
+    veces por página (p. ej. la tendencia de 6 meses de Resultados llama a
+    construir_inicio_crm una vez por mes) — evita re-pegarle a la misma
+    tabla completa una y otra vez en la misma carga de página."""
+    ahora = time.monotonic()
+    entrada = _cache_consultas.get(clave)
+    if entrada is not None and ahora - entrada[0] < ttl_segundos:
+        return entrada[1]
+    valor = fn()
+    _cache_consultas[clave] = (ahora, valor)
+    return valor
+
+
+def consulta_sql_cacheada(clave, ttl_segundos, sql, params=None, db=None):
+    """consulta_cacheada() para el caso común de una sola consulta SQL. Si
+    se pasa una conexión `db` ya abierta, la reutiliza en cache-miss (no la
+    cierra — es responsabilidad de quien la abrió); si no, abre y cierra
+    una propia. Reutilizar la conexión del llamador importa: contra un
+    Postgres remoto (Supabase) el costo dominante es abrir la conexión, no
+    ejecutar la consulta — abrir una nueva por cada tabla, en vez de una
+    sola para varias, puede ser más lento que ni cachear."""
+    def ejecutar():
+        if db is not None:
+            return db.execute(sql, params or ()).fetchall()
+        conexion = get_db()
+        try:
+            return conexion.execute(sql, params or ()).fetchall()
+        finally:
+            conexion.close()
+    return consulta_cacheada(clave, ttl_segundos, ejecutar)
+
+
 def init_db():
     """Crea las tablas si no existen (primer arranque en una base vacía).
 
@@ -4062,6 +4100,447 @@ def construir_scorecard_grupo(resumenes):
     return {"filas": filas, "resultado": resultado, "roster": roster, "n_vendedores": len(scorecards)}
 
 
+def construir_tendencia_resultado(plaza_filtro, vendedor_filtro, mes_referencia, meses_atras, plazas_permitidas):
+    """Resultado del Scorecard (vendedor, grupo o compañía, según el mismo
+    alcance que se esté viendo en Resultados) de los `meses_atras` meses
+    más recientes, incluyendo `mes_referencia` — para graficar su
+    tendencia. Cada llamada recalcula un mes completo con
+    construir_inicio_crm, así que el costo crece con meses_atras; para
+    esta pantalla (6 meses) es aceptable — una sola conexión compartida
+    para las 6 llamadas (construir_inicio_crm acepta `db`), porque contra
+    Supabase abrir la conexión pesa más que las consultas mismas."""
+    anio_ref, mes_ref = (int(x) for x in mes_referencia.split("-"))
+    db = get_db()
+    puntos = []
+    for i in range(meses_atras - 1, -1, -1):
+        total = anio_ref * 12 + (mes_ref - 1) - i
+        anio, mes = total // 12, total % 12 + 1
+        fecha_inicio = date(anio, mes, 1)
+        fecha_fin = date(anio, mes, calendar.monthrange(anio, mes)[1])
+        datos_mes = construir_inicio_crm(
+            "mes", fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db
+        )
+        if vendedor_filtro:
+            resumen = datos_mes["resumen_vendedor"].get(normalizar(vendedor_filtro))
+            sc = construir_scorecard_vendedor(resumen)
+        else:
+            if plaza_filtro:
+                resumenes = [r for r in datos_mes["resumen_vendedor"].values() if r["plaza"] == plaza_filtro]
+            else:
+                resumenes = list(datos_mes["resumen_vendedor"].values())
+            sc = construir_scorecard_grupo(resumenes)
+        puntos.append({
+            "mes": f"{anio}-{mes:02d}",
+            "etiqueta": f"{MESES_ES[mes - 1][:3]} {str(anio)[2:]}",
+            "resultado": sc["resultado"] if sc else None,
+            # La fila 0 del Scorecard es siempre GP, y su "logrado" es
+            # justo el profit del mes (del vendedor, grupo o compañía según
+            # el mismo alcance) — se reaprovecha en vez de volver a sumarlo.
+            "profit": sc["filas"][0]["logrado"] if sc else None,
+        })
+    db.close()
+    return puntos
+
+
+def fmt_moneda_compacta(v):
+    if v is None:
+        return "—"
+    signo = "-" if v < 0 else ""
+    a = abs(v)
+    if a >= 1_000_000:
+        return f"{signo}${a / 1_000_000:.1f}M"
+    if a >= 1_000:
+        return f"{signo}${a / 1000:.0f}K"
+    return f"{signo}${a:.0f}"
+
+
+def construir_svg_tendencia(puntos):
+    """Arma a mano el SVG de la gráfica de tendencia: un solo panel con la
+    línea del Resultado (+ su línea punteada de tendencia por regresión
+    lineal simple) y, incrustadas debajo de ella en el mismo panel, barras
+    con el Profit mensual — comparten el eje X (los mismos meses) pero el
+    Profit NO tiene su propio eje Y con grid/números: son una capa de
+    referencia visual a una escala independiente (como el panel de volumen
+    en un gráfico de precio), no un segundo eje leído en la misma escala
+    que el Resultado. Regresa None si no hay al menos 2 meses con Resultado
+    calculado."""
+    valores = [p["resultado"] for p in puntos]
+    profits = [p.get("profit") for p in puntos]
+    con_dato = [(i, v) for i, v in enumerate(valores) if v is not None]
+    if len(con_dato) < 2:
+        return None
+
+    ancho, alto = 720, 220
+    margen = {"top": 20, "right": 16, "bottom": 30, "left": 44}
+    panel_h = alto - margen["top"] - margen["bottom"]
+    plot_w = ancho - margen["left"] - margen["right"]
+    n = len(puntos)
+    paso_x = plot_w / (n - 1) if n > 1 else 0
+    top = margen["top"]
+    base = top + panel_h
+
+    def x_de(i):
+        return margen["left"] + i * paso_x
+
+    # ---- Barras de Profit, incrustadas en el mismo panel: ocupan solo la
+    # franja inferior (una fracción fija de panel_h), a su propia escala,
+    # y se dibujan ANTES que la línea para que esta quede siempre encima y
+    # legible. Sin grid ni números propios — solo tooltip al pasar el
+    # mouse — para no simular un segundo eje comparable al del Resultado. ----
+    franja_barras_h = panel_h * 0.34
+    profits_con_dato = [v for v in profits if v is not None]
+    max_profit = max(profits_con_dato) if profits_con_dato else 0
+    y_max_profit = max_profit * 1.15 if max_profit > 0 else 1
+    ancho_barra = min(paso_x * 0.42, 30)
+    ultimo_profit_idx = next((i for i in range(n - 1, -1, -1) if profits[i] is not None), None)
+    barras = []
+    for i, v in enumerate(profits):
+        if v is None:
+            continue
+        alto_barra = max((v / y_max_profit) * franja_barras_h, 2) if y_max_profit else 2
+        y = base - alto_barra
+        titulo = f"{puntos[i]['etiqueta']} · Profit: {fmt_moneda_compacta(v)}"
+        barra = (
+            f'<rect class="tendencia-barra" x="{x_de(i) - ancho_barra / 2:.1f}" y="{y:.1f}" '
+            f'width="{ancho_barra:.1f}" height="{alto_barra:.1f}"><title>{titulo}</title></rect>'
+        )
+        if i == ultimo_profit_idx:
+            barra += (
+                f'<text class="tendencia-valor tendencia-valor--barra" x="{x_de(i):.1f}" y="{y - 6:.1f}" '
+                f'text-anchor="middle">{fmt_moneda_compacta(v)}</text>'
+            )
+        barras.append(barra)
+
+    # ---- Línea del Resultado (%), a escala completa del panel ----
+    max_valor = max(v for _, v in con_dato)
+    y_max = 20
+    while y_max < max_valor * 1.15:
+        y_max += 20
+
+    def y_de(v):
+        v = max(0, min(v, y_max))
+        return top + panel_h - (v / y_max) * panel_h
+
+    segmentos = []
+    actual = []
+    for i, v in enumerate(valores):
+        if v is None:
+            if len(actual) > 1:
+                segmentos.append(actual)
+            actual = []
+            continue
+        actual.append((x_de(i), y_de(v)))
+    if len(actual) > 1:
+        segmentos.append(actual)
+    path_real = " ".join(
+        "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in seg) for seg in segmentos
+    )
+
+    nn = len(con_dato)
+    suma_x = sum(i for i, _ in con_dato)
+    suma_y = sum(v for _, v in con_dato)
+    suma_xy = sum(i * v for i, v in con_dato)
+    suma_x2 = sum(i * i for i, _ in con_dato)
+    denom = nn * suma_x2 - suma_x ** 2
+    pendiente = (nn * suma_xy - suma_x * suma_y) / denom if denom else 0
+    interseccion = (suma_y - pendiente * suma_x) / nn
+    path_trend = (
+        f"M{x_de(0):.1f},{y_de(interseccion):.1f} "
+        f"L{x_de(n - 1):.1f},{y_de(interseccion + pendiente * (n - 1)):.1f}"
+    )
+
+    grid = []
+    for frac in (0, 0.5, 1):
+        y = top + panel_h - frac * panel_h
+        grid.append(
+            f'<line class="tendencia-grid" x1="{margen["left"]}" x2="{ancho - margen["right"]}" '
+            f'y1="{y:.1f}" y2="{y:.1f}"></line>'
+            f'<text class="tendencia-eje" x="{margen["left"] - 8}" y="{y + 3:.1f}" text-anchor="end">'
+            f'{round(frac * y_max)}%</text>'
+        )
+
+    ultimo_con_dato = con_dato[-1][0]
+    marcas = []
+    for i, v in enumerate(valores):
+        etiqueta_mes = (
+            f'<text class="tendencia-eje" x="{x_de(i):.1f}" y="{alto - 8}" text-anchor="middle">'
+            f'{puntos[i]["etiqueta"]}</text>'
+        )
+        if v is None:
+            marcas.append(etiqueta_mes)
+            continue
+        radio = 5 if i == ultimo_con_dato else 3.5
+        titulo = f"{puntos[i]['etiqueta']}: {v:.1f}%"
+        marca = (
+            f'<circle class="tendencia-punto" cx="{x_de(i):.1f}" cy="{y_de(v):.1f}" r="{radio}">'
+            f"<title>{titulo}</title></circle>"
+        )
+        if i == ultimo_con_dato:
+            ty = y_de(v) - 12 if y_de(v) > top + 16 else y_de(v) + 20
+            marca += (
+                f'<text class="tendencia-valor" x="{x_de(i):.1f}" y="{ty:.1f}" text-anchor="middle">'
+                f"{v:.1f}%</text>"
+            )
+        marcas.append(etiqueta_mes + marca)
+
+    area_id = "tendenciaArea"
+    return f'''<svg class="tendencia-svg" viewBox="0 0 {ancho} {alto}" role="img" aria-label="Tendencia del Resultado y Profit por mes">
+      <defs>
+        <linearGradient id="{area_id}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--brand)" stop-opacity="0.18"></stop>
+          <stop offset="100%" stop-color="var(--brand)" stop-opacity="0"></stop>
+        </linearGradient>
+      </defs>
+      {''.join(grid)}
+      {''.join(barras)}
+      <path class="tendencia-area" fill="url(#{area_id})" stroke="none"
+        d="{path_real} L{x_de(len(valores) - 1):.1f},{top + panel_h} L{x_de(0):.1f},{top + panel_h} Z"></path>
+      <path class="tendencia-linea-trend" d="{path_trend}"></path>
+      <path class="tendencia-linea-real" d="{path_real}"></path>
+      {''.join(marcas)}
+    </svg>'''
+
+
+def plazas_con_presupuesto(mes, plazas_permitidas=None):
+    """Plazas que tienen al menos un vendedor con presupuesto capturado
+    para ese mes (Catálogos → Presupuesto) — para el filtro de Plaza en
+    Resultados no tiene caso ofrecer una plaza que de entrada no tiene
+    meta ese mes (el Scorecard saldría en 'Sin ppto' en todo)."""
+    db = get_db()
+    plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")}
+    filas = db.execute(
+        "SELECT DISTINCT vendedor FROM catalogo_presupuesto WHERE mes = %s AND vendedor IS NOT NULL AND presupuesto > 0",
+        (mes,),
+    ).fetchall()
+    db.close()
+    plazas = set()
+    for r in filas:
+        plaza = plaza_por_vendedor.get(normalizar(r["vendedor"]))
+        if plaza and (plazas_permitidas is None or plaza in plazas_permitidas):
+            plazas.add(plaza)
+    return sorted(plazas)
+
+
+def construir_detalle_resultados_mes(fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None):
+    """Detalle a nivel cliente/cotización para CRM → Resultados, acotado al
+    mes elegido: roster de clientes asociados con su venta del mes (mismo
+    patrón que construir_clientes_crm, pero con cant_booking/profit DE ESE
+    MES en vez de histórico), clientes nuevos del mes con su detalle, y las
+    cotizaciones creadas ese mes agrupadas por su estatus actual
+    (calcular_estatus_cotizacion). Una sola conexión para todo, igual que
+    construir_inicio_crm — contra Supabase abrir la conexión pesa más que
+    las consultas."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"]
+        for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+
+    # Se trae todo el año en curso (enero al mes seleccionado) de una sola
+    # vez y se agrupa por cliente+mes en Python — de ahí sale tanto el
+    # detalle del mes seleccionado como la cuadrícula mensual Ene..mes de
+    # la tabla "Venta por cliente".
+    meses_del_anio = list(range(1, fecha_fin.month + 1))
+    booking_por_cliente_por_mes = {}
+    for r in db.execute(
+        "SELECT cliente_servicio, fecha, profit FROM reporte_bookings "
+        "WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> '' "
+        "AND fecha >= %s AND fecha < (%s::date + interval '1 day')",
+        (date(fecha_inicio.year, 1, 1).isoformat(), fecha_fin.isoformat()),
+    ):
+        if r["fecha"] is None:
+            continue
+        d = r["fecha"].astimezone(TZ_LOCAL).date()
+        ckey = normalizar(r["cliente_servicio"])
+        agg = booking_por_cliente_por_mes.setdefault(ckey, {}).setdefault(d.month, {"cant": 0, "profit": 0.0})
+        agg["cant"] += 1
+        agg["profit"] += float(r["profit"] or 0)
+
+    booking_por_cliente_mes = {
+        ckey: por_mes[fecha_fin.month]
+        for ckey, por_mes in booking_por_cliente_por_mes.items()
+        if fecha_fin.month in por_mes
+    }
+
+    primer_booking_por_cliente = db.execute("""
+        SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
+        FROM reporte_bookings
+        WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
+        ORDER BY cliente_servicio, fecha ASC
+    """).fetchall()
+
+    clientes_con_cotizacion_mes = set()
+    for r in db.execute(
+        "SELECT DISTINCT cliente_folio FROM crm_cotizaciones "
+        "WHERE cliente_folio IS NOT NULL AND fecha_creacion >= %s AND fecha_creacion <= %s",
+        (fecha_inicio.isoformat(), fecha_fin.isoformat()),
+    ):
+        clientes_con_cotizacion_mes.add(r["cliente_folio"])
+
+    filas_asignacion = db.execute(
+        "SELECT folio, razon_social, vendedor, desarrollador FROM asignacion_de_clientes "
+        "WHERE vendedor IS NOT NULL ORDER BY razon_social"
+    ).fetchall()
+
+    cotizaciones_raw = db.execute("""
+        SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.estatus, co.perdida_en,
+               co.cliente_folio, co.cliente_prospecto, co.profit_estimado, cb.ganada_desde,
+               ac.vendedor AS cliente_vendedor, ac.razon_social,
+               f.nombre_firma, cu.email AS creador_correo
+        FROM crm_cotizaciones co
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN (
+            SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
+            FROM crm_cotizacion_bookings GROUP BY cotizacion_id
+        ) cb ON cb.cotizacion_id = co.id
+        WHERE co.fecha_creacion >= %s AND co.fecha_creacion <= %s
+    """, (fecha_inicio.isoformat(), fecha_fin.isoformat())).fetchall()
+    db.close()
+
+    plaza_filtro = plaza_filtro or ""
+    vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
+
+    # ---- Tabla: roster de clientes asociados con su venta del mes ----
+    resumen_clientes = []
+    for r in filas_asignacion:
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and vkey != vendedor_filtro_norm:
+            continue
+        ckey = normalizar(r["razon_social"])
+        agg = booking_por_cliente_mes.get(ckey, {"cant": 0, "profit": 0.0})
+        tiene_cotizacion = r["folio"] in clientes_con_cotizacion_mes
+        meses_cliente = booking_por_cliente_por_mes.get(ckey, {})
+        total_anio = sum(meses_cliente[m]["profit"] for m in meses_del_anio if m in meses_cliente)
+        resumen_clientes.append({
+            "folio": r["folio"],
+            "cliente": r["razon_social"],
+            "desarrollador": r["desarrollador"] or "Sin asignar",
+            "cant_booking": agg["cant"],
+            "profit": round(agg["profit"], 2),
+            "total_anio": round(total_anio, 2),
+            # "Tarea" queda pendiente: Tareas todavía no tiene una fuente de
+            # datos conectada (ver TAREAS_MOCK), así que activo solo mira
+            # booking y cotización del mes.
+            "activo": agg["cant"] > 0 or tiene_cotizacion,
+            "meses": [
+                {
+                    "etiqueta": MESES_ES[m - 1][:3],
+                    "profit": round(meses_cliente[m]["profit"], 2) if m in meses_cliente else None,
+                }
+                for m in meses_del_anio
+            ],
+        })
+    resumen_clientes.sort(key=lambda f: -f["total_anio"])
+
+    clientes_distintos_venta = len(booking_por_cliente_mes)
+    clientes_asociados_total = len(resumen_clientes)
+    clientes_con_venta = sum(1 for f in resumen_clientes if f["cant_booking"] > 0)
+    clientes_con_venta_pct = (clientes_con_venta / clientes_asociados_total * 100) if clientes_asociados_total else None
+
+    # ---- Tabla: clientes nuevos del mes (mismo criterio que la tarjeta
+    # "Clientes nuevos" de Inicio: su primer booking de toda la historia, y
+    # solo si hay 15 meses previos cubiertos por datos) ----
+    def sumar_meses(fecha, meses):
+        total = fecha.year * 12 + (fecha.month - 1) + meses
+        anio, mes = total // 12, total % 12 + 1
+        return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
+
+    fechas_primer = [
+        r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
+    ]
+    inicio_historial = min(fechas_primer) if fechas_primer else None
+    primer_dia_valido = sumar_meses(inicio_historial, 15) if inicio_historial else None
+
+    clientes_nuevos_detalle = []
+    if primer_dia_valido is not None:
+        for r in primer_booking_por_cliente:
+            if r["fecha"] is None:
+                continue
+            d = r["fecha"].astimezone(TZ_LOCAL).date()
+            if d < primer_dia_valido or d < fecha_inicio or d > fecha_fin:
+                continue
+            vendedor = r["vendedor"] or "#N/D"
+            plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+            if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            if plaza_filtro and plaza != plaza_filtro:
+                continue
+            if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+                continue
+            agg = booking_por_cliente_mes.get(normalizar(r["cliente_servicio"]), {"cant": 0, "profit": 0.0})
+            clientes_nuevos_detalle.append({
+                "cliente": r["cliente_servicio"],
+                "fecha_creacion": d,
+                "cant_booking": agg["cant"],
+                "profit": round(agg["profit"], 2),
+            })
+    clientes_nuevos_detalle.sort(key=lambda f: -f["profit"])
+
+    # ---- Tablas de cotizaciones creadas el mes, por estatus actual ----
+    cotizaciones_por_estatus = {"vigente": [], "vencido": [], "ganada": [], "perdida": []}
+    for r in cotizaciones_raw:
+        if r["cliente_folio"] is not None:
+            plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
+        else:
+            plaza = None
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        if vendedor_filtro_norm and normalizar(identidad_mostrar) != vendedor_filtro_norm:
+            continue
+        estatus = calcular_estatus_cotizacion(r["estatus"], r["fecha_vencimiento"], r["ganada_desde"] is not None, hoy)
+        cotizaciones_por_estatus[estatus].append({
+            "id": r["id"],
+            "id_cotizacion": r["id_cotizacion"],
+            "cliente": r["razon_social"] or r["cliente_prospecto"] or "Prospecto",
+            "identidad": identidad_mostrar or "#N/D",
+            "fecha_creacion": r["fecha_creacion"],
+            "fecha_vencimiento": r["fecha_vencimiento"],
+            "dias_restantes": (r["fecha_vencimiento"] - hoy).days if r["fecha_vencimiento"] else None,
+            "ganada_desde": r["ganada_desde"].astimezone(TZ_LOCAL).date() if r["ganada_desde"] else None,
+            "perdida_desde": r["perdida_en"].astimezone(TZ_LOCAL).date() if r["perdida_en"] else None,
+            "profit_estimado": float(r["profit_estimado"]) if r["profit_estimado"] is not None else None,
+        })
+    # Vigentes/vencidas ordenadas por fecha de vencimiento (lo más urgente o
+    # lo vencido hace más tiempo primero); ganadas/perdidas por su propia
+    # fecha de cierre, la más reciente primero.
+    cotizaciones_por_estatus["vigente"].sort(key=lambda f: f["fecha_vencimiento"] or date.max)
+    cotizaciones_por_estatus["vencido"].sort(key=lambda f: f["fecha_vencimiento"] or date.max)
+    cotizaciones_por_estatus["ganada"].sort(key=lambda f: f["ganada_desde"] or date.min, reverse=True)
+    cotizaciones_por_estatus["perdida"].sort(key=lambda f: f["perdida_desde"] or date.min, reverse=True)
+
+    totales_por_mes = [
+        round(sum((f["meses"][idx]["profit"] or 0) for f in resumen_clientes), 2)
+        for idx in range(len(meses_del_anio))
+    ]
+
+    return {
+        "resumen_clientes": resumen_clientes,
+        "meses_etiquetas": [MESES_ES[m - 1][:3] for m in meses_del_anio],
+        "totales_por_mes": totales_por_mes,
+        "total_general": round(sum(totales_por_mes), 2),
+        "clientes_distintos_venta": clientes_distintos_venta,
+        "clientes_asociados_total": clientes_asociados_total,
+        "clientes_con_venta": clientes_con_venta,
+        "clientes_con_venta_pct": clientes_con_venta_pct,
+        "clientes_nuevos_detalle": clientes_nuevos_detalle,
+        "cotizaciones_vigentes": cotizaciones_por_estatus["vigente"],
+        "cotizaciones_vencidas": cotizaciones_por_estatus["vencido"],
+        "cotizaciones_ganadas": cotizaciones_por_estatus["ganada"],
+        "cotizaciones_perdidas": cotizaciones_por_estatus["perdida"],
+    }
+
+
 def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=None):
     """Regresa (fecha_inicio, fecha_fin) como date para el periodo elegido
     en CRM → Inicio. 'personalizado' usa las fechas que venga del filtro,
@@ -4076,7 +4555,7 @@ def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=N
     return hoy.replace(day=1), hoy
 
 
-def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None):
+def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, db=None):
     """Dashboard de CRM → Inicio: actividad de cotización (crm_cotizaciones)
     y de cierre (reporte_bookings) del periodo elegido, comparada contra el
     mismo tramo del periodo anterior; más una tendencia diaria fija de los
@@ -4084,7 +4563,14 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     plazas_permitidas que el resto del CRM, y además Plaza/Vendedor del
     filtro. El cruce cotización↔vendedor es por nombre (firma capturada, o
     si no hay, un nombre derivado del correo de login) — es un cruce por
-    mejor esfuerzo, no una relación garantizada en la base."""
+    mejor esfuerzo, no una relación garantizada en la base.
+
+    `db`: conexión ya abierta opcional — para cuando el llamador necesita
+    llamar esta función varias veces seguidas (la tendencia de Resultados,
+    un mes a la vez) y quiere reutilizar una sola conexión en vez de abrir
+    una por llamada (contra un Postgres remoto eso pesa más que las
+    consultas mismas). Si se pasa, esta función NO la cierra — es
+    responsabilidad de quien la abrió."""
     hoy = datetime.now(TZ_LOCAL).date()
     dias_periodo = (fecha_fin - fecha_inicio).days + 1
     if periodo == "mes":
@@ -4111,10 +4597,24 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     ventana_inicio = fecha_inicio_anterior
     ventana_fin = fecha_fin
 
-    db = get_db()
-    vendedores_catalogo = db.execute("SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor").fetchall()
+    # Una sola conexión para las seis consultas: contra un Postgres remoto
+    # (Supabase) abrir la conexión pesa más que ejecutar la consulta, así
+    # que abrir una por tabla sería más lento que ni cachear. Cinco de las
+    # seis no dependen del periodo pedido (traen catálogos completos o todo
+    # el historial) y se memorizan un rato corto para que llamadas
+    # repetidas en la misma carga de página (p. ej. la tendencia de 6 meses
+    # de Resultados, que llama a esta función una vez por mes) reutilicen
+    # el resultado en vez de volver a pegarle a la misma tabla completa.
+    db_propia = db is None
+    db = db or get_db()
+    vendedores_catalogo = consulta_sql_cacheada(
+        "vendedores_catalogo", 60, "SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor", db=db
+    )
     plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in vendedores_catalogo}
-    desarrolladores_catalogo = db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador").fetchall()
+    desarrolladores_catalogo = consulta_sql_cacheada(
+        "desarrolladores_catalogo", 60,
+        "SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador", db=db,
+    )
     plaza_por_desarrollador = {normalizar(r["desarrollador"]): r["plaza"] for r in desarrolladores_catalogo}
 
     bookings = db.execute(
@@ -4127,32 +4627,38 @@ def construir_inicio_crm(periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedo
     # de TODA la historia (no solo de la ventana del periodo) — si no,
     # cualquier cliente recurrente que simplemente no compró en la ventana
     # anterior se contaría como "nuevo".
-    primer_booking_por_cliente = db.execute("""
-        SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
-        FROM reporte_bookings
-        WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
-        ORDER BY cliente_servicio, fecha ASC
-    """).fetchall()
+    primer_booking_por_cliente = consulta_sql_cacheada(
+        "primer_booking_por_cliente", 60, """
+            SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
+            FROM reporte_bookings
+            WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
+            ORDER BY cliente_servicio, fecha ASC
+        """, db=db,
+    )
 
-    cotizaciones = db.execute("""
-        SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
-               co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
-               co.estatus, co.perdida_en, cb.ganada_desde,
-               ac.vendedor AS cliente_vendedor, ac.razon_social,
-               f.nombre_firma, cu.email AS creador_correo
-        FROM crm_cotizaciones co
-        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
-        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
-        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
-        LEFT JOIN (
-            SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
-            FROM crm_cotizacion_bookings GROUP BY cotizacion_id
-        ) cb ON cb.cotizacion_id = co.id
-    """).fetchall()
-    db_presupuesto_vendedor = db.execute(
-        "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"
-    ).fetchall()
-    db.close()
+    cotizaciones = consulta_sql_cacheada(
+        "cotizaciones_crm_todas", 30, """
+            SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
+                   co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
+                   co.estatus, co.perdida_en, cb.ganada_desde,
+                   ac.vendedor AS cliente_vendedor, ac.razon_social,
+                   f.nombre_firma, cu.email AS creador_correo
+            FROM crm_cotizaciones co
+            LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+            LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
+            LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+            LEFT JOIN (
+                SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
+                FROM crm_cotizacion_bookings GROUP BY cotizacion_id
+            ) cb ON cb.cotizacion_id = co.id
+        """, db=db,
+    )
+    db_presupuesto_vendedor = consulta_sql_cacheada(
+        "presupuesto_vendedor_todos", 60,
+        "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL", db=db,
+    )
+    if db_propia:
+        db.close()
 
     plaza_filtro = plaza_filtro or ""
     vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
@@ -5064,14 +5570,35 @@ def crm_seccion(slug):
             scorecard = construir_scorecard_grupo(resumenes_plaza)
             scorecard_tipo = "grupo"
             scorecard_titulo = plaza_filtro
+        else:
+            scorecard = construir_scorecard_grupo(list(datos["resumen_vendedor"].values()))
+            scorecard_tipo = "compania"
+            scorecard_titulo = "Todas las plazas"
+
+        tendencia_svg = None
+        if scorecard:
+            # Año en curso: de enero al mes seleccionado (en enero no hay
+            # tendencia que graficar — construir_svg_tendencia regresa None
+            # con menos de 2 meses, y la gráfica simplemente no aparece).
+            puntos_tendencia = construir_tendencia_resultado(
+                plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas_usuario()
+            )
+            tendencia_svg = construir_svg_tendencia(puntos_tendencia)
+
+        detalle = construir_detalle_resultados_mes(
+            fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario()
+        )
+
         return render_template(
             "crm_resultados.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             mes_seleccionado=mes_seleccionado, opciones_mes=opciones_mes(), kpis=datos["kpis"],
             fecha_inicio_larga=datos["fecha_inicio_larga"], fecha_fin_larga=datos["fecha_fin_larga"],
             etiqueta_anterior=datos["etiqueta_anterior"],
             plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
-            plazas_opciones=datos["plazas_opciones"], vendedores_opciones=datos["vendedores_opciones"],
+            plazas_opciones=plazas_con_presupuesto(mes_seleccionado, plazas_permitidas_usuario()),
+            vendedores_opciones=datos["vendedores_opciones"],
             scorecard=scorecard, scorecard_tipo=scorecard_tipo, scorecard_titulo=scorecard_titulo,
+            tendencia_svg=tendencia_svg, detalle=detalle,
         )
 
     if slug == "tareas":

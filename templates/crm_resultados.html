@@ -26,7 +26,6 @@
   /* header */
   .r-eyebrow{ font-size:.7rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 .6rem; }
   .r-head-main{ display:flex; align-items:flex-end; justify-content:space-between; gap:2rem; flex-wrap:wrap; }
-  .r-head-main h1{ font-family:var(--font-display); font-weight:600; font-size:2.2rem; letter-spacing:-.01em; margin:0; text-wrap:balance; color:var(--ink); }
   .r-head-sub{ margin:.5rem 0 0; color:var(--ink-soft); font-size:.9rem; max-width:56ch; }
 
   .r-filters{ display:flex; gap:.6rem; flex-wrap:wrap; margin:0; }
@@ -50,9 +49,18 @@
     font:600 .84rem var(--font-body); padding:0 1.3rem; border-radius:10px; cursor:pointer; box-shadow:var(--shadow);
   }
   .btn-aplicar:hover{ filter:brightness(1.08); }
+  .btn-borrar{
+    align-self:stretch; display:flex; align-items:center; border:1px solid var(--line-strong); background:var(--surface);
+    color:var(--ink-soft); font:600 .84rem var(--font-body); padding:0 1.1rem; border-radius:10px; cursor:pointer;
+  }
+  .btn-borrar:hover{ background:var(--surface-2); color:var(--ink); }
 
   .r-head-range{ margin:1.1rem 0 0; font-size:.8rem; color:var(--ink-faint); border-top:1px solid var(--line); padding-top:1rem; }
   .r-head-range b{ color:var(--ink-soft); font-weight:600; }
+  .r-filtro-aviso{
+    margin:.6rem 0 0; font-size:.8rem; font-weight:600; color:var(--warn); background:var(--warn-soft);
+    padding:.55rem .8rem; border-radius:8px;
+  }
 
   .view-label{ display:flex; align-items:center; gap:.6rem; margin:2rem 0 .7rem; }
   .view-label span{ font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
@@ -77,6 +85,8 @@
   .r-arrow.down{ border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid var(--bad); }
   @media (max-width:980px){ .ledger{ grid-template-columns:repeat(4,1fr); } .ledger__item:nth-child(4n+1){ border-left:none; } }
   @media (max-width:620px){ .ledger{ grid-template-columns:repeat(2,1fr); } .ledger__item:nth-child(odd){ border-left:none; } .ledger__item{ border-top:1px solid var(--line); } .ledger__item:nth-child(-n+2){ border-top:none; } }
+  .ledger--secundario{ grid-template-columns:repeat(2,1fr); margin-top:.7rem; }
+  @media (max-width:620px){ .ledger--secundario{ grid-template-columns:1fr; } .ledger--secundario .ledger__item:nth-child(2){ border-left:none; border-top:1px solid var(--line); } }
 
   /* scorecard module */
   .scorecard{ margin-top:1.6rem; background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; }
@@ -143,6 +153,24 @@
   .tag-pending{ display:inline-block; margin-left:.45rem; font-size:.6rem; font-weight:700; letter-spacing:.03em; color:var(--pending); background:var(--pending-soft); border-radius:20px; padding:.05rem .4rem; vertical-align:middle; }
   @media (max-width:860px){ .row{ grid-template-columns:1fr; row-gap:.55rem; } .row > *{ justify-self:stretch !important; } .row__point{ text-align:left; } }
 
+  .tendencia{ padding:1.4rem 2rem 0; }
+  .tendencia-cabecera{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+  .tendencia-leyenda{ display:flex; gap:1rem; font-size:.72rem; color:var(--ink-soft); }
+  .tendencia-leyenda span{ display:inline-flex; align-items:center; gap:.35rem; }
+  .tendencia-leyenda .sw{ width:12px; height:3px; border-radius:2px; display:inline-block; }
+  .tendencia-leyenda .sw-linea{ background:var(--brand); }
+  .tendencia-leyenda .sw-barra{ height:9px; background:var(--brand-soft); border:1px solid var(--brand); }
+  .tendencia-wrap{ margin-top:.6rem; }
+  .tendencia-svg{ width:100%; height:auto; display:block; overflow:visible; }
+  .tendencia-grid{ stroke:var(--line); stroke-width:1; }
+  .tendencia-eje{ font-family:var(--font-mono); font-size:9.5px; fill:var(--ink-faint); }
+  .tendencia-linea-real{ fill:none; stroke:var(--brand); stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round; }
+  .tendencia-linea-trend{ fill:none; stroke:var(--ink-faint); stroke-width:1.5; stroke-dasharray:5 4; stroke-linecap:round; }
+  .tendencia-punto{ fill:var(--surface); stroke:var(--brand); stroke-width:2; }
+  .tendencia-valor{ font-family:var(--font-mono); font-size:11.5px; font-weight:700; fill:var(--brand); }
+  .tendencia-valor--barra{ fill:var(--ink-soft); }
+  .tendencia-barra{ fill:var(--brand-soft); stroke:var(--brand); stroke-width:1; stroke-opacity:.35; }
+
   .roster{ padding:1.5rem 2rem 0; }
   .roster__list{ margin-top:.7rem; display:flex; flex-direction:column; gap:.3rem; }
   .roster__item{ display:grid; grid-template-columns:150px 1fr 64px; align-items:center; gap:.9rem; padding:.35rem .5rem; border-radius:8px; }
@@ -160,6 +188,56 @@
   .method__body{ padding:0 0 1.5rem; font-size:.82rem; color:var(--ink-soft); line-height:1.75; max-width:74ch; }
   .method__body p{ margin:0 0 .5rem; }
   .method__body b{ color:var(--ink); }
+
+  /* tablas de detalle */
+  .detalle-tablas{ display:flex; flex-direction:column; gap:1.4rem; margin-top:1.6rem; }
+  .tabla-card{ background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); overflow:hidden; }
+  .tabla-card__head{ display:flex; align-items:baseline; justify-content:space-between; gap:1rem; padding:1.2rem 1.5rem; border-bottom:1px solid var(--line); }
+  .tabla-card__titulo{ font-family:var(--font-display); font-weight:600; font-size:1.1rem; margin:0; }
+  .tabla-card__nota{ margin:.25rem 0 0; font-size:.78rem; color:var(--ink-faint); }
+  .tabla-card__conteo{ font-family:var(--font-mono); font-size:.78rem; color:var(--ink-faint); white-space:nowrap; }
+  .tabla-scroll{ overflow-x:auto; }
+  .tabla-scroll--alta{ max-height:460px; overflow-y:auto; }
+  table.data-table{ width:100%; border-collapse:collapse; font-size:.85rem; }
+  table.data-table th{ position:sticky; top:0; background:var(--surface); text-align:right; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); font-weight:700; padding:.6rem 1rem; border-bottom:1px solid var(--line); white-space:nowrap; }
+  table.data-table th.col-texto{ text-align:left; }
+  table.data-table td{ padding:.55rem 1rem; text-align:right; border-bottom:1px solid #f0f0ee; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  table.data-table td.col-texto{ text-align:left; font-weight:600; white-space:normal; }
+  table.data-table td.num{ font-family:var(--font-mono); }
+  table.data-table tbody tr:last-child td{ border-bottom:none; }
+  table.data-table td.col-texto a{ color:var(--brand); text-decoration:underline; text-decoration-color:transparent; }
+  table.data-table td.col-texto a:hover{ text-decoration-color:var(--brand); }
+  table.data-table td.col-texto a.cliente-activo{ color:var(--good); font-weight:700; }
+  table.data-table td.celda-sin-venta{ background:var(--warn-soft); color:var(--warn); font-family:var(--font-body); }
+  table.tabla-venta-cliente{ font-size:.72rem; }
+  table.tabla-venta-cliente td.celda-total, table.tabla-venta-cliente th[data-campo="total_anio"]{ border-left:1px solid var(--line-strong); font-weight:700; }
+  table.tabla-venta-cliente tfoot td{ font-weight:700; border-top:2px solid var(--ink); font-family:var(--font-mono); }
+  table.tabla-venta-cliente tfoot td:first-child{ font-family:var(--font-body); text-align:left; }
+  .tabla-vacia{ padding:1.6rem 1.5rem; color:var(--ink-faint); font-size:.85rem; }
+
+  /* tarjetas de cotizaciones (vigentes/vencidas/ganadas/perdidas) */
+  .fila-alertas{ display:grid; grid-template-columns:1fr 1fr; gap:1.4rem; }
+  @media (max-width:980px){ .fila-alertas{ grid-template-columns:1fr; } }
+  .tarjeta{ background:var(--surface); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); padding:1.4rem 1.5rem; }
+  .tarjeta__cabecera{ margin-bottom:.3rem; }
+  .tarjeta__titulo{ font-family:var(--font-display); font-weight:600; font-size:1.05rem; margin:0; }
+  .tarjeta__pista{ margin:.2rem 0 0; font-size:.8rem; color:var(--ink-faint); }
+  .item-alerta{ display:flex; align-items:center; gap:.65rem; padding:.6rem .1rem; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item-alerta:last-child{ border-bottom:none; }
+  .item-alerta:hover{ background:var(--surface-2); }
+  .rayita{ width:4px; align-self:stretch; border-radius:3px; flex-shrink:0; }
+  .rayita.warning{ background:var(--warn); }
+  .rayita.critical{ background:var(--bad); }
+  .rayita.success{ background:var(--good); }
+  .item-alerta__cuerpo{ flex:1; min-width:0; }
+  .item-alerta__titulo{ font-size:.88rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item-alerta__sub{ font-size:.76rem; color:var(--ink-faint); font-family:var(--font-mono); margin-top:.1rem; }
+  .badge-estado{ font-size:.72rem; font-weight:700; padding:.25rem .6rem; border-radius:20px; white-space:nowrap; font-family:var(--font-mono); }
+  .badge-estado.warning{ background:var(--warn-soft); color:var(--warn); }
+  .badge-estado.critical{ background:var(--bad-soft); color:var(--bad); }
+  .badge-estado.success{ background:var(--good-soft); color:var(--good); }
+  .estado-vacio{ text-align:center; padding:1.7rem 1rem; color:var(--ink-faint); font-size:.85rem; }
+  .estado-vacio strong{ display:block; color:var(--good); font-size:.95rem; margin-bottom:.2rem; }
 {% endblock %}
 {% block crm_content %}
 {% macro clase_pct(valor) %}{% if valor is none %}pending{% elif valor >= 100 %}good{% elif valor >= 70 %}warn{% else %}bad{% endif %}{% endmacro %}
@@ -203,7 +281,7 @@
 </div>
 {% endmacro %}
 
-{% macro scorecard_body(scorecard, es_grupo) %}
+{% macro scorecard_body(scorecard, es_grupo, tendencia_svg) %}
 {% set circ = 427.2566 %}
 {% set offset = circ * (1 - scorecard.resultado/100) %}
 {% set clase = clase_pct(scorecard.resultado)|trim %}
@@ -239,6 +317,19 @@
     </div>
   </div>
 
+  {% if tendencia_svg %}
+  <div class="tendencia">
+    <div class="tendencia-cabecera">
+      <span class="composition__caption">Tendencia del Resultado (año en curso)</span>
+      <div class="tendencia-leyenda">
+        <span><i class="sw sw-linea"></i>Resultado %</span>
+        <span><i class="sw sw-barra"></i>Profit mensual</span>
+      </div>
+    </div>
+    <div class="tendencia-wrap">{{ tendencia_svg | safe }}</div>
+  </div>
+  {% endif %}
+
   <div class="rows">
     {% for fila in scorecard.filas %}{{ fila_indicador(fila, es_grupo) }}{% endfor %}
   </div>
@@ -249,13 +340,12 @@
     <p class="r-eyebrow">AV2 Logistics · CRM</p>
     <div class="r-head-main">
       <div>
-        <h1>Resultados</h1>
         <p class="r-head-sub">Cierre de mes: actividad de cotización y cierre de reporte_bookings, comparado contra el mes anterior.</p>
       </div>
-      <form class="r-filters" method="get">
+      <form class="r-filters" method="get" id="form-resultados">
         <label class="select-pill">
           <span class="select-pill__label">Mes</span>
-          <select name="mes">
+          <select name="mes" onchange="this.form.submit()">
             {% for opt in opciones_mes %}
             <option value="{{ opt.value }}" {{ 'selected' if opt.value == mes_seleccionado else '' }}>{{ opt.label }}</option>
             {% endfor %}
@@ -263,22 +353,21 @@
         </label>
         <label class="select-pill">
           <span class="select-pill__label">Plaza</span>
-          <select name="plaza">
+          <select name="plaza" id="filtro-plaza">
             <option value="">Todas las plazas</option>
             {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
           </select>
         </label>
         <label class="select-pill">
           <span class="select-pill__label">Vendedor</span>
-          <select name="vendedor">
+          <select name="vendedor" id="filtro-vendedor" onchange="this.form.submit()">
             <option value="">Todos los vendedores</option>
             {% for v in vendedores_opciones %}<option value="{{ v }}" {{ 'selected' if vendedor_filtro == v else '' }}>{{ v }}</option>{% endfor %}
           </select>
         </label>
-        <button type="submit" class="btn-aplicar">Aplicar</button>
       </form>
     </div>
-    <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · elige Plaza y/o Vendedor y presiona <b>Aplicar</b> — sin vendedor, verás el Scorecard promedio de esa plaza</p>
+    <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · sin nada elegido verás el Scorecard de toda la compañía; con solo Plaza, el del grupo (Vendedor se limita a esa plaza); con Vendedor, el individual</p>
   </header>
 
   {% macro delta(valor, anterior, invertir=false) %}
@@ -331,20 +420,38 @@
     </div>
   </section>
 
-  {% if scorecard_tipo == "grupo" %}
-  <div class="view-label"><span>Vista por plaza · grupo</span></div>
+  <section class="ledger ledger--secundario" aria-label="Cobertura de clientes del mes">
+    <div class="ledger__item">
+      <span class="ledger__label">Clientes con venta</span>
+      <span class="ledger__value num">{{ detalle.clientes_distintos_venta }}</span>
+      <span class="ledger__delta">clientes distintos con al menos 1 booking este mes</span>
+    </div>
+    <div class="ledger__item">
+      <span class="ledger__label">Cobertura de cartera</span>
+      <span class="ledger__value num">{{ detalle.clientes_con_venta }} / {{ detalle.clientes_asociados_total }}</span>
+      <span class="ledger__delta">
+        {% if detalle.clientes_con_venta_pct is not none %}
+        <b class="num" style="color:var(--brand);">{{ '%.1f'|format(detalle.clientes_con_venta_pct) }}%</b>&nbsp;de los clientes asociados compraron este mes
+        {% else %}sin clientes asociados en este filtro{% endif %}
+      </span>
+    </div>
+  </section>
+
+  {% if scorecard_tipo in ("grupo", "compania") %}
+  {% set es_compania = scorecard_tipo == "compania" %}
+  <div class="view-label"><span>{{ 'Vista compañía' if es_compania else 'Vista por plaza · grupo' }}</span></div>
   {% if scorecard %}
-  <section class="scorecard" aria-label="Scorecard mensual del grupo, Plaza {{ scorecard_titulo }}">
+  <section class="scorecard" aria-label="Scorecard mensual {{ 'de la compañía' if es_compania else 'del grupo, Plaza ' + scorecard_titulo }}">
     <div class="scorecard__head">
       <div>
-        <p class="scorecard__eyebrow">Scorecard mensual · Grupo</p>
-        <h2>Plaza {{ scorecard_titulo }}</h2>
+        <p class="scorecard__eyebrow">Scorecard mensual · {{ 'Compañía' if es_compania else 'Grupo' }}</p>
+        <h2>{{ 'AV2 Logistics · Todas las plazas' if es_compania else 'Plaza ' + scorecard_titulo }}</h2>
         <p class="scorecard__period">{{ fecha_inicio_larga }} – {{ fecha_fin_larga }} · promedio de {{ scorecard.n_vendedores }} vendedor(es) con actividad</p>
       </div>
-      {{ scorecard_body(scorecard, true) }}
+      {{ scorecard_body(scorecard, true, tendencia_svg) }}
 
     <div class="roster">
-      <span class="composition__caption">Roster del grupo</span>
+      <span class="composition__caption">Roster {{ 'de la compañía' if es_compania else 'del grupo' }}</span>
       <div class="roster__list">
         {% for r in scorecard.roster %}
         <a class="roster__item" href="{{ url_for('crm_seccion', slug='resultados', mes=mes_seleccionado, plaza=plaza_filtro, vendedor=r.nombre) }}">
@@ -357,15 +464,15 @@
     </div>
 
     <details class="method">
-      <summary>Cómo se calcula el grupo</summary>
+      <summary>Cómo se calcula {{ 'la compañía' if es_compania else 'el grupo' }}</summary>
       <div class="method__body">
-        <p>Target, Achieved y Ach % del grupo son la <b>suma</b> de todos los vendedores con actividad ese mes en la plaza (Ach % = Achieved total ÷ Target total) — un vendedor con un presupuesto mucho más grande pesa más en el resultado del grupo, igual que pesa más en el negocio real.</p>
-        <p>El Resultado del grupo se calcula con esos totales, no promediando los porcentajes individuales. El roster de abajo sí muestra el Resultado propio de cada vendedor — haz clic en uno para ver su Scorecard individual.</p>
+        <p>Target, Achieved y Ach % {{ 'de la compañía son' if es_compania else 'del grupo son' }} la <b>suma</b> de todos los vendedores con actividad ese mes {{ 'en toda la compañía' if es_compania else 'en la plaza' }} (Ach % = Achieved total ÷ Target total) — un vendedor con un presupuesto mucho más grande pesa más en el resultado, igual que pesa más en el negocio real.</p>
+        <p>El Resultado {{ 'de la compañía' if es_compania else 'del grupo' }} se calcula con esos totales, no promediando los porcentajes individuales. El roster de abajo sí muestra el Resultado propio de cada vendedor — haz clic en uno para ver su Scorecard individual.</p>
       </div>
     </details>
   </section>
   {% else %}
-  <div class="scorecard scorecard--vacio">Sin actividad registrada en {{ plaza_filtro }} para este mes.</div>
+  <div class="scorecard scorecard--vacio">Sin actividad registrada {{ 'este mes.' if es_compania else 'en ' + plaza_filtro + ' para este mes.' }}</div>
   {% endif %}
 
   {% elif scorecard_tipo == "vendedor" %}
@@ -377,7 +484,7 @@
         <h2>{{ scorecard_titulo }}</h2>
         <p class="scorecard__period">{{ fecha_inicio_larga }} – {{ fecha_fin_larga }}</p>
       </div>
-      {{ scorecard_body(scorecard, false) }}
+      {{ scorecard_body(scorecard, false, tendencia_svg) }}
 
     <details class="method">
       <summary>Cómo se calcula cada indicador</summary>
@@ -391,9 +498,159 @@
     </details>
   </section>
 
-  {% else %}
-  <div class="view-label"><span>Scorecard</span></div>
-  <div class="scorecard scorecard--vacio">Selecciona una Plaza (vista de grupo) o un Vendedor (vista individual) arriba para ver su Scorecard del mes.</div>
   {% endif %}
+
+  {% macro tarjeta_cotizaciones(titulo, pista, filas, tipo) %}
+  {% set color = {"vigente":"warning","vencido":"critical","ganada":"success","perdida":"critical"}[tipo] %}
+  {% set campo_fecha = {"vigente":"fecha_vencimiento","vencido":"fecha_vencimiento","ganada":"ganada_desde","perdida":"perdida_desde"}[tipo] %}
+  {% set prefijo = {"vigente":"vence","vencido":"venció","ganada":"ganada","perdida":"perdida"}[tipo] %}
+  <div class="tarjeta">
+    <div class="tarjeta__cabecera">
+      <div><p class="tarjeta__titulo">{{ titulo }}</p><p class="tarjeta__pista">{{ pista }}</p></div>
+    </div>
+    {% if filas %}
+      {% for c in filas %}
+      <div class="item-alerta" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+        <div class="rayita {{ color }}"></div>
+        <div class="item-alerta__cuerpo">
+          <div class="item-alerta__titulo">{{ c.cliente }}</div>
+          <div class="item-alerta__sub">{{ c.id_cotizacion }} · {{ prefijo }} {{ c[campo_fecha].strftime('%d %b') if c[campo_fecha] else 'sin fecha' }}</div>
+        </div>
+        {% if tipo == "vigente" %}
+        <span class="badge-estado warning">{% if c.dias_restantes is not none %}{{ c.dias_restantes }} día{{ 's' if c.dias_restantes != 1 else '' }}{% else %}Sin vencimiento{% endif %}</span>
+        {% elif tipo == "vencido" %}
+        <span class="badge-estado critical">Vencida</span>
+        {% elif tipo == "ganada" %}
+        <span class="badge-estado success">Ganada</span>
+        {% elif tipo == "perdida" %}
+        <span class="badge-estado critical">Perdida</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="estado-vacio"><strong>Sin pendientes</strong>Ninguna cotización {{ titulo|lower }} este mes.</div>
+    {% endif %}
   </div>
+  {% endmacro %}
+
+  <div class="detalle-tablas">
+    <div class="tabla-card">
+      <div class="tabla-card__head">
+        <div>
+          <p class="tabla-card__titulo">Venta por cliente</p>
+          <p class="tabla-card__nota">Profit mensual Ene–{{ detalle.meses_etiquetas[-1] }} · el cliente se ve en verde si tuvo booking, cotización y/o tarea este mes</p>
+        </div>
+        <span class="tabla-card__conteo">{{ detalle.resumen_clientes|length }} cliente(s)</span>
+      </div>
+      {% if detalle.resumen_clientes %}
+      <div class="tabla-scroll tabla-scroll--alta">
+        <table class="data-table tabla-ordenable tabla-venta-cliente">
+          <thead>
+            <tr>
+              <th data-campo="folio">Folio</th>
+              <th class="col-texto" data-campo="cliente">Cliente</th>
+              {% for etiqueta in detalle.meses_etiquetas %}
+              <th>{{ etiqueta }}</th>
+              {% endfor %}
+              <th data-campo="total_anio">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in detalle.resumen_clientes %}
+            <tr>
+              <td class="num">{{ f.folio }}</td>
+              <td class="col-texto"><a href="{{ url_for('crm_cliente_detalle', folio=f.folio) }}" class="{{ 'cliente-activo' if f.activo else '' }}">{{ f.cliente }}</a></td>
+              {% for mes in f.meses %}
+              {% if mes.profit %}
+              <td class="num">${{ '{:,.0f}'.format(mes.profit) }}</td>
+              {% else %}
+              <td class="num celda-sin-venta">—</td>
+              {% endif %}
+              {% endfor %}
+              <td class="num celda-total">${{ '{:,.0f}'.format(f.total_anio) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total general</td>
+              {% for total_mes in detalle.totales_por_mes %}
+              <td class="num">${{ '{:,.0f}'.format(total_mes) }}</td>
+              {% endfor %}
+              <td class="num">${{ '{:,.0f}'.format(detalle.total_general) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <p class="tabla-vacia">Sin clientes asociados en este filtro.</p>
+      {% endif %}
+    </div>
+
+    <div class="tabla-card">
+      <div class="tabla-card__head">
+        <div>
+          <p class="tabla-card__titulo">Clientes nuevos del mes</p>
+          <p class="tabla-card__nota">Su primer booking registrado cae en el mes seleccionado</p>
+        </div>
+        <span class="tabla-card__conteo">{{ detalle.clientes_nuevos_detalle|length }} cliente(s)</span>
+      </div>
+      {% if detalle.clientes_nuevos_detalle %}
+      <div class="tabla-scroll">
+        <table class="data-table tabla-ordenable">
+          <thead>
+            <tr>
+              <th class="col-texto" data-campo="cliente">Cliente</th>
+              <th data-campo="fecha_creacion">Fecha de creación</th>
+              <th data-campo="cant_booking">Cant Booking (mes)</th>
+              <th data-campo="profit">Profit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in detalle.clientes_nuevos_detalle %}
+            <tr>
+              <td class="col-texto">{{ f.cliente }}</td>
+              <td class="num">{{ f.fecha_creacion.strftime('%d/%m/%Y') }}</td>
+              <td class="num">{{ f.cant_booking }}</td>
+              <td class="num">${{ '{:,.0f}'.format(f.profit) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="tabla-vacia">Sin clientes nuevos en este filtro este mes.</p>
+      {% endif %}
+    </div>
+
+    <div class="fila-alertas">
+      {{ tarjeta_cotizaciones("Cotizaciones vigentes", "Creadas este mes, activas", detalle.cotizaciones_vigentes, "vigente") }}
+      {{ tarjeta_cotizaciones("Cotizaciones vencidas", "Creadas este mes, pasaron su fecha límite", detalle.cotizaciones_vencidas, "vencido") }}
+    </div>
+    <div class="fila-alertas">
+      {{ tarjeta_cotizaciones("Cotizaciones ganadas", "Creadas este mes, con booking aplicado", detalle.cotizaciones_ganadas, "ganada") }}
+      {{ tarjeta_cotizaciones("Cotizaciones perdidas", "Creadas este mes, marcadas como perdidas", detalle.cotizaciones_perdidas, "perdida") }}
+    </div>
+  </div>
+
+  </div>
+{% endblock %}
+{% block extra_script %}
+<script>
+(function () {
+  var selectPlaza = document.getElementById("filtro-plaza");
+  var selectVendedor = document.getElementById("filtro-vendedor");
+  var form = document.getElementById("form-resultados");
+  if (!selectPlaza || !selectVendedor || !form) return;
+
+  // Al cambiar de Plaza, el Vendedor seleccionado ya no aplica (pertenece
+  // a la plaza anterior) — se limpia solo y el formulario se envía de
+  // inmediato, así el filtro de Vendedor siempre queda limitado a los
+  // vendedores de la plaza recién elegida.
+  selectPlaza.addEventListener("change", function () {
+    selectVendedor.value = "";
+    form.submit();
+  });
+})();
+</script>
 {% endblock %}
