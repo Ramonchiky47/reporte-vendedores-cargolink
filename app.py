@@ -1785,6 +1785,29 @@ def creador_extra_cotizaciones_usuario():
     return session.get("cotizaciones_creador_extra") or None
 
 
+def creador_extra_para_vendedor(vendedor):
+    """Igual que creador_extra_cotizaciones_usuario(), pero resuelto a
+    partir del VENDEDOR QUE SE ESTÁ VIENDO (típicamente el filtro
+    Vendedor de CRM → Inicio/Resultados) en vez de la sesión de quien
+    mira — para que un administrador (o cualquiera con más jerarquía) que
+    filtra por ese vendedor también vea reflejadas esas cotizaciones,
+    igual que las ve el propio vendedor restringido al entrar con su
+    usuario. None si ese vendedor no tiene la excepción configurada en
+    Catálogos → Visualización de Plazas (o no se pasó ningún vendedor)."""
+    if not vendedor:
+        return None
+    db = get_db()
+    fila = db.execute("""
+        SELECT cotizaciones_creador_extra FROM app_user_permissions
+        WHERE solo_su_informacion = true
+          AND cotizaciones_creador_extra IS NOT NULL
+          AND upper(trim(vendedor_asociado)) = upper(trim(%s))
+        LIMIT 1
+    """, (vendedor,)).fetchone()
+    db.close()
+    return fila["cotizaciones_creador_extra"] if fila else None
+
+
 def usuario_puede_operar_tarea(vendedor_tarea):
     """True si el usuario en sesión puede ver/editar/borrar/autorizar una
     tarea de CRM → Tareas de este vendedor: respeta tanto su plaza
@@ -5991,7 +6014,7 @@ def crm_seccion(slug):
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
         datos = construir_inicio_crm(
             periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
-            creador_extra_cotizaciones=creador_extra_cotizaciones_usuario(),
+            creador_extra_cotizaciones=creador_extra_para_vendedor(vendedor_filtro),
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
@@ -6015,7 +6038,7 @@ def crm_seccion(slug):
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
-        creador_extra = creador_extra_cotizaciones_usuario()
+        creador_extra = creador_extra_para_vendedor(vendedor_filtro)
         datos = construir_inicio_crm(
             "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
             creador_extra_cotizaciones=creador_extra,
