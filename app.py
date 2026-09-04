@@ -5493,6 +5493,107 @@ def obtener_bookings_disponibles_cliente(cliente_nombre):
     ]
 
 
+COTIZACION_IDIOMAS = {"es", "en"}
+COTIZACION_TEXTOS = {
+    "es": {
+        "lang": "es",
+        "agradecemos": "AGRADECEMOS SU PREFERENCIA",
+        "cotizacion_default": "Cotización",
+        "referencia": "Referencia",
+        "creacion_cotizacion": "Creación de la cotización",
+        "vigencia": "Vigencia",
+        "creada_por": "Cotización creada por",
+        "saludo_1": "Estimado Cliente.",
+        "saludo_2": "En atención a su amable solicitud de cotización, le proporcionamos a usted los costos para transporte de su mercancía.",
+        "origen": "ORIGEN", "modalidad": "MODALIDAD", "tt": "TT (TIEMPO DE TRASLADO)", "seg_merc": "SEG. MERC.",
+        "destino": "DESTINO", "estibable": "ESTIBABLE", "via": "VÍA", "incoterm": "INCOTERM", "hazmat": "HAZ-MAT",
+        "si": "Sí", "no": "No",
+        "conceptos": "CONCEPTOS", "precio_unitario": "PRECIO UNITARIO", "impuesto_pct": "IMPUESTO %",
+        "impuesto": "IMPUESTO", "total": "TOTAL", "observaciones": "OBSERVACIONES",
+        "sin_conceptos": "Sin conceptos capturados",
+        "sub_total": "Sub total",
+        "descripcion_titulo": "DESCRIPCIÓN",
+        "shipping_notes_titulo": "SHIPPING NOTES / OBSERVACIONES",
+        "notas": [
+            "1) El servicio no incluye en origen/destino: trámites aduanales, maniobras, seguros de transporte, "
+            "impuestos por exportación/importación, cualquier otro gasto por cuenta y/o cualquier otro concepto no "
+            "mencionado expresamente en la presente.",
+            "2) Las tarifas no deberán ser aplicadas a ninguna carga que requiera un equipo o manejo especial, a "
+            "menos que sea especificado.",
+            "3) La Carga peligrosa, con sobrepeso o residuos peligrosos está sujeta a la aprobación del "
+            "Transportista de Carga antes de ser transportada.",
+            "4) Las tarifas están sujetas a la disponibilidad del equipo en origen y destino.",
+            "5) Peso máximo autorizado: Nuestras tarifas están sujetas a la legislación vigente en cada país sobre "
+            "las normas de pesos y dimensiones.",
+            "6) Los días libres de demoras de contenedor en Importación inician al término de la operación de "
+            "descarga del buque: la cantidad de estos días libres revisarlos directamente con su ejecutivo "
+            "comercial. Costo por demoras USD 160 por día +iva.",
+            "7) Servicio sujeto a disponibilidad de espacio y equipo al momento de la reservación.",
+            "8) El BAF es fluctuante (V.A.T.O.S.), sujeto a cambios sin previo aviso.",
+            "9) Acondicionamiento de equipo en caso de solicitarlo USD $150/cntr (food grade ctr).+iva",
+            "10) Si la presente cotización es aceptada, solicite su Orden de Servicio y envíela completada y "
+            "firmada vía fax o email a su ejecutivo de cuenta.",
+            "11) Considere que FCL cargue y descargue; para LCL/LTL/FTL considere 2 horas para cargar y descargar, "
+            "luego una hora adicional será un cargo de $150 usd cada hora.",
+            "* Los tiempos y frecuencias de tránsito corresponden a un servicio de línea regular, sin embargo "
+            "estos pueden cambiar debido a fuerza mayor sin previo aviso.",
+            "** La validez de la cotización puede cambiar en cualquier momento debido a cambios en el esquema de "
+            "costos.",
+        ],
+        "pregunta_firma": "¿Tienes alguna pregunta? Ponte en contacto conmigo",
+        "correo": "Correo", "tel": "Tel",
+        "volver": "Volver", "imprimir": "Imprimir", "descargar_pdf": "Descargar PDF",
+    },
+    "en": {
+        "lang": "en",
+        "agradecemos": "THANK YOU FOR YOUR PREFERENCE",
+        "cotizacion_default": "Quotation",
+        "referencia": "Reference",
+        "creacion_cotizacion": "Quotation date",
+        "vigencia": "Validity",
+        "creada_por": "Quotation created by",
+        "saludo_1": "Dear Customer,",
+        "saludo_2": "In response to your kind quotation request, we provide you with the costs for the transportation of your goods.",
+        "origen": "ORIGIN", "modalidad": "SERVICE TYPE", "tt": "TT (TRANSIT TIME)", "seg_merc": "CARGO INS.",
+        "destino": "DESTINATION", "estibable": "STACKABLE", "via": "MODE OF TRANSPORT", "incoterm": "INCOTERM",
+        "hazmat": "HAZ-MAT", "si": "Yes", "no": "No",
+        "conceptos": "CHARGES", "precio_unitario": "UNIT PRICE", "impuesto_pct": "TAX %",
+        "impuesto": "TAX", "total": "TOTAL", "observaciones": "REMARKS",
+        "sin_conceptos": "No items captured",
+        "sub_total": "Subtotal",
+        "descripcion_titulo": "DESCRIPTION",
+        "shipping_notes_titulo": "SHIPPING NOTES / REMARKS",
+        "notas": [
+            "1) The service does not include at origin/destination: customs clearance procedures, handling, cargo "
+            "insurance, export/import duties, any other expense payable by the customer and/or any other item not "
+            "expressly mentioned herein.",
+            "2) Rates shall not apply to any cargo requiring special equipment or handling, unless specified.",
+            "3) Hazardous, overweight, or hazardous-waste cargo is subject to the Carrier's approval before being "
+            "transported.",
+            "4) Rates are subject to equipment availability at origin and destination.",
+            "5) Maximum authorized weight: Our rates are subject to each country's current legislation on weight "
+            "and dimension regulations.",
+            "6) Free container demurrage days on Import begin once the vessel discharge operation is completed: "
+            "please check the number of free days directly with your account executive. Demurrage cost USD 160 "
+            "per day + VAT.",
+            "7) Service subject to space and equipment availability at the time of booking.",
+            "8) The BAF is fluctuating (V.A.T.O.S.), subject to change without prior notice.",
+            "9) Equipment conditioning, if requested, USD $150/cntr (food grade ctr). + VAT",
+            "10) If this quotation is accepted, please request your Service Order and send it completed and "
+            "signed via fax or email to your account executive.",
+            "11) Please note that FCL loading/unloading is included; for LCL/LTL/FTL please allow 2 hours for "
+            "loading and unloading — any additional hour will be charged at $150 USD per hour.",
+            "* Transit times and frequencies correspond to a regular line service; however, they may change due "
+            "to force majeure without prior notice.",
+            "** The validity of this quotation may change at any time due to changes in the cost structure.",
+        ],
+        "pregunta_firma": "Do you have any questions? Get in touch with me",
+        "correo": "Email", "tel": "Tel",
+        "volver": "Back", "imprimir": "Print", "descargar_pdf": "Download PDF",
+    },
+}
+
+
 def construir_documento_cotizacion_crm(cotizacion_id):
     """Junta toda la información de una cotización (cliente/prospecto,
     contacto, catálogos resueltos, líneas de producto con su total) para
@@ -6837,7 +6938,13 @@ def crm_cotizacion_vista(cotizacion_id):
     if documento is None:
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
-    return render_template("crm_cotizacion_vista.html", doc=documento, cotizacion_id=cotizacion_id)
+    idioma = request.args.get("idioma", "es")
+    if idioma not in COTIZACION_IDIOMAS:
+        idioma = "es"
+    return render_template(
+        "crm_cotizacion_vista.html", doc=documento, cotizacion_id=cotizacion_id,
+        idioma=idioma, t=COTIZACION_TEXTOS[idioma],
+    )
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/pdf")
@@ -6847,16 +6954,19 @@ def crm_cotizacion_pdf(cotizacion_id):
     if documento is None:
         flash("Cotización no encontrada.")
         return redirect(url_for("crm_seccion", slug="cotizaciones"))
+    idioma = request.args.get("idioma", "es")
+    if idioma not in COTIZACION_IDIOMAS:
+        idioma = "es"
 
-    html = render_template("crm_cotizacion_pdf.html", doc=documento)
+    html = render_template("crm_cotizacion_pdf.html", doc=documento, idioma=idioma, t=COTIZACION_TEXTOS[idioma])
     buffer = io.BytesIO()
     resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
     if resultado.err:
         flash("No se pudo generar el PDF de la cotización.")
-        return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id))
+        return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id, idioma=idioma))
     buffer.seek(0)
     return send_file(
-        buffer, as_attachment=True, download_name=f"Cotizacion_{documento['id_cotizacion']}.pdf",
+        buffer, as_attachment=True, download_name=f"Cotizacion_{documento['id_cotizacion']}_{idioma}.pdf",
         mimetype="application/pdf",
     )
 

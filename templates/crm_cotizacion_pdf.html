@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="{{ t.lang }}">
 <head>
 <meta charset="utf-8">
 <style>
@@ -98,11 +98,11 @@
   </table>
   <table class="regla-vino"><tr><td>&nbsp;</td></tr></table>
 
-  <table class="agradecimiento-tabla"><tr><td class="agradecimiento">AGRADECEMOS SU PREFERENCIA</td></tr></table>
+  <table class="agradecimiento-tabla"><tr><td class="agradecimiento">{{ t.agradecemos }}</td></tr></table>
 
   <table class="caja-titulo">
     <tr>
-      <td colspan="2"><p class="caja-titulo-nombre"><b>{{ doc.nombre_cotizacion or "Cotización" }}</b></p></td>
+      <td colspan="2"><p class="caja-titulo-nombre"><b>{{ doc.nombre_cotizacion or t.cotizacion_default }}</b></p></td>
     </tr>
     <tr>
       <td style="width:55%;">
@@ -112,36 +112,36 @@
         {% if doc.contacto_correo %}<p>{{ doc.contacto_correo }}</p>{% endif %}
       </td>
       <td class="der">
-        <p>Referencia: {{ doc.id_cotizacion }}</p>
-        <p>Creación de la cotización: {{ doc.fecha_creacion_larga }}</p>
-        <p>Vigencia: {{ doc.fecha_vencimiento_larga or "—" }}</p>
-        <p>Cotización creada por: <b>{{ doc.vendedor or "—" }}</b></p>
+        <p>{{ t.referencia }}: {{ doc.id_cotizacion }}</p>
+        <p>{{ t.creacion_cotizacion }}: {{ doc.fecha_creacion_larga }}</p>
+        <p>{{ t.vigencia }}: {{ doc.fecha_vencimiento_larga or "—" }}</p>
+        <p>{{ t.creada_por }}: <b>{{ doc.vendedor or "—" }}</b></p>
       </td>
     </tr>
   </table>
 
   <p class="saludo">
-    Estimado Cliente.<br/>
-    En atención a su amable solicitud de cotización, le proporcionamos a usted los costos para transporte de su mercancía.
+    {{ t.saludo_1 }}<br/>
+    {{ t.saludo_2 }}
   </p>
 
   <table class="barra-vino-vacia"><tr><td>&nbsp;</td></tr></table>
 
   <table class="rejilla-envio">
     <tr>
-      <td><p class="etiqueta">ORIGEN</p><p class="valor">{{ doc.origen }}</p></td>
-      <td><p class="etiqueta">MODALIDAD</p><p class="valor">{{ doc.modalidad }}</p></td>
-      <td><p class="etiqueta">TT (TIEMPO DE TRASLADO)</p><p class="valor">{{ doc.tiempo_traslado }}</p></td>
-      <td><p class="etiqueta">SEG. MERC.</p><p class="valor">{{ 'Sí' if doc.seguro_mercancia else 'No' }}</p></td>
+      <td><p class="etiqueta">{{ t.origen }}</p><p class="valor">{{ doc.origen }}</p></td>
+      <td><p class="etiqueta">{{ t.modalidad }}</p><p class="valor">{{ doc.modalidad }}</p></td>
+      <td><p class="etiqueta">{{ t.tt }}</p><p class="valor">{{ doc.tiempo_traslado }}</p></td>
+      <td><p class="etiqueta">{{ t.seg_merc }}</p><p class="valor">{{ t.si if doc.seguro_mercancia else t.no }}</p></td>
     </tr>
     <tr>
-      <td><p class="etiqueta">DESTINO</p><p class="valor">{{ doc.destino }}</p></td>
-      <td><p class="etiqueta">ESTIBABLE</p><p class="valor">{{ 'Sí' if doc.estibable else 'No' }}</p></td>
-      <td><p class="etiqueta">VÍA</p><p class="valor">{{ doc.via }}</p></td>
-      <td><p class="etiqueta">INCOTERM</p><p class="valor">{{ doc.incoterm }}</p></td>
+      <td><p class="etiqueta">{{ t.destino }}</p><p class="valor">{{ doc.destino }}</p></td>
+      <td><p class="etiqueta">{{ t.estibable }}</p><p class="valor">{{ t.si if doc.estibable else t.no }}</p></td>
+      <td><p class="etiqueta">{{ t.via }}</p><p class="valor">{{ doc.via }}</p></td>
+      <td><p class="etiqueta">{{ t.incoterm }}</p><p class="valor">{{ doc.incoterm }}</p></td>
     </tr>
     <tr>
-      <td><p class="etiqueta">HAZ-MAT</p><p class="valor">{{ 'Sí' if doc.hazmat else 'No' }}</p></td>
+      <td><p class="etiqueta">{{ t.hazmat }}</p><p class="valor">{{ t.si if doc.hazmat else t.no }}</p></td>
       <td></td><td></td><td></td>
     </tr>
   </table>
@@ -150,14 +150,14 @@
   <table class="tabla-rate {{ 'con-impuesto' if doc.mostrar_columna_impuesto else 'sin-impuesto' }}">
     <thead>
       <tr>
-        <th class="col-concepto">CONCEPTOS</th>
-        <th class="col-rate col-monto">PRECIO UNITARIO</th>
+        <th class="col-concepto">{{ t.conceptos }}</th>
+        <th class="col-rate col-monto">{{ t.precio_unitario }}</th>
         {% if doc.mostrar_columna_impuesto %}
-        <th class="col-rate col-pct">IMPUESTO %</th>
-        <th class="col-rate col-monto">IMPUESTO</th>
-        <th class="col-rate col-monto">TOTAL</th>
+        <th class="col-rate col-pct">{{ t.impuesto_pct }}</th>
+        <th class="col-rate col-monto">{{ t.impuesto }}</th>
+        <th class="col-rate col-monto">{{ t.total }}</th>
         {% endif %}
-        <th class="col-obs">OBSERVACIONES</th>
+        <th class="col-obs">{{ t.observaciones }}</th>
       </tr>
     </thead>
     <tbody>
@@ -174,7 +174,7 @@
       </tr>
       {% endfor %}
       {% if not doc.lineas %}
-      <tr><td colspan="{{ 6 if doc.mostrar_columna_impuesto else 3 }}" style="text-align:center; color:#999999;">Sin conceptos capturados</td></tr>
+      <tr><td colspan="{{ 6 if doc.mostrar_columna_impuesto else 3 }}" style="text-align:center; color:#999999;">{{ t.sin_conceptos }}</td></tr>
       {% endif %}
     </tbody>
   </table>
@@ -182,13 +182,13 @@
   {% if doc.mostrar_totales and doc.totales_moneda %}
   <table class="tarjetas-totales">
     <tr>
-      {% for t in doc.totales_moneda %}
+      {% for t2 in doc.totales_moneda %}
       <td class="tarjeta-columna">
-        <p class="tarjeta-titulo">{{ t.moneda }}</p>
+        <p class="tarjeta-titulo">{{ t2.moneda }}</p>
         <table class="tarjeta-columna-tabla">
-          <tr><td class="tarjeta-fila tarjeta-fila-etq">Sub total</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.subtotal) }}</td></tr>
-          <tr><td class="tarjeta-fila tarjeta-fila-etq">Impuesto</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t.impuesto) }}</td></tr>
-          <tr><td class="tarjeta-total-etq">Total</td><td class="tarjeta-total-val">${{ "{:,.2f}".format(t.total) }}</td></tr>
+          <tr><td class="tarjeta-fila tarjeta-fila-etq">{{ t.sub_total }}</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t2.subtotal) }}</td></tr>
+          <tr><td class="tarjeta-fila tarjeta-fila-etq">{{ t.impuesto }}</td><td class="tarjeta-fila tarjeta-fila-val">${{ "{:,.2f}".format(t2.impuesto) }}</td></tr>
+          <tr><td class="tarjeta-total-etq">{{ t.total }}</td><td class="tarjeta-total-val">${{ "{:,.2f}".format(t2.total) }}</td></tr>
         </table>
       </td>
       {% endfor %}
@@ -197,38 +197,28 @@
   </table>
   {% endif %}
 
-  <table class="barra-vino"><tr><td>DESCRIPCIÓN</td></tr></table>
+  <table class="barra-vino"><tr><td>{{ t.descripcion_titulo }}</td></tr></table>
   <p class="descripcion-texto">{{ doc.descripcion|nl2br }}</p>
 
   <table class="caja-notas">
     <tr>
       <td>
-        <p class="notas-titulo">SHIPPING NOTES / OBSERVACIONES</p>
+        <p class="notas-titulo">{{ t.shipping_notes_titulo }}</p>
         <div class="notas">
-          <p>1) El servicio no incluye en origen/destino: trámites aduanales, maniobras, seguros de transporte, impuestos por exportación/importación, cualquier otro gasto por cuenta y/o cualquier otro concepto no mencionado expresamente en la presente.</p>
-          <p>2) Las tarifas no deberán ser aplicadas a ninguna carga que requiera un equipo o manejo especial, a menos que sea especificado.</p>
-          <p>3) La Carga peligrosa, con sobrepeso o residuos peligrosos está sujeta a la aprobación del Transportista de Carga antes de ser transportada.</p>
-          <p>4) Las tarifas están sujetas a la disponibilidad del equipo en origen y destino.</p>
-          <p>5) Peso máximo autorizado: Nuestras tarifas están sujetas a la legislación vigente en cada país sobre las normas de pesos y dimensiones.</p>
-          <p>6) Los días libres de demoras de contenedor en Importación inician al término de la operación de descarga del buque: la cantidad de estos días libres revisarlos directamente con su ejecutivo comercial. Costo por demoras USD 160 por día +iva.</p>
-          <p>7) Servicio sujeto a disponibilidad de espacio y equipo al momento de la reservación.</p>
-          <p>8) El BAF es fluctuante (V.A.T.O.S.), sujeto a cambios sin previo aviso.</p>
-          <p>9) Acondicionamiento de equipo en caso de solicitarlo USD $150/cntr (food grade ctr).+iva</p>
-          <p>10) Si la presente cotización es aceptada, solicite su Orden de Servicio y envíela completada y firmada vía fax o email a su ejecutivo de cuenta.</p>
-          <p>11) Considere que FCL cargue y descargue; para LCL/LTL/FTL considere 2 horas para cargar y descargar, luego una hora adicional será un cargo de $150 usd cada hora.</p>
-          <p>* Los tiempos y frecuencias de tránsito corresponden a un servicio de línea regular, sin embargo estos pueden cambiar debido a fuerza mayor sin previo aviso.</p>
-          <p>** La validez de la cotización puede cambiar en cualquier momento debido a cambios en el esquema de costos.</p>
+          {% for nota in t.notas %}
+          <p>{{ nota }}</p>
+          {% endfor %}
         </div>
       </td>
     </tr>
   </table>
 
   <div class="firma">
-    <p>¿Tienes alguna pregunta? Ponte en contacto conmigo</p>
+    <p>{{ t.pregunta_firma }}</p>
     <p class="nombre">{{ doc.firma_nombre }}</p>
     {% if doc.firma_puesto %}<p>{{ doc.firma_puesto }}</p>{% endif %}
-    {% if doc.firma_telefono %}<p>Tel {{ doc.firma_telefono }}</p>{% endif %}
-    <p>Correo: {{ doc.firma_correo }}</p>
+    {% if doc.firma_telefono %}<p>{{ t.tel }} {{ doc.firma_telefono }}</p>{% endif %}
+    <p>{{ t.correo }}: {{ doc.firma_correo }}</p>
   </div>
 </body>
 </html>
