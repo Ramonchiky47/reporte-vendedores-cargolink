@@ -5543,6 +5543,8 @@ COTIZACION_TEXTOS = {
         "pregunta_firma": "¿Tienes alguna pregunta? Ponte en contacto conmigo",
         "correo": "Correo", "tel": "Tel",
         "volver": "Volver", "imprimir": "Imprimir", "descargar_pdf": "Descargar PDF",
+        "pricing_titulo": "RESPUESTA DE PRICING", "pricing_respondido_por": "Respondido por",
+        "incluir_pricing_label": "Incluir respuesta de Pricing",
     },
     "en": {
         "lang": "en",
@@ -5590,6 +5592,8 @@ COTIZACION_TEXTOS = {
         "pregunta_firma": "Do you have any questions? Get in touch with me",
         "correo": "Email", "tel": "Tel",
         "volver": "Back", "imprimir": "Print", "descargar_pdf": "Download PDF",
+        "pricing_titulo": "PRICING RESPONSE", "pricing_respondido_por": "Answered by",
+        "incluir_pricing_label": "Include Pricing response",
     },
 }
 
@@ -5634,6 +5638,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         SELECT
             s.id, s.referencia, s.tipo_embarque, s.estado, s.fecha_creacion, s.creado_por,
             s.creado_en AS solicitud_en, s.visto_por_vendedor_en,
+            s.respuesta_pricing, s.respondido_por, s.respondido_en,
             r.ultima_respuesta_en
         FROM crm_solicitudes_maritimo_aereo s
         LEFT JOIN LATERAL (
@@ -5659,6 +5664,21 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             and (not s["visto_por_vendedor_en"] or s["visto_por_vendedor_en"] < s["ultima_respuesta_en"])
         )
         solicitudes_maritimo.append(s)
+
+    # Respuesta de Pricing por solicitud (Marítimo/Aéreo): opcional, para
+    # cuando el vendedor quiere incluir en la cotización que le manda al
+    # cliente la respuesta que le dio el equipo de Pricing (tarifa/
+    # condiciones), en vez de tener que copiarla a mano.
+    pricing_respuestas = [
+        {
+            "referencia": s["referencia"],
+            "tipo_embarque": s["tipo_embarque"] or "",
+            "respuesta": s["respuesta_pricing"],
+            "respondido_por": nombre_desde_correo(s["respondido_por"]) or s["respondido_por"] or "",
+            "respondido_en": s["respondido_en"],
+        }
+        for s in solicitudes_maritimo if s["respuesta_pricing"]
+    ]
 
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
     # al cliente: usa la firma capturada si existe, si no deriva un nombre
@@ -5759,6 +5779,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
              "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
             for s in solicitudes_maritimo
         ],
+        "pricing_respuestas": pricing_respuestas,
     }
 
 
@@ -6941,9 +6962,10 @@ def crm_cotizacion_vista(cotizacion_id):
     idioma = request.args.get("idioma", "es")
     if idioma not in COTIZACION_IDIOMAS:
         idioma = "es"
+    incluir_pricing = request.args.get("incluir_pricing") == "1"
     return render_template(
         "crm_cotizacion_vista.html", doc=documento, cotizacion_id=cotizacion_id,
-        idioma=idioma, t=COTIZACION_TEXTOS[idioma],
+        idioma=idioma, t=COTIZACION_TEXTOS[idioma], incluir_pricing=incluir_pricing,
     )
 
 
@@ -6957,13 +6979,17 @@ def crm_cotizacion_pdf(cotizacion_id):
     idioma = request.args.get("idioma", "es")
     if idioma not in COTIZACION_IDIOMAS:
         idioma = "es"
+    incluir_pricing = request.args.get("incluir_pricing") == "1"
 
-    html = render_template("crm_cotizacion_pdf.html", doc=documento, idioma=idioma, t=COTIZACION_TEXTOS[idioma])
+    html = render_template(
+        "crm_cotizacion_pdf.html", doc=documento, idioma=idioma, t=COTIZACION_TEXTOS[idioma],
+        incluir_pricing=incluir_pricing,
+    )
     buffer = io.BytesIO()
     resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
     if resultado.err:
         flash("No se pudo generar el PDF de la cotización.")
-        return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id, idioma=idioma))
+        return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id, idioma=idioma, incluir_pricing="1" if incluir_pricing else "0"))
     buffer.seek(0)
     return send_file(
         buffer, as_attachment=True, download_name=f"Cotizacion_{documento['id_cotizacion']}_{idioma}.pdf",

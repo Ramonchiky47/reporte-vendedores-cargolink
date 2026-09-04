@@ -19,6 +19,12 @@
   .idioma-switch { display: flex; border: 1px solid var(--borde); border-radius: 6px; overflow: hidden; margin-right: auto; }
   .idioma-switch a { border: none; border-radius: 0; padding: 0.45rem 0.8rem; font-size: 0.8rem; color: #666; background: #fff; }
   .idioma-switch a.activo { background: var(--vino); color: #fff; }
+  .check-pricing { margin: 0; }
+  .check-pricing label { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: #444; font-family: system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+  .caja-pricing { border: 1px solid var(--borde); border-radius: 10px; padding: 1rem 1.3rem; margin: 1rem 0; }
+  .caja-pricing + .caja-pricing { margin-top: 0.6rem; }
+  .caja-pricing .pricing-cabecera { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.4rem; font-size: 0.78rem; color: #666; }
+  .caja-pricing .pricing-texto { font-size: 0.85rem; color: #222; white-space: pre-line; line-height: 1.5; }
 
   .encabezado {
     display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
@@ -100,12 +106,21 @@
 <body>
   <div class="barra-acciones">
     <div class="idioma-switch">
-      <a href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id, idioma='es') }}" class="{{ 'activo' if idioma == 'es' else '' }}">Español</a>
-      <a href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id, idioma='en') }}" class="{{ 'activo' if idioma == 'en' else '' }}">English</a>
+      <a href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id, idioma='es', incluir_pricing='1' if incluir_pricing else '0') }}" class="{{ 'activo' if idioma == 'es' else '' }}">Español</a>
+      <a href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id, idioma='en', incluir_pricing='1' if incluir_pricing else '0') }}" class="{{ 'activo' if idioma == 'en' else '' }}">English</a>
     </div>
+    {% if doc.pricing_respuestas %}
+    <form method="get" action="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id) }}" class="check-pricing">
+      <input type="hidden" name="idioma" value="{{ idioma }}">
+      <label>
+        <input type="checkbox" name="incluir_pricing" value="1" {% if incluir_pricing %}checked{% endif %} onchange="this.form.submit()">
+        {{ t.incluir_pricing_label }}
+      </label>
+    </form>
+    {% endif %}
     <a href="{{ url_for('crm_cotizacion_editar', cotizacion_id=cotizacion_id) }}">&larr; {{ t.volver }}</a>
     <button type="button" onclick="window.print()">{{ t.imprimir }}</button>
-    <a class="btn-imprimir" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion_id, idioma=idioma) }}">{{ t.descargar_pdf }}</a>
+    <a class="btn-imprimir" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion_id, idioma=idioma, incluir_pricing='1' if incluir_pricing else '0') }}">{{ t.descargar_pdf }}</a>
   </div>
 
   <div class="hoja">
@@ -212,6 +227,19 @@
 
     <div class="barra-vino vacia">{{ t.descripcion_titulo }}</div>
     <p class="descripcion-texto">{{ doc.descripcion|nl2br }}</p>
+
+    {% if incluir_pricing and doc.pricing_respuestas %}
+    <div class="barra-vino vacia">{{ t.pricing_titulo }}</div>
+    {% for pr in doc.pricing_respuestas %}
+    <div class="caja-pricing">
+      <div class="pricing-cabecera">
+        <span>{{ pr.referencia }}{% if pr.tipo_embarque %} · {{ pr.tipo_embarque }}{% endif %}</span>
+        {% if pr.respondido_por %}<span>{{ t.pricing_respondido_por }}: {{ pr.respondido_por }}</span>{% endif %}
+      </div>
+      <p class="pricing-texto">{{ pr.respuesta }}</p>
+    </div>
+    {% endfor %}
+    {% endif %}
 
     <div class="caja-notas">
       <p class="notas-titulo">{{ t.shipping_notes_titulo }}</p>

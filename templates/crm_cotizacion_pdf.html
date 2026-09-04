@@ -76,6 +76,11 @@
   table.caja-notas { border: 1px solid #d0d0d0; border-radius: 6px; margin: 10px 0; }
   table.caja-notas > tr > td { padding: 10px 14px; border: none; }
 
+  table.caja-pricing { border: 1px solid #d0d0d0; border-radius: 6px; margin: 6px 0; }
+  table.caja-pricing > tr > td { padding: 8px 12px; border: none; }
+  .pricing-cabecera { font-size: 6.5pt; color: #666666; margin: 0 0 4px; }
+  .pricing-texto { font-size: 7pt; color: #222222; margin: 0; }
+
   .firma { margin: 12px 0 4px; font-size: 7pt; color: #333333; }
   .firma p { margin: 2px 0; color: #444444; }
   .firma .nombre { font-weight: bold; color: #222222; }
@@ -199,6 +204,20 @@
 
   <table class="barra-vino"><tr><td>{{ t.descripcion_titulo }}</td></tr></table>
   <p class="descripcion-texto">{{ doc.descripcion|nl2br }}</p>
+
+  {% if incluir_pricing and doc.pricing_respuestas %}
+  <table class="barra-vino-vacia"><tr><td>{{ t.pricing_titulo }}</td></tr></table>
+  {% for pr in doc.pricing_respuestas %}
+  <table class="caja-pricing">
+    <tr>
+      <td>
+        <p class="pricing-cabecera">{{ pr.referencia }}{% if pr.tipo_embarque %} · {{ pr.tipo_embarque }}{% endif %}{% if pr.respondido_por %} — {{ t.pricing_respondido_por }}: {{ pr.respondido_por }}{% endif %}</p>
+        <p class="pricing-texto">{{ pr.respuesta|nl2br }}</p>
+      </td>
+    </tr>
+  </table>
+  {% endfor %}
+  {% endif %}
 
   <table class="caja-notas">
     <tr>
