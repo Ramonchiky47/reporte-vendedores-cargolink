@@ -135,7 +135,7 @@
             {% if c.estatus not in ('ganada', 'perdida') %}
               <a class="btn-editar" href="{{ url_for('crm_cotizacion_editar', cotizacion_id=c.id) }}">Editar</a>
             {% endif %}
-            <a class="btn-editar" style="background:#555;" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=c.id) }}">PDF</a>
+            <a class="btn-editar" style="background:#555;" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=c.id) }}" target="_blank">Ver</a>
             <form method="post" action="{{ url_for('crm_cotizacion_eliminar', cotizacion_id=c.id) }}" onsubmit="return confirm('¿Borrar esta cotización? Esta acción no se puede deshacer.');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-borrar">Borrar</button>

@@ -110,7 +110,6 @@
       <button type="submit" class="btn-clonar">Clonar</button>
     </form>
     <a class="btn-visualizar" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion_id) }}" target="_blank">Visualizar</a>
-    <a class="btn-pdf" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion_id) }}">Descargar PDF</a>
   </div>
 
   <span class="badge-estatus {{ doc.estatus }}">

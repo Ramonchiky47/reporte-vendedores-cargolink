@@ -336,7 +336,6 @@
       <button type="submit" class="btn-guardar" id="btn-guardar-cotizacion">Guardar cotización</button>
       {% if cotizacion %}
         <a class="btn-cancelar" id="link-ver-cotizacion" href="{{ url_for('crm_cotizacion_vista', cotizacion_id=cotizacion.id) }}" target="_blank">Ver</a>
-        <a class="btn-cancelar" id="link-pdf-cotizacion" href="{{ url_for('crm_cotizacion_pdf', cotizacion_id=cotizacion.id) }}">Descargar PDF</a>
       {% endif %}
       <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">Cancelar</a>
       <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">Salir</a>
@@ -774,11 +773,11 @@
         e.returnValue = '';
       });
 
-      // "Ver" abre en pestaña nueva y "Descargar PDF" no navega fuera de esta
-      // página, así que beforeunload nunca se dispara con ellos — sin este
-      // aviso aparte, se podía abrir el documento con datos viejos creyendo
-      // que ya reflejaba los cambios recién hechos en el formulario.
-      ['link-ver-cotizacion', 'link-pdf-cotizacion'].forEach((id) => {
+      // "Ver" abre en pestaña nueva, así que beforeunload nunca se dispara
+      // con él — sin este aviso aparte, se podía abrir el documento con
+      // datos viejos creyendo que ya reflejaba los cambios recién hechos
+      // en el formulario.
+      ['link-ver-cotizacion'].forEach((id) => {
         const link = document.getElementById(id);
         if (!link) return;
         link.addEventListener('click', (e) => {
