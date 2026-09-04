@@ -44,7 +44,7 @@
           pidió {{ fila.creado_por or '—' }} &middot; {{ fila.fecha_creacion }}
         </p>
       </div>
-      <a class="btn secondary small" href="{{ url_for('pricing_pdf', solicitud_id=fila.id) }}" target="_blank" rel="noopener">Vista previa PDF</a>
+      <a class="btn secondary small" href="{{ url_for('pricing_ver', solicitud_id=fila.id) }}" target="_blank" rel="noopener">Vista previa PDF</a>
     </div>
 
     <div class="pd-grid">

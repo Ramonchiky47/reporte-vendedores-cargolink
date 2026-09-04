@@ -6661,6 +6661,49 @@ ESTADOS_SOLICITUD_PRICING = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
 # dejar la solicitud en "Solicitud" ni "En proceso" desde este formulario.
 ESTADOS_FINALES_PRICING = ["Cotizado", "Rechazada"]
 
+PRICING_IDIOMAS = {"es", "en"}
+PRICING_TEXTOS = {
+    "es": {
+        "lang": "es",
+        "slogan": "Pricing · Solicitud Marítimo / Aéreo",
+        "generado": "Generado", "pidio": "Pidió", "fecha": "Fecha", "operativo_asignado": "Operativo asignado",
+        "ruta_modalidad": "RUTA Y MODALIDAD", "tipo": "TIPO", "incoterm": "INCOTERM", "origen": "ORIGEN",
+        "destino": "DESTINO", "lugar_recoleccion": "LUGAR DE RECOLECCIÓN", "lugar_entrega": "LUGAR DE ENTREGA",
+        "naviera_aerolinea": "NAVIERA / AEROLÍNEA",
+        "carga": "CARGA", "producto": "PRODUCTO", "contenedores": "CONTENEDORES",
+        "dias_libres": "DÍAS LIBRES REQUERIDOS", "dimensiones": "DIMENSIONES LCL / AÉREO",
+        "estibable": "ESTIBABLE", "inbond_usa": "INBOND USA", "hazmat": "HAZMAT", "reefer": "REEFER",
+        "si": "Sí", "no": "No",
+        "descripcion_material": "Descripción del material:",
+        "otros_datos": "OTROS DATOS", "agente_a_cotizar": "Agente a cotizar:", "propiedad": "Propiedad:",
+        "requerimientos_especiales": "Requerimientos especiales:", "anexos_notas": "Anexos / notas:",
+        "respuesta_pricing": "RESPUESTA DE PRICING", "respuestas_pricing": "RESPUESTAS DE PRICING",
+        "sin_respuesta": "Sin respuesta todavía.", "pricing_generico": "Pricing",
+        "pie": "AV2 Logistics · Documento generado desde Pricing para uso interno / envío al cliente.",
+        "regresar": "Regresar", "descargar_pdf": "Descargar PDF", "vista_previa_de": "Vista previa de",
+    },
+    "en": {
+        "lang": "en",
+        "slogan": "Pricing · Ocean / Air Request",
+        "generado": "Generated", "pidio": "Requested by", "fecha": "Date",
+        "operativo_asignado": "Assigned operator",
+        "ruta_modalidad": "ROUTE AND MODE", "tipo": "TYPE", "incoterm": "INCOTERM", "origen": "ORIGIN",
+        "destino": "DESTINATION", "lugar_recoleccion": "PICKUP LOCATION", "lugar_entrega": "DELIVERY LOCATION",
+        "naviera_aerolinea": "CARRIER / AIRLINE",
+        "carga": "CARGO", "producto": "PRODUCT", "contenedores": "CONTAINERS",
+        "dias_libres": "FREE DAYS REQUIRED", "dimensiones": "LCL / AIR DIMENSIONS",
+        "estibable": "STACKABLE", "inbond_usa": "US INBOND", "hazmat": "HAZMAT", "reefer": "REEFER",
+        "si": "Yes", "no": "No",
+        "descripcion_material": "Material description:",
+        "otros_datos": "OTHER DETAILS", "agente_a_cotizar": "Agent to quote:", "propiedad": "Ownership:",
+        "requerimientos_especiales": "Special requirements:", "anexos_notas": "Attachments / notes:",
+        "respuesta_pricing": "PRICING RESPONSE", "respuestas_pricing": "PRICING RESPONSES",
+        "sin_respuesta": "No response yet.", "pricing_generico": "Pricing",
+        "pie": "AV2 Logistics · Document generated from Pricing for internal use / sending to the client.",
+        "regresar": "Back", "descargar_pdf": "Download PDF", "vista_previa_de": "Preview of",
+    },
+}
+
 
 @app.route("/pricing")
 @pricing_required
@@ -6798,10 +6841,13 @@ def pricing_pdf(solicitud_id):
         ORDER BY creado_en ASC
     """, (solicitud_id,)).fetchall()
     db.close()
+    idioma = request.args.get("idioma", "es")
+    if idioma not in PRICING_IDIOMAS:
+        idioma = "es"
 
     html = render_template(
         "pricing_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
-        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL),
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL), idioma=idioma, t=PRICING_TEXTOS[idioma],
     )
     buffer = io.BytesIO()
     resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
@@ -6837,7 +6883,10 @@ def pricing_ver(solicitud_id):
     )
     db.commit()
     db.close()
-    return render_template("pricing_pdf_ver.html", fila=fila)
+    idioma = request.args.get("idioma", "es")
+    if idioma not in PRICING_IDIOMAS:
+        idioma = "es"
+    return render_template("pricing_pdf_ver.html", fila=fila, idioma=idioma, t=PRICING_TEXTOS[idioma])
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])

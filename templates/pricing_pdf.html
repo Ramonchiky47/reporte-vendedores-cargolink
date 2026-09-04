@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="{{ t.lang }}">
 <head>
 <meta charset="utf-8">
 <style>
@@ -48,10 +48,10 @@
       <td style="width:48px;"><table style="width:40px;"><tr><td class="logo-badge">AV2</td></tr></table></td>
       <td>
         <p class="marca-h1">AV2 LOGISTICS</p>
-        <p class="marca-slogan">Pricing · Solicitud Marítimo / Aéreo</p>
+        <p class="marca-slogan">{{ t.slogan }}</p>
       </td>
       <td class="der" style="font-size: 7pt; color: #555555;">
-        <p style="margin:0;">Generado {{ generado_en.strftime('%Y-%m-%d %H:%M') }}</p>
+        <p style="margin:0;">{{ t.generado }} {{ generado_en.strftime('%Y-%m-%d %H:%M') }}</p>
       </td>
     </tr>
   </table>
@@ -64,71 +64,71 @@
         {% if fila.id_cotizacion %}<p>{{ fila.id_cotizacion }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</p>{% endif %}
       </td>
       <td class="der">
-        <p>Pidió: {{ fila.creado_por or '—' }}</p>
-        <p>Fecha: {{ fila.fecha_creacion }}</p>
-        <p>Operativo asignado: {{ operativo or '—' }}</p>
+        <p>{{ t.pidio }}: {{ fila.creado_por or '—' }}</p>
+        <p>{{ t.fecha }}: {{ fila.fecha_creacion }}</p>
+        <p>{{ t.operativo_asignado }}: {{ operativo or '—' }}</p>
       </td>
     </tr>
   </table>
 
-  <table><tr><td class="barra">RUTA Y MODALIDAD</td></tr></table>
+  <table><tr><td class="barra">{{ t.ruta_modalidad }}</td></tr></table>
   <table class="rejilla">
     <tr>
-      <td><p class="etiqueta">TIPO</p><p class="valor">{{ fila.tipo_embarque or '—' }}{% if fila.importacion_exportacion %} · {{ fila.importacion_exportacion|capitalize }}{% endif %}</p></td>
-      <td><p class="etiqueta">INCOTERM</p><p class="valor">{{ fila.incoterm_nombre or '—' }}</p></td>
-      <td><p class="etiqueta">ORIGEN</p><p class="valor">{{ fila.pais_origen or '—' }}{% if fila.puerto_carga %} · {{ fila.puerto_carga }}{% endif %}</p></td>
-      <td><p class="etiqueta">DESTINO</p><p class="valor">{{ fila.pais_destino or '—' }}{% if fila.puerto_descarga %} · {{ fila.puerto_descarga }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.tipo }}</p><p class="valor">{{ fila.tipo_embarque or '—' }}{% if fila.importacion_exportacion %} · {{ fila.importacion_exportacion|capitalize }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.incoterm }}</p><p class="valor">{{ fila.incoterm_nombre or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.origen }}</p><p class="valor">{{ fila.pais_origen or '—' }}{% if fila.puerto_carga %} · {{ fila.puerto_carga }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.destino }}</p><p class="valor">{{ fila.pais_destino or '—' }}{% if fila.puerto_descarga %} · {{ fila.puerto_descarga }}{% endif %}</p></td>
     </tr>
     <tr>
-      <td><p class="etiqueta">LUGAR DE RECOLECCIÓN</p><p class="valor">{{ fila.lugar_recoleccion or '—' }}</p></td>
-      <td><p class="etiqueta">LUGAR DE ENTREGA</p><p class="valor">{{ fila.lugar_entrega or '—' }}</p></td>
-      <td colspan="2"><p class="etiqueta">NAVIERA / AEROLÍNEA</p><p class="valor">{{ fila.naviera_aerolinea or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.lugar_recoleccion }}</p><p class="valor">{{ fila.lugar_recoleccion or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.lugar_entrega }}</p><p class="valor">{{ fila.lugar_entrega or '—' }}</p></td>
+      <td colspan="2"><p class="etiqueta">{{ t.naviera_aerolinea }}</p><p class="valor">{{ fila.naviera_aerolinea or '—' }}</p></td>
     </tr>
   </table>
 
-  <table><tr><td class="barra">CARGA</td></tr></table>
+  <table><tr><td class="barra">{{ t.carga }}</td></tr></table>
   <table class="rejilla">
     <tr>
-      <td><p class="etiqueta">PRODUCTO</p><p class="valor">{{ fila.producto or '—' }}</p></td>
-      <td><p class="etiqueta">CONTENEDORES</p><p class="valor">{{ fila.fcl_numero_tipo_contenedores or '—' }}</p></td>
-      <td><p class="etiqueta">DÍAS LIBRES REQUERIDOS</p><p class="valor">{{ fila.fcl_dias_libres_requeridos if fila.fcl_dias_libres_requeridos is not none else '—' }}</p></td>
-      <td><p class="etiqueta">DIMENSIONES LCL / AÉREO</p><p class="valor">{{ fila.lcl_air_dimensiones or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.producto }}</p><p class="valor">{{ fila.producto or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.contenedores }}</p><p class="valor">{{ fila.fcl_numero_tipo_contenedores or '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.dias_libres }}</p><p class="valor">{{ fila.fcl_dias_libres_requeridos if fila.fcl_dias_libres_requeridos is not none else '—' }}</p></td>
+      <td><p class="etiqueta">{{ t.dimensiones }}</p><p class="valor">{{ fila.lcl_air_dimensiones or '—' }}</p></td>
     </tr>
     <tr>
-      <td><p class="etiqueta">ESTIBABLE</p><p class="valor">{% if fila.estibable is none %}—{% elif fila.estibable %}Sí{% else %}No{% endif %}</p></td>
-      <td><p class="etiqueta">INBOND USA</p><p class="valor">{% if fila.requiere_inbond_usa is none %}—{% elif fila.requiere_inbond_usa %}Sí{% else %}No{% endif %}</p></td>
-      <td><p class="etiqueta">HAZMAT</p><p class="valor">{{ 'Sí' if fila.hazmat else 'No' }}</p></td>
-      <td><p class="etiqueta">REEFER</p><p class="valor">{% if fila.carga_reefer is none %}—{% elif fila.carga_reefer %}Sí{% else %}No{% endif %}{% if fila.temperatura %} · {{ fila.temperatura }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.estibable }}</p><p class="valor">{% if fila.estibable is none %}—{% elif fila.estibable %}{{ t.si }}{% else %}{{ t.no }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.inbond_usa }}</p><p class="valor">{% if fila.requiere_inbond_usa is none %}—{% elif fila.requiere_inbond_usa %}{{ t.si }}{% else %}{{ t.no }}{% endif %}</p></td>
+      <td><p class="etiqueta">{{ t.hazmat }}</p><p class="valor">{{ t.si if fila.hazmat else t.no }}</p></td>
+      <td><p class="etiqueta">{{ t.reefer }}</p><p class="valor">{% if fila.carga_reefer is none %}—{% elif fila.carga_reefer %}{{ t.si }}{% else %}{{ t.no }}{% endif %}{% if fila.temperatura %} · {{ fila.temperatura }}{% endif %}</p></td>
     </tr>
   </table>
   {% if fila.descripcion_material %}
-  <p class="texto"><b>Descripción del material:</b> {{ fila.descripcion_material }}</p>
+  <p class="texto"><b>{{ t.descripcion_material }}</b> {{ fila.descripcion_material }}</p>
   {% endif %}
 
   {% if fila.requerimientos_especiales or fila.agente_a_cotizar or fila.propiedad or fila.anexos_notas %}
-  <table><tr><td class="barra">OTROS DATOS</td></tr></table>
-  {% if fila.agente_a_cotizar %}<p class="texto"><b>Agente a cotizar:</b> {{ fila.agente_a_cotizar }}</p>{% endif %}
-  {% if fila.propiedad %}<p class="texto"><b>Propiedad:</b> {{ fila.propiedad }}</p>{% endif %}
-  {% if fila.requerimientos_especiales %}<p class="texto"><b>Requerimientos especiales:</b> {{ fila.requerimientos_especiales }}</p>{% endif %}
-  {% if fila.anexos_notas %}<p class="texto"><b>Anexos / notas:</b> {{ fila.anexos_notas }}</p>{% endif %}
+  <table><tr><td class="barra">{{ t.otros_datos }}</td></tr></table>
+  {% if fila.agente_a_cotizar %}<p class="texto"><b>{{ t.agente_a_cotizar }}</b> {{ fila.agente_a_cotizar }}</p>{% endif %}
+  {% if fila.propiedad %}<p class="texto"><b>{{ t.propiedad }}</b> {{ fila.propiedad }}</p>{% endif %}
+  {% if fila.requerimientos_especiales %}<p class="texto"><b>{{ t.requerimientos_especiales }}</b> {{ fila.requerimientos_especiales }}</p>{% endif %}
+  {% if fila.anexos_notas %}<p class="texto"><b>{{ t.anexos_notas }}</b> {{ fila.anexos_notas }}</p>{% endif %}
   {% endif %}
 
-  <table><tr><td class="barra">RESPUESTA{{ 'S' if respuestas|length != 1 else '' }} DE PRICING</td></tr></table>
+  <table><tr><td class="barra">{{ t.respuestas_pricing if respuestas|length != 1 else t.respuesta_pricing }}</td></tr></table>
   {% if respuestas %}
     {% for r in respuestas %}
     <table class="caja-respuesta">
       <tr>
         <td>
-          <p class="respuesta-quien">{{ r.respondido_por or 'Pricing' }} · {{ r.creado_en|hora_mx }}</p>
+          <p class="respuesta-quien">{{ r.respondido_por or t.pricing_generico }} · {{ r.creado_en|hora_mx }}</p>
           <p class="respuesta-texto">{{ r.respuesta|nl2br }}</p>
         </td>
       </tr>
     </table>
     {% endfor %}
   {% else %}
-  <p class="texto" style="color:#999999;">Sin respuesta todavía.</p>
+  <p class="texto" style="color:#999999;">{{ t.sin_respuesta }}</p>
   {% endif %}
 
-  <p class="pie">AV2 Logistics · Documento generado desde Pricing para uso interno / envío al cliente.</p>
+  <p class="pie">{{ t.pie }}</p>
 </body>
 </html>
