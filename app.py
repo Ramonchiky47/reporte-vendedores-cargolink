@@ -4157,13 +4157,48 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
     }
 
 
-def opciones_clientes_grupos_crm():
+def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None):
+    """Clientes y grupos que puede asociar el usuario en sesión a un
+    contacto (crm_contacto_form.html): mismo criterio de plaza y "solo su
+    información" que construir_clientes_crm/construir_grupos_crm — antes
+    no filtraba nada y cualquiera veía el catálogo completo de clientes y
+    grupos, sin importar su plaza o vendedor asociado."""
     db = get_db()
-    clientes = db.execute(
-        "SELECT folio, razon_social FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    clientes_raw = db.execute(
+        "SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
     ).fetchall()
-    grupos = db.execute("SELECT id, nombre FROM crm_grupos ORDER BY nombre").fetchall()
+    grupos_raw = db.execute("SELECT id, nombre FROM crm_grupos ORDER BY nombre").fetchall()
+    miembros_grupo = db.execute("""
+        SELECT gc.grupo_id, ac.vendedor
+        FROM crm_grupos_clientes gc
+        JOIN asignacion_de_clientes ac ON ac.folio = gc.cliente_folio
+    """).fetchall()
     db.close()
+
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+
+    def permitido(vendedor):
+        vkey = normalizar(vendedor)
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            return False
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            return False
+        return True
+
+    clientes = [r for r in clientes_raw if permitido(r["vendedor"])]
+
+    clientes_visibles_por_grupo = {}
+    for m in miembros_grupo:
+        if not permitido(m["vendedor"]):
+            continue
+        clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
+    sin_restriccion = plazas_permitidas is None and vendedor_forzado_norm is None
+    grupos = [g for g in grupos_raw if sin_restriccion or clientes_visibles_por_grupo.get(g["id"], 0) > 0]
+
     return clientes, grupos
 
 
@@ -4202,6 +4237,30 @@ def guardar_contacto_crm(contacto_id):
         ).fetchone()
         contacto_id = fila["id"]
     else:
+        # Si el usuario está restringido por plaza o "solo su información",
+        # el formulario solo le mostró (y le dejó tocar) los clientes/
+        # grupos dentro de su alcance — sin esto, guardar borraría de un
+        # plumazo cualquier asociación fuera de su alcance que el contacto
+        # ya tuviera, aunque el usuario nunca haya podido verla ni tocarla.
+        plazas_permitidas = plazas_permitidas_usuario()
+        vendedor_forzado = vendedor_forzado_usuario()
+        if plazas_permitidas is not None or vendedor_forzado:
+            clientes_visibles, grupos_visibles = opciones_clientes_grupos_crm(plazas_permitidas, vendedor_forzado)
+            folios_visibles = {c["folio"] for c in clientes_visibles}
+            grupos_visibles_ids = {g["id"] for g in grupos_visibles}
+            clientes_actuales = {
+                r["cliente_folio"] for r in db.execute(
+                    "SELECT cliente_folio FROM crm_contacto_clientes WHERE contacto_id = %s", (contacto_id,)
+                )
+            }
+            grupos_actuales = {
+                r["grupo_id"] for r in db.execute(
+                    "SELECT grupo_id FROM crm_contacto_grupos WHERE contacto_id = %s", (contacto_id,)
+                )
+            }
+            clientes_folios |= (clientes_actuales - folios_visibles)
+            grupos_ids |= (grupos_actuales - grupos_visibles_ids)
+
         db.execute(
             "UPDATE crm_contactos SET nombre = %s, apellido = %s, telefono = %s, correo = %s, observaciones = %s WHERE id = %s",
             (nombre, apellido, telefono, correo, observaciones, contacto_id),
@@ -6460,7 +6519,7 @@ def crm_contacto_nuevo():
         else:
             return redirect(url_for("crm_seccion", slug="contactos"))
 
-    clientes, grupos = opciones_clientes_grupos_crm()
+    clientes, grupos = opciones_clientes_grupos_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     nav_groups = agrupar_nav_crm("contactos")
     return render_template(
         "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Nuevo contacto",
@@ -6518,7 +6577,7 @@ def crm_contacto_editar(contacto_id):
     }
     db.close()
 
-    clientes, grupos = opciones_clientes_grupos_crm()
+    clientes, grupos = opciones_clientes_grupos_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     nav_groups = agrupar_nav_crm("contactos")
     return render_template(
         "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Editar contacto",
