@@ -5863,21 +5863,65 @@ def opciones_tipo_producto_crm():
     return tipos
 
 
-def opciones_clientes_cotizacion_crm():
+def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None):
+    """Clientes que puede elegir el usuario en sesión al crear/editar una
+    cotización (select "Cliente"): mismo criterio de plaza y "solo su
+    información" que el resto del CRM (construir_clientes_crm) — antes no
+    filtraba nada y cualquiera veía el catálogo completo de clientes."""
     db = get_db()
-    clientes = db.execute(
-        "SELECT folio, razon_social FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    clientes_raw = db.execute(
+        "SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE folio IS NOT NULL ORDER BY razon_social"
     ).fetchall()
     db.close()
+
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    clientes = []
+    for r in clientes_raw:
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        clientes.append(r)
     return clientes
 
 
-def opciones_contactos_cotizacion_crm():
+def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None):
+    """Contactos que puede elegir el usuario en sesión al crear/editar una
+    cotización (select "Contacto"): mismo criterio que
+    construir_contactos_crm — un contacto sin ningún cliente asociado es
+    visible salvo que el usuario tenga "solo su información" activo; si
+    tiene clientes, basta con que uno caiga en su plaza/vendedor
+    permitido."""
     db = get_db()
-    contactos = db.execute(
-        "SELECT id, nombre, apellido FROM crm_contactos ORDER BY nombre, apellido"
-    ).fetchall()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    contactos_raw = db.execute("""
+        SELECT c.id, c.nombre, c.apellido,
+               COALESCE(array_agg(DISTINCT ac.vendedor) FILTER (WHERE ac.vendedor IS NOT NULL), '{}') AS vendedores
+        FROM crm_contactos c
+        LEFT JOIN crm_contacto_clientes cc ON cc.contacto_id = c.id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = cc.cliente_folio
+        GROUP BY c.id
+        ORDER BY c.nombre, c.apellido
+    """).fetchall()
     db.close()
+
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    contactos = []
+    for r in contactos_raw:
+        vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
+        plazas_contacto = {plaza_por_vendedor.get(v, "#N/D") for v in vendedores_contacto}
+        if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+            continue
+        if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
+            continue
+        contactos.append(r)
     return contactos
 
 
@@ -6508,8 +6552,8 @@ def crm_cotizacion_nueva():
 
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
-    clientes = opciones_clientes_cotizacion_crm()
-    contactos = opciones_contactos_cotizacion_crm()
+    clientes = opciones_clientes_cotizacion_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    contactos = opciones_contactos_cotizacion_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     nav_groups = agrupar_nav_crm("cotizaciones")
     return render_template(
         "crm_cotizacion_form.html", nav_groups=nav_groups, titulo_pagina="Nueva cotización",
@@ -6550,8 +6594,8 @@ def crm_cotizacion_editar(cotizacion_id):
 
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
-    clientes = opciones_clientes_cotizacion_crm()
-    contactos = opciones_contactos_cotizacion_crm()
+    clientes = opciones_clientes_cotizacion_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    contactos = opciones_contactos_cotizacion_crm(plazas_permitidas_usuario(), vendedor_forzado_usuario())
     lineas = obtener_lineas_cotizacion_crm(cotizacion_id)
     nav_groups = agrupar_nav_crm("cotizaciones")
     return render_template(
