@@ -3672,10 +3672,10 @@ CRM_NAV = [
     {"grupo": "Administración", "texto": "Configuración", "slug": "configuracion"},
 ]
 
-# Todos los catálogos de CRM son solo para administradores, EXCEPTO
-# Contactos (sigue abierto a cualquiera con acceso a CRM).
+# Todos los catálogos de CRM son solo para administradores, EXCEPTO estos.
+CRM_CATALOGOS_ABIERTOS = {"contactos", "clientes"}
 CRM_CATALOGOS_SOLO_ADMIN = {
-    item["slug"] for item in CRM_NAV if item["grupo"] == "Catálogos" and item["slug"] != "contactos"
+    item["slug"] for item in CRM_NAV if item["grupo"] == "Catálogos" and item["slug"] not in CRM_CATALOGOS_ABIERTOS
 }
 
 
@@ -6494,7 +6494,6 @@ def crm_grupo_eliminar(grupo_id):
 
 @app.route("/crm/clientes/<int:folio>")
 @crm_required
-@crm_catalogo_admin_required
 def crm_cliente_detalle(folio):
     cliente = construir_cliente_detalle_crm(folio, plazas_permitidas_usuario(), vendedor_forzado_usuario())
     if cliente is None:
