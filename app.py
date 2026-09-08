@@ -324,6 +324,12 @@ def init_db():
             creado_en timestamptz not null default now()
         );
     """)
+    # Clientes "fuera de catálogo": cuando el cliente real de un contacto
+    # todavía no existe en asignacion_de_clientes (o no le toca verlo por
+    # su plaza/"solo su información"), puede escribirlo libre en vez de
+    # quedar forzado a elegir solo del catálogo filtrado. Igual que
+    # crm_tareas.asistentes: JSON (lista de strings) guardado como texto.
+    db.execute("ALTER TABLE crm_contactos ADD COLUMN IF NOT EXISTS clientes_libres text NOT NULL DEFAULT '[]';")
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_contacto_clientes (
             contacto_id bigint not null references crm_contactos(id) on delete cascade,
@@ -3937,7 +3943,7 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None):
         contactos_con_cotizacion.add(r["contacto_id"])
 
     filas = db.execute("""
-        SELECT c.id, c.nombre, c.apellido, c.telefono, c.correo, c.observaciones,
+        SELECT c.id, c.nombre, c.apellido, c.telefono, c.correo, c.observaciones, c.clientes_libres,
                COALESCE(array_agg(DISTINCT ac.razon_social) FILTER (WHERE ac.razon_social IS NOT NULL), '{}') AS clientes,
                COALESCE(array_agg(DISTINCT ac.vendedor) FILTER (WHERE ac.vendedor IS NOT NULL), '{}') AS vendedores,
                COALESCE(array_agg(DISTINCT g.nombre) FILTER (WHERE g.nombre IS NOT NULL), '{}') AS grupos
@@ -3969,6 +3975,7 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None):
             "correo": r["correo"] or "",
             "observaciones": r["observaciones"] or "",
             "clientes": sorted(r["clientes"]),
+            "clientes_libres": sorted(json.loads(r["clientes_libres"] or "[]")),
             "grupos": sorted(r["grupos"]),
             "tiene_booking": tiene_booking,
             "tiene_cotizacion": r["id"] in contactos_con_cotizacion,
@@ -4152,6 +4159,7 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
         "correo": contacto["correo"] or "",
         "observaciones": contacto["observaciones"] or "",
         "clientes": [c["razon_social"] for c in clientes],
+        "clientes_libres": json.loads(contacto["clientes_libres"] or "[]"),
         "grupos": [g["nombre"] for g in grupos],
         "bookings": bookings,
     }
@@ -4216,6 +4224,12 @@ def guardar_contacto_crm(contacto_id):
     grupo_nuevo = request.form.get("grupo_nuevo", "").strip().upper()
     clientes_folios = {int(v) for v in request.form.getlist("clientes") if v.strip().lstrip("-").isdigit()}
     grupos_ids = {int(v) for v in request.form.getlist("grupos") if v.strip().isdigit()}
+    # Clientes que el usuario escribió libremente porque no los encontró en
+    # el catálogo (filtrado por su plaza/"solo su información") — no son
+    # folios reales, solo el nombre tal cual lo capturó.
+    clientes_libres = [
+        v.strip().upper()[:120] for v in request.form.getlist("cliente_libre[]") if v.strip()
+    ]
 
     if not nombre:
         return "El nombre es obligatorio."
@@ -4231,9 +4245,9 @@ def guardar_contacto_crm(contacto_id):
 
     if contacto_id is None:
         fila = db.execute(
-            "INSERT INTO crm_contactos (nombre, apellido, telefono, correo, observaciones) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (nombre, apellido, telefono, correo, observaciones),
+            "INSERT INTO crm_contactos (nombre, apellido, telefono, correo, observaciones, clientes_libres) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (nombre, apellido, telefono, correo, observaciones, json.dumps(clientes_libres)),
         ).fetchone()
         contacto_id = fila["id"]
     else:
@@ -4262,8 +4276,9 @@ def guardar_contacto_crm(contacto_id):
             grupos_ids |= (grupos_actuales - grupos_visibles_ids)
 
         db.execute(
-            "UPDATE crm_contactos SET nombre = %s, apellido = %s, telefono = %s, correo = %s, observaciones = %s WHERE id = %s",
-            (nombre, apellido, telefono, correo, observaciones, contacto_id),
+            "UPDATE crm_contactos SET nombre = %s, apellido = %s, telefono = %s, correo = %s, observaciones = %s, "
+            "clientes_libres = %s WHERE id = %s",
+            (nombre, apellido, telefono, correo, observaciones, json.dumps(clientes_libres), contacto_id),
         )
         db.execute("DELETE FROM crm_contacto_clientes WHERE contacto_id = %s", (contacto_id,))
         db.execute("DELETE FROM crm_contacto_grupos WHERE contacto_id = %s", (contacto_id,))
@@ -6523,6 +6538,7 @@ def crm_contacto_nuevo():
     return render_template(
         "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Nuevo contacto",
         contacto=None, clientes=clientes, grupos=grupos, clientes_sel=set(), grupos_sel=set(),
+        clientes_libres=[],
     )
 
 
@@ -6581,6 +6597,7 @@ def crm_contacto_editar(contacto_id):
     return render_template(
         "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Editar contacto",
         contacto=contacto, clientes=clientes, grupos=grupos, clientes_sel=clientes_sel, grupos_sel=grupos_sel,
+        clientes_libres=json.loads(contacto["clientes_libres"] or "[]"),
     )
 
 

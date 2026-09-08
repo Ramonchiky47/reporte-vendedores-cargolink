@@ -40,6 +40,11 @@
   .multi-select-lista input[type="checkbox"] { margin: 0; }
   .multi-select-acciones { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
   .btn-aplicar-multiselect { padding: 0.35rem 0.9rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+  #lista-clientes-libres { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.4rem; }
+  .fila-cliente-libre { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; }
+  .fila-cliente-libre input { padding: 0.45rem 0.55rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .btn-quitar-cliente-libre { width: 1.8rem; height: 1.8rem; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: #757575; cursor: pointer; font-size: 1rem; line-height: 1; }
+  .btn-agregar-cliente-libre { align-self: flex-start; margin-top: 0.4rem; padding: 0.35rem 0.7rem; border: 1px dashed var(--borde); border-radius: 6px; background: #fff; color: #1565c0; cursor: pointer; font: inherit; font-size: 0.8rem; }
 {% endblock %}
 {% block crm_content %}
   <a class="btn-atras" style="display:inline-block; margin-bottom:1rem; padding:0.4rem 0.8rem; border:1px solid var(--borde); border-radius:6px; color:#333; text-decoration:none; font-size:0.85rem;"
@@ -92,6 +97,16 @@
         </div>
       </div>
     </div>
+    <p class="pista-campo">¿El cliente no está en el catálogo? Agrégalo por su nombre abajo.</p>
+    <div id="lista-clientes-libres">
+      {% for cl in clientes_libres %}
+        <div class="fila-cliente-libre">
+          <input type="text" name="cliente_libre[]" placeholder="Nombre del cliente" value="{{ cl }}">
+          <button type="button" class="btn-quitar-cliente-libre" onclick="quitarFilaClienteLibre(this)">&times;</button>
+        </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-agregar-cliente-libre" id="agregar-cliente-libre">+ Agregar cliente fuera de catálogo</button>
 
     <label>Grupos asociados</label>
     <div class="multi-select" id="grupos-multiselect">
@@ -158,10 +173,32 @@
     inicializarMultiSelect('clientes', 'cliente', 'clientes');
     inicializarMultiSelect('grupos', 'grupo', 'grupos');
 
+    function filaClienteLibreHTML() {
+      return '<div class="fila-cliente-libre">' +
+        '<input type="text" name="cliente_libre[]" placeholder="Nombre del cliente">' +
+        '<button type="button" class="btn-quitar-cliente-libre" onclick="quitarFilaClienteLibre(this)">&times;</button>' +
+        '</div>';
+    }
+
+    function quitarFilaClienteLibre(boton) {
+      const lista = document.getElementById('lista-clientes-libres');
+      const fila = boton.closest('.fila-cliente-libre');
+      if (lista.children.length > 1) {
+        fila.remove();
+      } else {
+        fila.querySelector('input').value = '';
+      }
+    }
+
+    document.getElementById('agregar-cliente-libre').addEventListener('click', () => {
+      const lista = document.getElementById('lista-clientes-libres');
+      lista.insertAdjacentHTML('beforeend', filaClienteLibreHTML());
+      forzarMayusculasEl(lista.lastElementChild.querySelector('input'));
+    });
+
     // Los contactos se capturan siempre en mayúsculas (teléfono y correo
     // quedan fuera de esta regla, no siguen esa convención).
-    function forzarMayusculas(id) {
-      const el = document.getElementById(id);
+    function forzarMayusculasEl(el) {
       if (!el) return;
       el.addEventListener('input', () => {
         const inicio = el.selectionStart;
@@ -170,6 +207,10 @@
         el.setSelectionRange(inicio, fin);
       });
     }
+    function forzarMayusculas(id) {
+      forzarMayusculasEl(document.getElementById(id));
+    }
     ['nombre', 'apellido', 'observaciones', 'grupo_nuevo'].forEach(forzarMayusculas);
+    document.querySelectorAll('#lista-clientes-libres input[name="cliente_libre[]"]').forEach(forzarMayusculasEl);
   </script>
 {% endblock %}

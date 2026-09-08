@@ -15,6 +15,7 @@
   .pendiente { color: #999; font-size: 0.85rem; }
   .etiqueta { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.78rem; margin: 0 0.3rem 0.3rem 0; background: #e8eef7; color: #1e4a8a; }
   .etiqueta-grupo { background: #fdf1e0; color: #8a5a1e; }
+  .etiqueta-libre { background: #f1f1f1; color: #666; border: 1px dashed #bbb; }
   .btn-editar-contacto { display: inline-block; margin-top: 0.5rem; padding: 0.45rem 0.9rem; background: #ef6c00; color: #fff; border-radius: 6px; text-decoration: none; font-size: 0.85rem; }
 {% endblock %}
 {% block crm_content %}
@@ -33,7 +34,8 @@
       <p class="campo-etiqueta">Clientes</p>
       <p class="campo-valor">
         {% for cliente in contacto.clientes %}<span class="etiqueta">{{ cliente }}</span>{% endfor %}
-        {% if not contacto.clientes %}<span class="pendiente">Sin cliente asociado</span>{% endif %}
+        {% for cliente in contacto.clientes_libres %}<span class="etiqueta etiqueta-libre" title="Cliente fuera de catálogo">{{ cliente }}</span>{% endfor %}
+        {% if not contacto.clientes and not contacto.clientes_libres %}<span class="pendiente">Sin cliente asociado</span>{% endif %}
       </p>
       <p class="campo-etiqueta">Grupos</p>
       <p class="campo-valor">
