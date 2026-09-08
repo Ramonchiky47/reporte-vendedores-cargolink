@@ -4924,11 +4924,12 @@ def construir_detalle_resultados_mes(
         SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.estatus, co.perdida_en,
                co.cliente_folio, co.cliente_prospecto, co.profit_estimado, cb.ganada_desde,
                ac.vendedor AS cliente_vendedor, ac.razon_social,
-               f.nombre_firma, cu.email AS creador_correo
+               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
         LEFT JOIN (
             SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
             FROM crm_cotizacion_bookings GROUP BY cotizacion_id
@@ -5035,7 +5036,18 @@ def construir_detalle_resultados_mes(
                 continue
             if plaza_filtro and plaza != plaza_filtro:
                 continue
-        identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        # El vendedor asociado a la cuenta que creó la cotización (Catálogos
+        # → Visualización de Plazas) manda sobre la firma capturada o el
+        # nombre derivado del correo: es el vínculo explícito cuenta→vendedor
+        # que ya usa vendedor_forzado_usuario(), así que siempre calza contra
+        # las llaves de catalogo_vendedores. Antes, cruzar por firma/correo
+        # fallaba en cuanto el nombre derivado del correo no coincidía letra
+        # por letra con el catálogo (p.ej. "aide.covarrubias@..." -> "Aide
+        # Covarrubias" vs "AIDEE COVARRUBIAS" en el catálogo), y la
+        # cotización desaparecía de Resultados para ese mismo vendedor.
+        identidad_mostrar = (
+            r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        )
         if es_creador_extra and vendedor_filtro_norm:
             identidad_mostrar = vendedor_filtro
         elif vendedor_filtro_norm and normalizar(identidad_mostrar) != vendedor_filtro_norm:
@@ -5187,11 +5199,12 @@ def construir_inicio_crm(
                    co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
                    co.estatus, co.perdida_en, cb.ganada_desde,
                    ac.vendedor AS cliente_vendedor, ac.razon_social,
-                   f.nombre_firma, cu.email AS creador_correo
+                   f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
             FROM crm_cotizaciones co
             LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
             LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
             LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+            LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
             LEFT JOIN (
                 SELECT cotizacion_id, MIN(aplicado_en) AS ganada_desde
                 FROM crm_cotizacion_bookings GROUP BY cotizacion_id
@@ -5312,7 +5325,13 @@ def construir_inicio_crm(
                 continue
             if plaza_filtro and plaza != plaza_filtro:
                 continue
-        identidad_mostrar = quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        # El vendedor asociado a la cuenta que creó la cotización manda sobre
+        # la firma capturada o el nombre derivado del correo — ver la nota
+        # en construir_detalle_resultados_mes: cruzar solo por nombre podía
+        # dejar cotizaciones reales sin contar para su propio vendedor.
+        identidad_mostrar = (
+            r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+        )
         identidad = normalizar(identidad_mostrar)
         if es_creador_extra and vendedor_filtro_norm:
             identidad_mostrar = vendedor_filtro
