@@ -4923,7 +4923,7 @@ def construir_detalle_resultados_mes(
 
     # ---- Tabla: clientes nuevos del mes (mismo criterio que la tarjeta
     # "Clientes nuevos" de Inicio: su primer booking de toda la historia, y
-    # solo si hay 15 meses previos cubiertos por datos) ----
+    # solo si hay 13 meses previos cubiertos por datos) ----
     def sumar_meses(fecha, meses):
         total = fecha.year * 12 + (fecha.month - 1) + meses
         anio, mes = total // 12, total % 12 + 1
@@ -4933,7 +4933,7 @@ def construir_detalle_resultados_mes(
         r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
     ]
     inicio_historial = min(fechas_primer) if fechas_primer else None
-    primer_dia_valido = sumar_meses(inicio_historial, 15) if inicio_historial else None
+    primer_dia_valido = sumar_meses(inicio_historial, 13) if inicio_historial else None
 
     clientes_nuevos_detalle = []
     if primer_dia_valido is not None:
@@ -5185,14 +5185,14 @@ def construir_inicio_crm(
         return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
 
     # Cliente nuevo = su primer booking registrado en todo el historial, y
-    # solo se cuenta si esos 15 meses previos están cubiertos por datos (si
+    # solo se cuenta si esos 13 meses previos están cubiertos por datos (si
     # no, no hay forma de saber si de verdad no compró antes o si el
     # historial simplemente no llega tan atrás).
     fechas_primer_booking = [
         r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
     ]
     inicio_historial = min(fechas_primer_booking) if fechas_primer_booking else None
-    primer_dia_valido = sumar_meses(inicio_historial, 15) if inicio_historial else None
+    primer_dia_valido = sumar_meses(inicio_historial, 13) if inicio_historial else None
 
     filas_cliente_nuevo = []
     for r in primer_booking_por_cliente:
