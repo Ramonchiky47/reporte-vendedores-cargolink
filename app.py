@@ -4453,15 +4453,18 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
             creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
         )
         es_prospecto = r["cliente_folio"] is None
+        vendedor_texto = ""
+        plaza = ""
         if not es_prospecto:
             vkey = normalizar(r["cliente_vendedor"])
+            plaza = plaza_por_vendedor.get(vkey, "#N/D")
             if not es_creador_extra:
-                plaza = plaza_por_vendedor.get(vkey, "#N/D")
                 if plazas_permitidas is not None and plaza not in plazas_permitidas:
                     continue
                 if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
                     continue
             cliente_texto = r["cliente_nombre"] or "#N/D"
+            vendedor_texto = r["cliente_vendedor"] or "#N/D"
         else:
             cliente_texto = f"Prospecto: {r['cliente_prospecto']}" if r["cliente_prospecto"] else "Prospecto"
 
@@ -4484,6 +4487,8 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
             "nombre_cotizacion": r["nombre_cotizacion"] or "",
             "cliente": cliente_texto,
             "es_prospecto": es_prospecto,
+            "vendedor": vendedor_texto,
+            "plaza": plaza,
             "contacto": contacto_texto,
             "fecha_creacion": r["fecha_creacion"].strftime("%Y-%m-%d") if r["fecha_creacion"] else "",
             "fecha_vencimiento": r["fecha_vencimiento"].strftime("%Y-%m-%d") if r["fecha_vencimiento"] else "",

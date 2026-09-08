@@ -39,6 +39,10 @@
     display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: #333; cursor: pointer;
   }
   .filtro-estatus-cot input { margin: 0; }
+  .filtro-plaza-vendedor { display: flex; align-items: center; gap: 0.5rem; }
+  .filtro-plaza-vendedor select {
+    padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.82rem; color: #333; background: #fff;
+  }
   .btn-agregar { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
   tbody tr { cursor: pointer; }
   tbody tr:hover td { background: #f5f5f5; }
@@ -61,6 +65,14 @@
       <label><input type="checkbox" value="vencido" checked> Vencido</label>
       <label><input type="checkbox" value="ganada"> Ganada</label>
       <label><input type="checkbox" value="perdida"> Perdida</label>
+    </div>
+    <div class="filtro-plaza-vendedor">
+      <select id="filtro-plaza-cot">
+        <option value="">Todas las plazas</option>
+      </select>
+      <select id="filtro-vendedor-cot">
+        <option value="">Todos los vendedores</option>
+      </select>
     </div>
   </div>
 
@@ -91,7 +103,7 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
           <td>
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
@@ -157,16 +169,58 @@
       const filas = Array.from(document.querySelectorAll('#tabla-cotizaciones-cuerpo tr'));
       const contador = document.getElementById('contador-cotizaciones-visibles');
       const checksEstatus = Array.from(document.querySelectorAll('#filtro-estatus-cot input[type="checkbox"]'));
+      const selectPlaza = document.getElementById('filtro-plaza-cot');
+      const selectVendedor = document.getElementById('filtro-vendedor-cot');
       if (!input || !contador) return;
+
+      function escaparHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+      }
+
+      // Plaza/Vendedor salen de las cotizaciones ya visibles (data-plaza /
+      // data-vendedor de cada fila), igual que hace este mismo servidor con
+      // las plazas/vendedores permitidos — así el filtro nunca ofrece una
+      // opción que el usuario no podría ver de todas formas.
+      const plazaPorVendedor = new Map();
+      filas.forEach((fila) => {
+        const plaza = fila.dataset.plaza || '';
+        const vendedor = fila.dataset.vendedor || '';
+        if (vendedor && !plazaPorVendedor.has(vendedor)) plazaPorVendedor.set(vendedor, plaza);
+      });
+      const plazasDisponibles = Array.from(new Set(Array.from(plazaPorVendedor.values()).filter(Boolean))).sort();
+      plazasDisponibles.forEach((p) => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        selectPlaza.appendChild(opt);
+      });
+
+      function poblarVendedores(plaza) {
+        const actual = selectVendedor.value;
+        const vendedores = Array.from(plazaPorVendedor.entries())
+          .filter(([, p]) => !plaza || p === plaza)
+          .map(([v]) => v)
+          .sort();
+        selectVendedor.innerHTML = '<option value="">Todos los vendedores</option>' +
+          vendedores.map((v) => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join('');
+        if (vendedores.includes(actual)) selectVendedor.value = actual;
+      }
+      poblarVendedores('');
 
       function aplicarFiltros() {
         const termino = input.value.trim().toLowerCase();
         const estatusActivos = new Set(checksEstatus.filter((c) => c.checked).map((c) => c.value));
+        const plaza = selectPlaza.value;
+        const vendedor = selectVendedor.value;
         let visibles = 0;
         filas.forEach((fila) => {
           const coincideTexto = !termino || fila.textContent.toLowerCase().includes(termino);
           const coincideEstatus = estatusActivos.has(fila.dataset.estatus);
-          const coincide = coincideTexto && coincideEstatus;
+          const coincidePlaza = !plaza || fila.dataset.plaza === plaza;
+          const coincideVendedor = !vendedor || fila.dataset.vendedor === vendedor;
+          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor;
           fila.hidden = !coincide;
           if (coincide) visibles += 1;
         });
@@ -175,6 +229,11 @@
 
       input.addEventListener('input', aplicarFiltros);
       checksEstatus.forEach((c) => c.addEventListener('change', aplicarFiltros));
+      selectPlaza.addEventListener('change', () => {
+        poblarVendedores(selectPlaza.value);
+        aplicarFiltros();
+      });
+      selectVendedor.addEventListener('change', aplicarFiltros);
       aplicarFiltros();
     })();
   </script>
