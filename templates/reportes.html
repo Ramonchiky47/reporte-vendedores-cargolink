@@ -139,6 +139,16 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Reportes Aéreos</h2>
+        <p class="sub">Operaciones AE (Aéreo Exportación) e AI (Aéreo Importación) del año en curso, con detalle por embarque.</p>
+      </div>
+      <a class="btn secondary" href="{{ url_for('reportes_aereo') }}">Ver Reportes Aéreos</a>
+    </div>
+  </div>
+
   <div class="rp-tooltip" id="rp-tooltip"></div>
 
 <script id="datos-reportes" type="application/json">{{ datos_json | safe }}</script>

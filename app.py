@@ -2551,6 +2551,55 @@ def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None)
     return [{"mes": mes, "ppto": round(v, 2)} for mes, v in sorted(totales.items())]
 
 
+def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None):
+    """Bookings de tipo AE (Aéreo Exportación) o AI (Aéreo Importación) —
+    identificados por el tercer segmento de la referencia, igual que
+    extraer_tipo_servicio — para Reportes → Reportes Aéreos. Mismo filtro de
+    plaza/"solo su información" que el resto de Reportes."""
+    db = get_db()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    bookings = db.execute(
+        "SELECT referencia, fecha, vendedor, ejecutivo, venta_por, cliente_servicio, venta, profit "
+        "FROM reporte_bookings ORDER BY fecha"
+    ).fetchall()
+    db.close()
+
+    vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    filas = []
+    for r in bookings:
+        tipo = extraer_tipo_servicio(r["referencia"])
+        if tipo not in ("AE", "AI"):
+            continue
+        fecha = r["fecha"]
+        if fecha is None:
+            continue
+        vkey = normalizar(r["vendedor"])
+        plaza = plaza_por_vendedor.get(vkey, "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        venta = round(float(r["venta"]), 2)
+        profit = round(float(r["profit"]), 2)
+        filas.append({
+            "referencia": r["referencia"] or "",
+            "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
+            "mes": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m"),
+            "tipo": tipo,
+            "plaza": plaza,
+            "vendedor": r["vendedor"] or "#N/D",
+            "ejecutivo": r["ejecutivo"] or "",
+            "cliente": r["cliente_servicio"] or "Sin cliente",
+            "ventaPor": r["venta_por"] or "Sin tipo",
+            "venta": venta,
+            "profit": profit,
+            "margen": round(profit / venta, 4) if venta else 0,
+        })
+    return filas
+
+
 @app.route("/reportes")
 @reportes_required
 def reportes_graficas():
@@ -2563,6 +2612,16 @@ def reportes_graficas():
     return render_template(
         "reportes.html", datos_json=datos_json, presupuesto_json=presupuesto_json, hay_datos=len(filas) > 0
     )
+
+
+@app.route("/reportes/aereo")
+@reportes_required
+def reportes_aereo():
+    plazas_permitidas = plazas_permitidas_usuario()
+    vendedor_forzado = vendedor_forzado_usuario()
+    filas = construir_operaciones_aereas(plazas_permitidas, vendedor_forzado)
+    datos_json = json.dumps(filas).replace("</", "<\\/")
+    return render_template("reportes_aereo.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
 
 @app.route("/comisiones")

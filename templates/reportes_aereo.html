@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Reportes Aéreos{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  :root {
+    --rp-ink: #0f172a;
+    --rp-ink-2: #475569;
+    --rp-ink-3: #94a3b8;
+    --rp-grid: #e2e8f0;
+    --rp-ae: #007CC3;
+    --rp-ae-wash: #e6f4fb;
+    --rp-ai: #c2560c;
+    --rp-ai-wash: #fdece1;
+  }
+  main { max-width: 1120px; }
+
+  .rp-volver { font-size: .82rem; color: var(--rp-ink-2); text-decoration: none; display: inline-block; margin-bottom: .75rem; }
+  .rp-volver:hover { text-decoration: underline; }
+
+  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.25rem 0 0; }
+
+  .rp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .rp-kpi { background: #fff; border-radius: 12px; padding: 1.1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .rp-kpi .label { font-size: .74rem; color: var(--rp-ink-2); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+  .rp-kpi .value { font-size: 1.5rem; font-weight: 700; color: var(--rp-ink); margin-top: .2rem; }
+  .rp-kpi .split { display: flex; gap: .9rem; margin-top: .5rem; font-size: .76rem; color: var(--rp-ink-2); }
+  .rp-kpi .split span { display: inline-flex; align-items: center; gap: .35rem; }
+  .rp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
+  .rp-dot.ae { background: var(--rp-ae); }
+  .rp-dot.ai { background: var(--rp-ai); }
+
+  .rp-legend { display: flex; gap: 1.1rem; font-size: .78rem; color: var(--rp-ink-2); margin-bottom: .8rem; }
+  .rp-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+
+  .rp-bar-label { font-size: .72rem; fill: var(--rp-ink-2); }
+  .rp-grid-line { stroke: var(--rp-grid); stroke-width: 1; }
+  .rp-bar-row { cursor: default; }
+  .rp-bar-row:hover rect.rp-bar { filter: brightness(1.08); }
+
+  .rp-tooltip {
+    position: fixed; pointer-events: none; background: #0f172a; color: #fff; font-size: .76rem;
+    padding: .5rem .65rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    opacity: 0; transform: translate(-50%, -100%); transition: opacity .08s ease; z-index: 40; white-space: nowrap;
+  }
+  .rp-tooltip.visible { opacity: 1; }
+  .rp-tooltip .t-title { font-weight: 700; margin-bottom: .2rem; }
+  .rp-tooltip .t-row { display: flex; gap: .5rem; justify-content: space-between; }
+  .rp-tooltip .t-row .t-val { font-weight: 700; }
+
+  .rp-filtros-tabla { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .6rem; }
+  .rp-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+  .rp-seg button {
+    border: none; background: #fff; color: var(--rp-ink-2); font: inherit; font-size: .8rem;
+    padding: .5rem .85rem; cursor: pointer; border-right: 1px solid var(--border-strong);
+  }
+  .rp-seg button:last-child { border-right: none; }
+  .rp-seg button.activo { background: #f1f5f9; color: var(--rp-ink); font-weight: 700; }
+  .rp-seg button.activo.ae { color: var(--rp-ae); }
+  .rp-seg button.activo.ai { color: var(--rp-ai); }
+  .rp-filtros-tabla input[type="search"] {
+    flex: 1 1 220px; min-width: 200px; padding: .5rem .7rem; border: 1px solid var(--border-strong);
+    border-radius: 8px; font-size: .85rem;
+  }
+  #rp-conteo { font-size: .78rem; color: var(--rp-ink-3); margin: 0 0 .6rem; }
+
+  .rp-badge { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .68rem; font-weight: 700; }
+  .rp-badge.ae { background: var(--rp-ae-wash); color: var(--rp-ae); }
+  .rp-badge.ai { background: var(--rp-ai-wash); color: var(--rp-ai); }
+
+  .rp-tabla-scroll {
+    max-width: 100%; max-height: 60vh; overflow-x: auto; overflow-y: auto;
+    border: 1px solid var(--rp-grid); border-radius: 8px;
+  }
+  .rp-tabla-scroll table { width: auto; min-width: 100%; font-size: .8rem; }
+  .rp-tabla-scroll thead th { position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none; white-space: nowrap; }
+  .rp-tabla-scroll thead th:hover { color: var(--rp-ink); }
+  .rp-tabla-scroll thead th .flecha { opacity: .35; margin-left: .15rem; }
+  .rp-tabla-scroll thead th.activa .flecha { opacity: 1; }
+  .rp-tabla-scroll td { white-space: nowrap; }
+  .rp-tabla-scroll td.cliente { white-space: normal; max-width: 240px; }
+  .rp-tabla-scroll td.der, .rp-tabla-scroll th.der { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+{% block content %}
+{% if not hay_datos %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+  <div class="card">
+    <p class="empty">Todavía no hay operaciones AE/AI registradas en reporte_bookings.</p>
+  </div>
+{% else %}
+  <a class="rp-volver" href="{{ url_for('reportes_graficas') }}">&larr; Volver a Reportes</a>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Reportes Aéreos</h2>
+        <p class="sub">Operaciones con referencia terminada en <strong>-AE</strong> (Aéreo Exportación) o <strong>-AI</strong> (Aéreo Importación), del año en curso.</p>
+      </div>
+    </div>
+    <div class="rp-kpis" id="rp-kpis"></div>
+  </div>
+
+  <div class="card">
+    <h2>Operaciones por mes</h2>
+    <p class="sub" style="margin: -.25rem 0 .9rem;">Conteo de embarques AE/AI cerrados cada mes.</p>
+    <div class="rp-legend">
+      <span><span class="rp-dot ae"></span>AE · Aéreo Exportación</span>
+      <span><span class="rp-dot ai"></span>AI · Aéreo Importación</span>
+    </div>
+    <div id="rp-chart-mensual"></div>
+  </div>
+
+  <div class="card">
+    <div class="rp-tabla-header">
+      <div>
+        <h2>Detalle de operaciones</h2>
+        <p class="sub" id="rp-tabla-sub"></p>
+      </div>
+      {% if puede_exportar %}<button type="button" class="btn secondary" id="rp-exportar-tabla">Exportar</button>{% endif %}
+    </div>
+
+    <div class="rp-filtros-tabla">
+      <div class="rp-seg" id="rp-seg-tipo">
+        <button data-tipo="" class="activo">Todos</button>
+        <button data-tipo="AE" class="ae">AE</button>
+        <button data-tipo="AI" class="ai">AI</button>
+      </div>
+      <input type="search" id="rp-buscador" placeholder="Buscar por referencia, cliente, vendedor o ejecutivo…">
+    </div>
+    <p id="rp-conteo"></p>
+
+    <div class="rp-tabla-scroll">
+      <table id="rp-tabla-aereo">
+        <thead>
+          <tr>
+            <th data-campo="referencia">Referencia <span class="flecha">↕</span></th>
+            <th data-campo="tipo">Tipo <span class="flecha">↕</span></th>
+            <th data-campo="fecha">Fecha <span class="flecha">↕</span></th>
+            <th data-campo="vendedor">Vendedor <span class="flecha">↕</span></th>
+            <th data-campo="ejecutivo">Ejecutivo <span class="flecha">↕</span></th>
+            <th data-campo="cliente">Cliente</th>
+            <th data-campo="venta" class="der">Venta <span class="flecha">↕</span></th>
+            <th data-campo="profit" class="der">Profit <span class="flecha">↕</span></th>
+            <th data-campo="margen" class="der">Margen <span class="flecha">↕</span></th>
+          </tr>
+        </thead>
+        <tbody id="rp-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="rp-tooltip" id="rp-tooltip"></div>
+
+<script id="datos-aereo" type="application/json">{{ datos_json | safe }}</script>
+<script>
+(function () {
+  const TODOS = JSON.parse(document.getElementById("datos-aereo").textContent);
+  const tooltip = document.getElementById("rp-tooltip");
+
+  function fmtMoneda(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+  function fmtMoneda2(n) {
+    const signo = n < 0 ? "-" : "";
+    return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function fmtPct(v) { return Math.round(v * 100) + "%"; }
+  function escaparHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function mostrarTooltip(x, y, titulo, filas) {
+    const filasHtml = filas.map((f) =>
+      `<div class="t-row"><span>${escaparHtml(f.label)}</span><span class="t-val">${escaparHtml(f.valor)}</span></div>`
+    ).join("");
+    tooltip.innerHTML = `<div class="t-title"></div>${filasHtml}`;
+    tooltip.querySelector(".t-title").textContent = titulo;
+    tooltip.style.left = x + "px";
+    tooltip.style.top = (y - 10) + "px";
+    tooltip.classList.add("visible");
+  }
+  function ocultarTooltip() { tooltip.classList.remove("visible"); }
+
+  // El año en curso se toma del dato más reciente cargado (igual que
+  // Reporte por vendedor), no del reloj del navegador.
+  const anioActual = TODOS.reduce((max, f) => (f.mes > max ? f.mes : max), "0000-00").slice(0, 4);
+  const FILAS_ANIO = TODOS.filter((f) => f.mes.startsWith(anioActual));
+  document.getElementById("rp-tabla-sub").textContent =
+    `${FILAS_ANIO.length} operaciones de ${anioActual}. Filtra por tipo, busca, u ordena por columna.`;
+
+  // ---- KPIs ----
+  function renderKpis(filas) {
+    const ae = filas.filter((f) => f.tipo === "AE");
+    const ai = filas.filter((f) => f.tipo === "AI");
+    const sum = (arr, campo) => arr.reduce((a, f) => a + f[campo], 0);
+    const totalVenta = sum(filas, "venta");
+    const totalProfit = sum(filas, "profit");
+    const margenProm = totalVenta ? totalProfit / totalVenta : 0;
+    const ventaAE = sum(ae, "venta"), profitAE = sum(ae, "profit");
+    const ventaAI = sum(ai, "venta"), profitAI = sum(ai, "profit");
+
+    document.getElementById("rp-kpis").innerHTML = `
+      <div class="rp-kpi">
+        <div class="label">Operaciones</div>
+        <div class="value">${fmtEntero(filas.length)}</div>
+        <div class="split">
+          <span><span class="rp-dot ae"></span>${fmtEntero(ae.length)} AE</span>
+          <span><span class="rp-dot ai"></span>${fmtEntero(ai.length)} AI</span>
+        </div>
+      </div>
+      <div class="rp-kpi">
+        <div class="label">Venta</div>
+        <div class="value">${fmtMoneda(totalVenta)}</div>
+        <div class="split"><span>AE ${fmtMoneda(ventaAE)}</span><span>AI ${fmtMoneda(ventaAI)}</span></div>
+      </div>
+      <div class="rp-kpi">
+        <div class="label">Profit</div>
+        <div class="value">${fmtMoneda(totalProfit)}</div>
+        <div class="split"><span>AE ${fmtMoneda(profitAE)}</span><span>AI ${fmtMoneda(profitAI)}</span></div>
+      </div>
+      <div class="rp-kpi">
+        <div class="label">Margen promedio</div>
+        <div class="value">${fmtPct(margenProm)}</div>
+        <div class="split">
+          <span>AE ${fmtPct(ventaAE ? profitAE / ventaAE : 0)}</span>
+          <span>AI ${fmtPct(ventaAI ? profitAI / ventaAI : 0)}</span>
+        </div>
+      </div>
+    `;
+  }
+  renderKpis(FILAS_ANIO);
+
+  // ---- Gráfica de barras agrupadas: operaciones AE/AI por mes ----
+  function renderChartMensual(contenedorId, filas) {
+    const cont = document.getElementById(contenedorId);
+    cont.innerHTML = "";
+    if (filas.length === 0) {
+      cont.innerHTML = '<p class="empty">Sin datos.</p>';
+      return;
+    }
+    const MESES = Array.from(new Set(filas.map((f) => f.mes))).sort();
+    const porMes = new Map(MESES.map((m) => [m, { AE: { n: 0, venta: 0, profit: 0 }, AI: { n: 0, venta: 0, profit: 0 } }]));
+    for (const f of filas) {
+      const acc = porMes.get(f.mes)[f.tipo];
+      acc.n += 1; acc.venta += f.venta; acc.profit += f.profit;
+    }
+
+    const ancho = cont.clientWidth || 900;
+    const alto = 280;
+    const margen = { top: 16, right: 16, bottom: 28, left: 40 };
+    const anchoPlot = ancho - margen.left - margen.right;
+    const altoPlot = alto - margen.top - margen.bottom;
+
+    const maxN = Math.max(...MESES.map((m) => Math.max(porMes.get(m).AE.n, porMes.get(m).AI.n)), 1);
+    const nicePaso = Math.ceil(maxN / 4) || 1;
+    const niceMax = nicePaso * 4;
+    const anchoGrupo = anchoPlot / MESES.length;
+    const anchoBarra = Math.min(anchoGrupo * 0.3, 26);
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", alto);
+    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
+
+    for (let i = 0; i <= 4; i++) {
+      const valor = nicePaso * i;
+      const yy = margen.top + altoPlot - (valor / niceMax) * altoPlot;
+      const linea = document.createElementNS(svg.namespaceURI, "line");
+      linea.setAttribute("x1", margen.left); linea.setAttribute("x2", ancho - margen.right);
+      linea.setAttribute("y1", yy); linea.setAttribute("y2", yy);
+      linea.setAttribute("class", "rp-grid-line");
+      svg.appendChild(linea);
+
+      const etiqueta = document.createElementNS(svg.namespaceURI, "text");
+      etiqueta.setAttribute("x", margen.left - 8); etiqueta.setAttribute("y", yy + 3);
+      etiqueta.setAttribute("text-anchor", "end"); etiqueta.setAttribute("class", "rp-bar-label");
+      etiqueta.textContent = valor;
+      svg.appendChild(etiqueta);
+    }
+
+    function dibujarBarra(x, valor, color, hitLabel) {
+      const h = Math.max((valor / niceMax) * altoPlot, valor > 0 ? 2 : 0);
+      const y = margen.top + altoPlot - h;
+      const grupo = document.createElementNS(svg.namespaceURI, "g");
+      grupo.setAttribute("class", "rp-bar-row");
+      const rect = document.createElementNS(svg.namespaceURI, "rect");
+      rect.setAttribute("class", "rp-bar");
+      rect.setAttribute("x", x); rect.setAttribute("y", y);
+      rect.setAttribute("width", anchoBarra); rect.setAttribute("height", h);
+      rect.setAttribute("rx", 3); rect.setAttribute("fill", color);
+      grupo.appendChild(rect);
+      const hit = document.createElementNS(svg.namespaceURI, "rect");
+      hit.setAttribute("x", x); hit.setAttribute("y", margen.top);
+      hit.setAttribute("width", anchoBarra); hit.setAttribute("height", altoPlot);
+      hit.setAttribute("fill", "transparent");
+      hit.addEventListener("pointermove", (e) => mostrarTooltip(e.clientX, e.clientY, hitLabel.mes, hitLabel.filas));
+      hit.addEventListener("pointerleave", ocultarTooltip);
+      grupo.appendChild(hit);
+      svg.appendChild(grupo);
+    }
+
+    MESES.forEach((mes, i) => {
+      const d = porMes.get(mes);
+      const xGrupo = margen.left + i * anchoGrupo;
+      const xAE = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
+      const xAI = xGrupo + anchoGrupo / 2 + 2;
+      dibujarBarra(xAE, d.AE.n, "var(--rp-ae)", { mes, filas: [
+        { label: "AE · Operaciones", valor: fmtEntero(d.AE.n) },
+        { label: "AE · Venta", valor: fmtMoneda(d.AE.venta) },
+        { label: "AE · Profit", valor: fmtMoneda(d.AE.profit) },
+      ] });
+      dibujarBarra(xAI, d.AI.n, "var(--rp-ai)", { mes, filas: [
+        { label: "AI · Operaciones", valor: fmtEntero(d.AI.n) },
+        { label: "AI · Venta", valor: fmtMoneda(d.AI.venta) },
+        { label: "AI · Profit", valor: fmtMoneda(d.AI.profit) },
+      ] });
+
+      const etiquetaMes = document.createElementNS(svg.namespaceURI, "text");
+      etiquetaMes.setAttribute("x", xGrupo + anchoGrupo / 2);
+      etiquetaMes.setAttribute("y", alto - 6);
+      etiquetaMes.setAttribute("text-anchor", "middle");
+      etiquetaMes.setAttribute("class", "rp-bar-label");
+      etiquetaMes.textContent = mes.slice(5);
+      svg.appendChild(etiquetaMes);
+    });
+
+    cont.appendChild(svg);
+  }
+  renderChartMensual("rp-chart-mensual", FILAS_ANIO);
+  window.addEventListener("resize", () => renderChartMensual("rp-chart-mensual", FILAS_ANIO));
+
+  // ---- Tabla filtrable / ordenable ----
+  let tipoFiltro = "";
+  let busqueda = "";
+  let ordenCampo = "fecha";
+  let ordenDir = -1;
+
+  const tbody = document.getElementById("rp-tbody");
+  const conteoEl = document.getElementById("rp-conteo");
+  const tabla = document.getElementById("rp-tabla-aereo");
+
+  function render() {
+    let filas = FILAS_ANIO;
+    if (tipoFiltro) filas = filas.filter((f) => f.tipo === tipoFiltro);
+    if (busqueda) {
+      const q = busqueda.toLowerCase();
+      filas = filas.filter((f) =>
+        f.referencia.toLowerCase().includes(q) ||
+        f.cliente.toLowerCase().includes(q) ||
+        f.vendedor.toLowerCase().includes(q) ||
+        f.ejecutivo.toLowerCase().includes(q)
+      );
+    }
+    filas = filas.slice().sort((a, b) => {
+      const av = a[ordenCampo], bv = b[ordenCampo];
+      if (typeof av === "number") return (av - bv) * ordenDir;
+      return String(av).localeCompare(String(bv)) * ordenDir;
+    });
+
+    conteoEl.textContent = `${fmtEntero(filas.length)} de ${fmtEntero(FILAS_ANIO.length)} operaciones`;
+
+    if (filas.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="9" class="empty">Sin operaciones que coincidan con el filtro.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filas.map((f) => `
+      <tr>
+        <td>${escaparHtml(f.referencia)}</td>
+        <td><span class="rp-badge ${f.tipo.toLowerCase()}">${f.tipo}</span></td>
+        <td>${escaparHtml(f.fecha)}</td>
+        <td>${escaparHtml(f.vendedor)}</td>
+        <td>${escaparHtml(f.ejecutivo)}</td>
+        <td class="cliente">${escaparHtml(f.cliente)}</td>
+        <td class="der">${fmtMoneda2(f.venta)}</td>
+        <td class="der">${fmtMoneda2(f.profit)}</td>
+        <td class="der">${fmtPct(f.margen)}</td>
+      </tr>
+    `).join("");
+  }
+
+  document.getElementById("rp-seg-tipo").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    tipoFiltro = btn.dataset.tipo;
+    document.querySelectorAll("#rp-seg-tipo button").forEach((b) => b.classList.toggle("activo", b === btn));
+    render();
+  });
+  document.getElementById("rp-buscador").addEventListener("input", (e) => {
+    busqueda = e.target.value.trim();
+    render();
+  });
+  tabla.querySelectorAll("thead th[data-campo]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const campo = th.dataset.campo;
+      if (ordenCampo === campo) { ordenDir *= -1; } else { ordenCampo = campo; ordenDir = 1; }
+      tabla.querySelectorAll("thead th").forEach((t) => {
+        t.classList.remove("activa");
+        const fl = t.querySelector(".flecha");
+        if (fl) fl.textContent = "↕";
+      });
+      th.classList.add("activa");
+      const fl = th.querySelector(".flecha");
+      if (fl) fl.textContent = ordenDir === 1 ? "↑" : "↓";
+      render();
+    });
+  });
+
+  render();
+
+  function exportarTablaCSV(tablaId, nombreArchivo) {
+    const tablaEl = document.getElementById(tablaId);
+    const filasEl = tablaEl ? tablaEl.querySelectorAll("tr") : [];
+    if (filasEl.length === 0) return;
+    const lineas = Array.from(filasEl).map((fila) => {
+      const celdas = fila.querySelectorAll("th, td");
+      return Array.from(celdas)
+        .map((c) => `"${c.textContent.replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(",");
+    });
+    const csv = "﻿" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  const btnExportar = document.getElementById("rp-exportar-tabla");
+  if (btnExportar) {
+    btnExportar.addEventListener("click", () => {
+      exportarTablaCSV("rp-tabla-aereo", `Reportes_Aereos_${anioActual}_${new Date().toISOString().slice(0, 10)}.csv`);
+    });
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}
