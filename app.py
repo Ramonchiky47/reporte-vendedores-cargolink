@@ -4392,6 +4392,9 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
     plaza_por_vendedor = {}
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
+    plaza_por_desarrollador = {
+        normalizar(r["desarrollador"]): r["plaza"] for r in db.execute("SELECT desarrollador, plaza FROM catalogo_desarrolladores")
+    }
 
     filas = db.execute("""
         SELECT co.id, co.id_cotizacion, co.nombre_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.vencimiento_modo,
@@ -4401,7 +4404,7 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
                co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
-               cu.email AS creador_correo,
+               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado,
                sp.estado_mas_reciente AS pricing_estado_mas_reciente,
                sp.visto_por_vendedor_en AS pricing_visto_en,
                sp.ultima_respuesta_en AS pricing_ultima_respuesta_en
@@ -4410,7 +4413,9 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
         LEFT JOIN crm_incoterms i ON i.id = co.incoterm_id
         LEFT JOIN crm_modalidades m ON m.id = co.modalidad_id
+        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
         LEFT JOIN LATERAL (
             SELECT s.estado AS estado_mas_reciente, s.visto_por_vendedor_en, r.ultima_respuesta_en
             FROM crm_solicitudes_maritimo_aereo s
@@ -4467,6 +4472,22 @@ def construir_cotizaciones_crm(plazas_permitidas=None, vendedor_forzado=None, cr
             vendedor_texto = r["cliente_vendedor"] or "#N/D"
         else:
             cliente_texto = f"Prospecto: {r['cliente_prospecto']}" if r["cliente_prospecto"] else "Prospecto"
+            # Un prospecto no tiene cliente de catálogo del que heredar
+            # vendedor/plaza — pero si quien la creó es un desarrollador
+            # (Catálogos → Desarrolladores), se le asigna la plaza que tiene
+            # registrada ahí, en vez de quedar sin plaza ni vendedor. Se
+            # prioriza el vendedor_asociado de su cuenta (el mismo apodo
+            # corto que suele repetirse en ambos catálogos, p.ej. "RUSSBETH")
+            # sobre el nombre derivado de firma/correo, que puede traer
+            # apellido y no calzar con el catálogo (ver el bug ya corregido
+            # en construir_inicio_crm para el mismo problema con vendedores).
+            identidad_creador = (
+                r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+            )
+            plaza_desarrollador = plaza_por_desarrollador.get(normalizar(identidad_creador))
+            if plaza_desarrollador:
+                vendedor_texto = identidad_creador
+                plaza = plaza_desarrollador
 
         contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
 
