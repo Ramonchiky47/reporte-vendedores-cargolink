@@ -1923,7 +1923,7 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
         if (vendedor_forzado is None and desarrollador_forzado is None) or cotizacion_id is None:
             return True
         fila_creador = db.execute("""
-            SELECT f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
+            SELECT f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
             FROM crm_cotizaciones co
             LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
             LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
@@ -1932,6 +1932,7 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
         """, (cotizacion_id,)).fetchone()
         identidad_creador = normalizar(
             (fila_creador["creador_vendedor_asociado"] if fila_creador else None)
+            or (fila_creador["creador_desarrollador_asociado"] if fila_creador else None)
             or quitar_titulo(fila_creador["nombre_firma"] if fila_creador else None)
             or nombre_desde_correo(fila_creador["creador_correo"] if fila_creador else None)
         )
@@ -4542,7 +4543,7 @@ def construir_cotizaciones_crm(
                i.nombre AS incoterm, m.nombre AS modalidad,
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
                co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
-               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado,
+               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado,
                sp.estado_mas_reciente AS pricing_estado_mas_reciente,
                sp.visto_por_vendedor_en AS pricing_visto_en,
                sp.ultima_respuesta_en AS pricing_ultima_respuesta_en
@@ -4623,13 +4624,16 @@ def construir_cotizaciones_crm(
             # vendedor/plaza — pero si quien la creó es un desarrollador
             # (Catálogos → Desarrolladores), se le asigna la plaza que tiene
             # registrada ahí, en vez de quedar sin plaza ni vendedor. Se
-            # prioriza el vendedor_asociado de su cuenta (el mismo apodo
-            # corto que suele repetirse en ambos catálogos, p.ej. "RUSSBETH")
-            # sobre el nombre derivado de firma/correo, que puede traer
-            # apellido y no calzar con el catálogo (ver el bug ya corregido
-            # en construir_inicio_crm para el mismo problema con vendedores).
+            # prioriza el vendedor_asociado o el desarrollador_asociado de su
+            # cuenta (el vínculo explícito Catálogos → Visualización de
+            # Plazas — p.ej. una cuenta genérica de captura como "Account6"
+            # asociada a "GRECIA AGUIRRE" para que sus cotizaciones cuenten
+            # para ella) sobre el nombre derivado de firma/correo, que puede
+            # traer apellido y no calzar con el catálogo (ver el bug ya
+            # corregido en construir_inicio_crm para el mismo problema con
+            # vendedores).
             identidad_creador = (
-                r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+                r["creador_vendedor_asociado"] or r["creador_desarrollador_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
             )
             # Un usuario restringido a "solo ver su información" (vendedor) o
             # "solo ver sus cuentas" (desarrollador) solo debe ver los
@@ -5108,7 +5112,7 @@ def construir_detalle_resultados_mes(
         SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.estatus, co.perdida_en,
                co.cliente_folio, co.cliente_prospecto, co.profit_estimado, cb.ganada_desde,
                ac.vendedor AS cliente_vendedor, ac.razon_social,
-               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
+               f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
@@ -5230,7 +5234,7 @@ def construir_detalle_resultados_mes(
         # Covarrubias" vs "AIDEE COVARRUBIAS" en el catálogo), y la
         # cotización desaparecía de Resultados para ese mismo vendedor.
         identidad_mostrar = (
-            r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+            r["creador_vendedor_asociado"] or r["creador_desarrollador_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
         )
         if es_creador_extra and vendedor_filtro_norm:
             identidad_mostrar = vendedor_filtro
@@ -5383,7 +5387,7 @@ def construir_inicio_crm(
                    co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
                    co.estatus, co.perdida_en, cb.ganada_desde,
                    ac.vendedor AS cliente_vendedor, ac.razon_social,
-                   f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
+                   f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
             FROM crm_cotizaciones co
             LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
             LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
@@ -5514,7 +5518,7 @@ def construir_inicio_crm(
         # en construir_detalle_resultados_mes: cruzar solo por nombre podía
         # dejar cotizaciones reales sin contar para su propio vendedor.
         identidad_mostrar = (
-            r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
+            r["creador_vendedor_asociado"] or r["creador_desarrollador_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
         )
         identidad = normalizar(identidad_mostrar)
         if es_creador_extra and vendedor_filtro_norm:
