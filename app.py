@@ -1912,11 +1912,15 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
     plazas_permitidas = plazas_permitidas_usuario()
     desarrollador_forzado = desarrollador_forzado_usuario()
     if cliente_folio is None:
-        # Un prospecto no tiene plaza/vendedor que restringir, pero si el
-        # usuario está limitado a "solo ver sus cuentas" (desarrollador),
-        # solo debe poder ver los prospectos que él mismo creó — igual que
-        # ya filtra construir_cotizaciones_crm en el listado.
-        if desarrollador_forzado is None or cotizacion_id is None:
+        # Un prospecto no tiene plaza/vendedor que restringir vía cliente,
+        # pero si el usuario está limitado a "solo ver su información"
+        # (vendedor) o "solo ver sus cuentas" (desarrollador), solo debe
+        # poder ver los prospectos que él mismo creó — igual que ya filtra
+        # construir_cotizaciones_crm en el listado (antes solo se
+        # comprobaba desarrollador_forzado, así que el prospecto de un
+        # vendedor restringido se le seguía viendo a otro vendedor
+        # restringido).
+        if (vendedor_forzado is None and desarrollador_forzado is None) or cotizacion_id is None:
             return True
         fila_creador = db.execute("""
             SELECT f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado
@@ -1926,12 +1930,16 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
             LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
             WHERE co.id = %s
         """, (cotizacion_id,)).fetchone()
-        identidad_creador = (
+        identidad_creador = normalizar(
             (fila_creador["creador_vendedor_asociado"] if fila_creador else None)
             or quitar_titulo(fila_creador["nombre_firma"] if fila_creador else None)
             or nombre_desde_correo(fila_creador["creador_correo"] if fila_creador else None)
         )
-        return normalizar(identidad_creador) == normalizar(desarrollador_forzado)
+        if vendedor_forzado is not None and identidad_creador != normalizar(vendedor_forzado):
+            return False
+        if desarrollador_forzado is not None and identidad_creador != normalizar(desarrollador_forzado):
+            return False
+        return True
     if plazas_permitidas is None and not vendedor_forzado and not desarrollador_forzado:
         return True
     fila = db.execute("""
@@ -4623,11 +4631,17 @@ def construir_cotizaciones_crm(
             identidad_creador = (
                 r["creador_vendedor_asociado"] or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"])
             )
-            # Un usuario restringido a "solo ver sus cuentas" (desarrollador)
-            # solo debe ver los prospectos que él mismo creó — si no, vería
-            # todos los prospectos de la empresa, sin importar su restricción.
-            if not es_creador_extra and desarrollador_forzado_norm is not None and normalizar(identidad_creador) != desarrollador_forzado_norm:
-                continue
+            # Un usuario restringido a "solo ver su información" (vendedor) o
+            # "solo ver sus cuentas" (desarrollador) solo debe ver los
+            # prospectos que él mismo creó — si no, vería todos los
+            # prospectos de la empresa sin importar su restricción (bug real:
+            # el prospecto de un vendedor le aparecía a otro vendedor
+            # restringido, ya que antes solo se filtraba por desarrollador).
+            if not es_creador_extra:
+                if vendedor_forzado_norm is not None and normalizar(identidad_creador) != vendedor_forzado_norm:
+                    continue
+                if desarrollador_forzado_norm is not None and normalizar(identidad_creador) != desarrollador_forzado_norm:
+                    continue
             plaza_desarrollador = plaza_por_desarrollador.get(normalizar(identidad_creador))
             if plaza_desarrollador:
                 vendedor_texto = identidad_creador
