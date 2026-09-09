@@ -8,7 +8,7 @@
       {% if filas %}
       <table>
         <thead>
-          <tr><th>Usuario</th><th>Plazas visibles</th><th>Solo su información</th><th></th></tr>
+          <tr><th>Usuario</th><th>Plazas visibles</th><th>Solo su información</th><th>Solo sus cuentas</th><th>Solo las que crea</th><th></th></tr>
         </thead>
         <tbody>
           {% for fila in filas %}
@@ -29,6 +29,20 @@
                 {% if fila.cotizaciones_creador_extra %}
                   <span class="hint">(+ {{ fila.cotizaciones_creador_extra }} en Cotizaciones)</span>
                 {% endif %}
+              {% else %}
+                <span class="hint">No</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not fila.es_admin and fila.solo_su_informacion_desarrollador and fila.desarrollador_asociado %}
+                Sí — {{ fila.desarrollador_asociado }}
+              {% else %}
+                <span class="hint">No</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not fila.es_admin and fila.cotizaciones_solo_propias %}
+                Sí
               {% else %}
                 <span class="hint">No</span>
               {% endif %}

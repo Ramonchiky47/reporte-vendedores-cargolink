@@ -53,6 +53,26 @@
           </select>
         </div>
 
+        <div class="vp-solo-info" id="vp-solo-cuentas">
+          <div class="field checkbox">
+            <label><input type="checkbox" id="vp-solo-su-cuentas" name="solo_su_informacion_desarrollador" {% if solo_su_informacion_desarrollador_actual %}checked{% endif %}> Solo ver sus cuentas</label>
+          </div>
+          <p class="hint">Independiente de "Solo ver su información": este usuario solo verá las cuentas (Clientes, Contactos, Grupos y Cotizaciones) del desarrollador que elijas aquí — nada de las cuentas del resto del equipo. No afecta Dashboard, Venta diaria, Reportes ni Booking.</p>
+          <select name="desarrollador_asociado" id="vp-desarrollador-asociado">
+            <option value="">— Elige un desarrollador —</option>
+            {% for d in desarrolladores_catalogo %}
+            <option value="{{ d }}" {% if d == desarrollador_asociado_actual %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="vp-solo-info" id="vp-solo-mias">
+          <div class="field checkbox">
+            <label><input type="checkbox" id="vp-cotizaciones-solo-propias" name="cotizaciones_solo_propias" {% if cotizaciones_solo_propias_actual %}checked{% endif %}> Solo ver las que crea</label>
+          </div>
+          <p class="hint">También independiente de las anteriores: en CRM → Cotizaciones, este usuario solo verá las cotizaciones que él mismo creó — sin importar plaza, vendedor o desarrollador. No requiere elegir nada más.</p>
+        </div>
+
         <button type="submit">Aceptar</button>
         <a class="btn secondary" href="{{ url_for('visibilidad_plazas') }}">Cancelar</a>
       </form>
