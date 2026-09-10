@@ -61,7 +61,7 @@
     <tr>
       <td style="width:60%;">
         <p class="caja-titulo-nombre">{{ fila.referencia }}{% if fila.nombre %} · {{ fila.nombre }}{% endif %} <span class="badge">{{ fila.estado }}</span></p>
-        {% if fila.id_cotizacion %}<p>{{ fila.id_cotizacion }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</p>{% endif %}
+        {% if fila.id_cotizacion %}<p>{{ fila.id_cotizacion }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</p>{% else %}<p style="color:#999999;">{{ t.sin_cotizacion }}</p>{% endif %}
       </td>
       <td class="der">
         <p>{{ t.pidio }}: {{ fila.creado_por or '—' }}</p>
