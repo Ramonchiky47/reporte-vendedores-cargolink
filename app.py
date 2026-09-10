@@ -5847,6 +5847,26 @@ def calcular_estatus_cotizacion(estatus_guardado, fecha_vencimiento, tiene_booki
     return "vigente"
 
 
+def agregar_estatus_cotizacion_solicitudes(filas):
+    """Le agrega a cada fila de la bandeja de Pricing / Transporte Terrestre
+    el estatus real de la cotización de la que salió la solicitud (Vigente,
+    Vencido, Ganada o Perdida — calcular_estatus_cotizacion), para que quien
+    responde sepa si todavía vale la pena cotizar. None si la solicitud no
+    tiene cotización asociada (se creó suelta)."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    resultado = []
+    for f in filas:
+        f = dict(f)
+        if f.get("cotizacion_id") is None:
+            f["cotizacion_estatus_actual"] = None
+        else:
+            f["cotizacion_estatus_actual"] = calcular_estatus_cotizacion(
+                f["cotizacion_estatus"], f["cotizacion_fecha_vencimiento"], f["cotizacion_tiene_booking"], hoy,
+            )
+        resultado.append(f)
+    return resultado
+
+
 def obtener_bookings_disponibles_cliente(cliente_nombre):
     """Bookings reales (reporte_bookings) del cliente de esta cotización,
     casados por nombre (mismo criterio que 'tiene_booking' en Clientes),
@@ -7287,9 +7307,11 @@ def pricing():
     filas = db.execute("""
         SELECT
             s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
-            co.id AS cotizacion_id, co.id_cotizacion,
+            co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
+            co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
-            op.nombre_operativo AS operativo_asignado
+            op.nombre_operativo AS operativo_asignado,
+            EXISTS (SELECT 1 FROM crm_cotizacion_bookings cb WHERE cb.cotizacion_id = co.id) AS cotizacion_tiene_booking
         FROM crm_solicitudes_maritimo_aereo s
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
@@ -7297,6 +7319,7 @@ def pricing():
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
     """).fetchall()
     db.close()
+    filas = agregar_estatus_cotizacion_solicitudes(filas)
     return render_template("pricing.html", filas=filas)
 
 
@@ -7519,9 +7542,11 @@ def transporte_terrestre():
     filas = db.execute("""
         SELECT
             s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
-            co.id AS cotizacion_id, co.id_cotizacion,
+            co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
+            co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
-            op.nombre_operativo AS operativo_asignado
+            op.nombre_operativo AS operativo_asignado,
+            EXISTS (SELECT 1 FROM crm_cotizacion_bookings cb WHERE cb.cotizacion_id = co.id) AS cotizacion_tiene_booking
         FROM crm_solicitudes_transporte_terrestre s
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
@@ -7529,6 +7554,7 @@ def transporte_terrestre():
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
     """).fetchall()
     db.close()
+    filas = agregar_estatus_cotizacion_solicitudes(filas)
     return render_template("transporte_terrestre.html", filas=filas)
 
 

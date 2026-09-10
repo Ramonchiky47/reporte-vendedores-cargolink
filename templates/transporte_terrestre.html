@@ -12,6 +12,12 @@
   .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
   .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
 
+  .badge-estatus { display: inline-block; padding: .15rem .55rem; border-radius: 10px; font-size: .66rem; font-weight: 700; white-space: nowrap; }
+  .badge-estatus.vigente { background: #e3f2fd; color: #1565c0; }
+  .badge-estatus.vencido { background: #fff3e0; color: #e65100; }
+  .badge-estatus.ganada { background: #dcfce7; color: #166534; }
+  .badge-estatus.perdida { background: #fee2e2; color: #991b1b; }
+
   .tabla-pricing { width: 100%; border-collapse: collapse; font-size: .85rem; }
   .tabla-pricing th {
     text-align: left; padding: .55rem .6rem; color: var(--ink-2); font-weight: 700;
@@ -41,6 +47,7 @@
           <th>Tipo</th>
           <th>Fecha</th>
           <th>Operativo asignado</th>
+          <th>Cotización</th>
           <th>Estado</th>
         </tr>
       </thead>
@@ -54,6 +61,15 @@
           <td>{{ fila.tipo_embarque or '—' }}</td>
           <td>{{ fila.fecha_creacion }}</td>
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
+          <td>
+            {% if fila.cotizacion_estatus_actual %}
+            <span class="badge-estatus {{ fila.cotizacion_estatus_actual }}">
+              {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[fila.cotizacion_estatus_actual] }}
+            </span>
+            {% else %}
+            <span class="col-operativo sin-asignar">Sin cotización</span>
+            {% endif %}
+          </td>
           <td><span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span></td>
         </tr>
         {% endfor %}
