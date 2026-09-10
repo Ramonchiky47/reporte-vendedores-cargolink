@@ -5075,6 +5075,48 @@ def plazas_con_presupuesto(mes, plazas_permitidas=None):
     return sorted(plazas)
 
 
+def sumar_meses(fecha, meses):
+    total = fecha.year * 12 + (fecha.month - 1) + meses
+    anio, mes = total // 12, total % 12 + 1
+    return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
+
+
+def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13):
+    """"Cliente nuevo" = no tuvo ningún booking en los `meses_ventana` meses
+    previos y sí tiene uno en el mes evaluado — cuenta tanto su primera
+    compra de siempre como una reactivación después de una ausencia larga
+    (antes solo se veía el primer booking de toda la historia, así que un
+    cliente que vuelve a comprar tras año y medio de inactividad nunca se
+    contaba). `bookings_todos` debe traer TODOS los bookings de cada
+    cliente (no solo el primero), con al menos cliente_servicio/vendedor/
+    fecha (fecha como date, ya en hora local). Solo se confía en un evento
+    si el historial disponible cubre al menos `meses_ventana` meses antes
+    de esa fecha — si no, no hay forma de saber si de verdad no compró
+    antes o si el historial simplemente no llega tan atrás."""
+    fechas_todas = [r["fecha"] for r in bookings_todos if r["fecha"] is not None]
+    if not fechas_todas:
+        return []
+    primer_dia_valido = sumar_meses(min(fechas_todas), meses_ventana)
+
+    por_cliente = {}
+    for r in bookings_todos:
+        if r["fecha"] is None or not r["cliente_servicio"]:
+            continue
+        por_cliente.setdefault(normalizar(r["cliente_servicio"]), []).append(r)
+
+    eventos = []
+    for filas in por_cliente.values():
+        filas.sort(key=lambda r: r["fecha"])
+        anterior = None
+        for r in filas:
+            d = r["fecha"]
+            es_nuevo = anterior is None or d >= sumar_meses(anterior, meses_ventana)
+            if es_nuevo and d >= primer_dia_valido:
+                eventos.append({"cliente_servicio": r["cliente_servicio"], "vendedor": r["vendedor"], "fecha": d})
+            anterior = d
+    return eventos
+
+
 def construir_detalle_resultados_mes(
     fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
 ):
@@ -5119,8 +5161,8 @@ def construir_detalle_resultados_mes(
         if fecha_fin.month in por_mes
     }
 
-    primer_booking_por_cliente = db.execute("""
-        SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
+    bookings_todos_cliente = db.execute("""
+        SELECT cliente_servicio, vendedor, fecha
         FROM reporte_bookings
         WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
         ORDER BY cliente_servicio, fecha ASC
@@ -5209,42 +5251,34 @@ def construir_detalle_resultados_mes(
     clientes_con_venta_pct = (clientes_con_venta / clientes_asociados_total * 100) if clientes_asociados_total else None
 
     # ---- Tabla: clientes nuevos del mes (mismo criterio que la tarjeta
-    # "Clientes nuevos" de Inicio: su primer booking de toda la historia, y
-    # solo si hay 13 meses previos cubiertos por datos) ----
-    def sumar_meses(fecha, meses):
-        total = fecha.year * 12 + (fecha.month - 1) + meses
-        anio, mes = total // 12, total % 12 + 1
-        return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
-
-    fechas_primer = [
-        r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
-    ]
-    inicio_historial = min(fechas_primer) if fechas_primer else None
-    primer_dia_valido = sumar_meses(inicio_historial, 13) if inicio_historial else None
+    # "Clientes nuevos" de Inicio: no tuvo ningún booking en los 13 meses
+    # previos y sí tiene uno en el mes evaluado — cuenta tanto su primera
+    # compra de siempre como una reactivación tras una ausencia larga) ----
+    eventos_cliente_nuevo = construir_eventos_cliente_nuevo([
+        {"cliente_servicio": r["cliente_servicio"], "vendedor": r["vendedor"], "fecha": r["fecha"].astimezone(TZ_LOCAL).date()}
+        for r in bookings_todos_cliente if r["fecha"] is not None
+    ])
 
     clientes_nuevos_detalle = []
-    if primer_dia_valido is not None:
-        for r in primer_booking_por_cliente:
-            if r["fecha"] is None:
-                continue
-            d = r["fecha"].astimezone(TZ_LOCAL).date()
-            if d < primer_dia_valido or d < fecha_inicio or d > fecha_fin:
-                continue
-            vendedor = r["vendedor"] or "#N/D"
-            plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
-            if plazas_permitidas is not None and plaza not in plazas_permitidas:
-                continue
-            if plaza_filtro and plaza != plaza_filtro:
-                continue
-            if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
-                continue
-            agg = booking_por_cliente_mes.get(normalizar(r["cliente_servicio"]), {"cant": 0, "profit": 0.0})
-            clientes_nuevos_detalle.append({
-                "cliente": r["cliente_servicio"],
-                "fecha_creacion": d,
-                "cant_booking": agg["cant"],
-                "profit": round(agg["profit"], 2),
-            })
+    for r in eventos_cliente_nuevo:
+        d = r["fecha"]
+        if d < fecha_inicio or d > fecha_fin:
+            continue
+        vendedor = r["vendedor"] or "#N/D"
+        plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+            continue
+        if plaza_filtro and plaza != plaza_filtro:
+            continue
+        if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+            continue
+        agg = booking_por_cliente_mes.get(normalizar(r["cliente_servicio"]), {"cant": 0, "profit": 0.0})
+        clientes_nuevos_detalle.append({
+            "cliente": r["cliente_servicio"],
+            "fecha_creacion": d,
+            "cant_booking": agg["cant"],
+            "profit": round(agg["profit"], 2),
+        })
     clientes_nuevos_detalle.sort(key=lambda f: -f["profit"])
 
     # ---- Tablas de cotizaciones creadas el mes, por estatus actual ----
@@ -5407,13 +5441,14 @@ def construir_inicio_crm(
         (ventana_inicio.isoformat(), ventana_fin.isoformat()),
     ).fetchall()
 
-    # Para "Clientes nuevos" se necesita, por cliente, su booking más antiguo
-    # de TODA la historia (no solo de la ventana del periodo) — si no,
-    # cualquier cliente recurrente que simplemente no compró en la ventana
-    # anterior se contaría como "nuevo".
-    primer_booking_por_cliente = consulta_sql_cacheada(
-        "primer_booking_por_cliente", 60, """
-            SELECT DISTINCT ON (cliente_servicio) cliente_servicio, vendedor, fecha
+    # Para "Clientes nuevos" se necesita TODO el historial de bookings de
+    # cada cliente (no solo de la ventana del periodo) — si no, no se puede
+    # distinguir un cliente genuinamente nuevo/reactivado (sin compras en
+    # los últimos 13 meses) de uno recurrente que simplemente no compró en
+    # la ventana anterior.
+    bookings_todos_cliente = consulta_sql_cacheada(
+        "bookings_todos_cliente", 60, """
+            SELECT cliente_servicio, vendedor, fecha
             FROM reporte_bookings
             WHERE cliente_servicio IS NOT NULL AND cliente_servicio <> ''
             ORDER BY cliente_servicio, fecha ASC
@@ -5478,28 +5513,18 @@ def construir_inicio_crm(
             "venta": float(r["venta"] or 0), "profit": float(r["profit"] or 0),
         })
 
-    def sumar_meses(fecha, meses):
-        total = fecha.year * 12 + (fecha.month - 1) + meses
-        anio, mes = total // 12, total % 12 + 1
-        return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
-
-    # Cliente nuevo = su primer booking registrado en todo el historial, y
-    # solo se cuenta si esos 13 meses previos están cubiertos por datos (si
-    # no, no hay forma de saber si de verdad no compró antes o si el
-    # historial simplemente no llega tan atrás).
-    fechas_primer_booking = [
-        r["fecha"].astimezone(TZ_LOCAL).date() for r in primer_booking_por_cliente if r["fecha"] is not None
-    ]
-    inicio_historial = min(fechas_primer_booking) if fechas_primer_booking else None
-    primer_dia_valido = sumar_meses(inicio_historial, 13) if inicio_historial else None
+    # Cliente nuevo = no tuvo ningún booking en los 13 meses previos y sí
+    # tiene uno en el mes evaluado — cuenta tanto su primera compra de
+    # siempre como una reactivación tras una ausencia larga (antes solo se
+    # veía el primer booking de toda la historia, así que un cliente que
+    # vuelve a comprar tras año y medio de inactividad nunca se contaba).
+    eventos_cliente_nuevo = construir_eventos_cliente_nuevo([
+        {"cliente_servicio": r["cliente_servicio"], "vendedor": r["vendedor"], "fecha": r["fecha"].astimezone(TZ_LOCAL).date()}
+        for r in bookings_todos_cliente if r["fecha"] is not None
+    ])
 
     filas_cliente_nuevo = []
-    for r in primer_booking_por_cliente:
-        if r["fecha"] is None:
-            continue
-        d = r["fecha"].astimezone(TZ_LOCAL).date()
-        if primer_dia_valido is None or d < primer_dia_valido:
-            continue
+    for r in eventos_cliente_nuevo:
         vendedor = r["vendedor"] or "#N/D"
         plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
@@ -5508,7 +5533,7 @@ def construir_inicio_crm(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
-        filas_cliente_nuevo.append({"d": d, "vendedor": vendedor})
+        filas_cliente_nuevo.append({"d": r["fecha"], "vendedor": vendedor})
 
     # Achieved real de las categorías "Activities" del Scorecard (Customer
     # Facing Visit / Virtual Meeting): solo cuentan las tareas ya
