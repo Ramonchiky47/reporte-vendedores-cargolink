@@ -109,7 +109,7 @@
         <span class="brand-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
         </span>
-        <h1>{{ 'Pricing' if request.args.get('panel') == 'pricing' else 'Reporte de Ventas' }}</h1>
+        <h1>{{ 'Pricing Marítimo / Aéreo' if request.args.get('panel') == 'pricing' else 'Reporte de Ventas' }}</h1>
       </div>
       {% set panel = request.args.get('panel') %}
       {% set panel_ventas = panel == 'ventas' %}
@@ -126,7 +126,7 @@
           {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
           {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('administracion_antiguedad_saldos', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'administracion_antiguedad_saldos' else '' }}">Administración</a>{% endif %}
           {% if puede_ver_crm and not panel_scoped %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
-          {% if puede_pricing and (panel_pricing or not panel_scoped) %}<a href="{{ url_for('pricing', panel='pricing' if panel_pricing else none) }}" class="{{ 'active' if active == 'pricing' else '' }}">Pricing</a>{% endif %}
+          {% if puede_pricing and (panel_pricing or not panel_scoped) %}<a href="{{ url_for('pricing', panel='pricing' if panel_pricing else none) }}" class="{{ 'active' if active == 'pricing' else '' }}">Pricing Marítimo / Aéreo</a>{% endif %}
           {% if panel_pricing %}<a href="https://seguimiento-importaciones.vercel.app/reporte-pricing" target="_blank" rel="noopener noreferrer">Reportes</a>{% endif %}
           {% if puede_ver_catalogos and not panel_scoped %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>
