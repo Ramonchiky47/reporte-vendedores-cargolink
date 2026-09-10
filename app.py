@@ -1987,9 +1987,10 @@ def usuario_puede_ver_contacto(db, contacto_id):
     """True si el usuario en sesión puede ver/editar/borrar este contacto,
     según sus plazas permitidas y (si aplica) su candado de "solo su
     información" — mismo criterio que el listado de Contactos
-    (construir_contactos_crm): uno sin ningún cliente asociado es visible
-    para cualquiera con acceso al CRM; si tiene clientes, basta con que
-    UNO caiga en una plaza/vendedor permitido."""
+    (construir_contactos_crm): un contacto solo es visible si tiene AL MENOS
+    un cliente asociado que caiga en una plaza/vendedor permitido para el
+    usuario. Uno sin ningún cliente asociado no es visible para nadie con
+    restricción de plaza/vendedor (solo para quien ve todas las plazas)."""
     plazas_permitidas = plazas_permitidas_usuario()
     vendedor_forzado = vendedor_forzado_usuario()
     desarrollador_forzado = desarrollador_forzado_usuario()
@@ -2003,7 +2004,7 @@ def usuario_puede_ver_contacto(db, contacto_id):
         WHERE cc.contacto_id = %s
     """, (contacto_id,)).fetchall()
     if not filas:
-        return not vendedor_forzado and not desarrollador_forzado
+        return False
     if vendedor_forzado:
         vendedores_contacto = {normalizar(f["vendedor"]) for f in filas}
         if normalizar(vendedor_forzado) not in vendedores_contacto:
@@ -4115,11 +4116,11 @@ def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzad
 
 def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
     """Contactos del CRM con sus clientes y grupos asociados (muchos-a-muchos).
-    Un contacto sin ningún cliente asociado todavía es visible para todos
-    (no hay plaza que restringir); si tiene clientes, solo es visible si
-    alguno de esos clientes cae en una plaza permitida para el usuario.
-    También trae si el contacto tiene cotizaciones reales (crm_cotizaciones,
-    por contacto_id)."""
+    Un contacto solo es visible si al menos uno de sus clientes asociados cae
+    en una plaza permitida para el usuario; uno sin ningún cliente asociado
+    no es visible para nadie con restricción de plaza/vendedor (solo se ve
+    completo si no hay ninguna restricción). También trae si el contacto
+    tiene cotizaciones reales (crm_cotizaciones, por contacto_id)."""
     db = get_db()
     plaza_por_vendedor = {}
     for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores"):
@@ -4159,7 +4160,7 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desar
     for r in filas:
         vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
         plazas_contacto = {plaza_por_vendedor.get(v, "#N/D") for v in vendedores_contacto}
-        if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+        if plazas_permitidas is not None and not (plazas_contacto & plazas_permitidas):
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
@@ -4329,7 +4330,7 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
     """, (contacto_id,)).fetchall()
 
     plazas_contacto = {plaza_por_vendedor.get(normalizar(c["vendedor"]), "#N/D") for c in clientes}
-    if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+    if plazas_permitidas is not None and not (plazas_contacto & plazas_permitidas):
         db.close()
         return None
     vendedores_contacto = {normalizar(c["vendedor"]) for c in clientes}
@@ -6327,10 +6328,10 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
 def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
     """Contactos que puede elegir el usuario en sesión al crear/editar una
     cotización (select "Contacto"): mismo criterio que
-    construir_contactos_crm — un contacto sin ningún cliente asociado es
-    visible salvo que el usuario tenga "solo su información" activo; si
-    tiene clientes, basta con que uno caiga en su plaza/vendedor
-    permitido."""
+    construir_contactos_crm — un contacto solo aparece si al menos uno de
+    sus clientes asociados cae en su plaza/vendedor permitido; uno sin
+    ningún cliente asociado no aparece para nadie con restricción de
+    plaza/vendedor."""
     db = get_db()
     plaza_por_vendedor = {
         normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
@@ -6353,7 +6354,7 @@ def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=N
     for r in contactos_raw:
         vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
         plazas_contacto = {plaza_por_vendedor.get(v, "#N/D") for v in vendedores_contacto}
-        if plazas_permitidas is not None and plazas_contacto and not (plazas_contacto & plazas_permitidas):
+        if plazas_permitidas is not None and not (plazas_contacto & plazas_permitidas):
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
