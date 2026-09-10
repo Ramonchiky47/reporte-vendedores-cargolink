@@ -110,10 +110,14 @@
         <button type="button" class="btn-solicitar-info" disabled title="Guarda la cotización primero">Marítimo / Aéreo</button>
         {% endif %}
         <button type="button" class="btn-solicitar-info" disabled title="Próximamente">Terrestre Nacional</button>
-        <button type="button" class="btn-solicitar-info" disabled title="Próximamente">Terrestre Internacional</button>
+        {% if cotizacion %}
+        <a class="btn-solicitar-info" href="{{ url_for('crm_solicitud_transporte_terrestre_nueva', cotizacion_id=cotizacion.id) }}">Terrestre Internacional</a>
+        {% else %}
+        <button type="button" class="btn-solicitar-info" disabled title="Guarda la cotización primero">Terrestre Internacional</button>
+        {% endif %}
       </div>
       {% if not cotizacion %}
-      <p class="pista-campo" style="margin:0;">Guarda la cotización para habilitar "Marítimo / Aéreo".</p>
+      <p class="pista-campo" style="margin:0;">Guarda la cotización para habilitar "Marítimo / Aéreo" y "Terrestre Internacional".</p>
       {% endif %}
     </div>
   </div>
