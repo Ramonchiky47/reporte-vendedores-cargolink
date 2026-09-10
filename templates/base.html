@@ -109,13 +109,19 @@
         <span class="brand-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
         </span>
-        <h1>{{ 'Pricing Marítimo / Aéreo' if request.args.get('panel') == 'pricing' else 'Reporte de Ventas' }}</h1>
+        <h1>
+          {% if request.args.get('panel') == 'pricing' %}Pricing Marítimo / Aéreo
+          {% elif request.args.get('panel') == 'transporte-terrestre' %}Pricing Terrestre Internacional
+          {% else %}Reporte de Ventas
+          {% endif %}
+        </h1>
       </div>
       {% set panel = request.args.get('panel') %}
       {% set panel_ventas = panel == 'ventas' %}
       {% set panel_admin = panel == 'admin' %}
       {% set panel_pricing = panel == 'pricing' %}
-      {% set panel_scoped = panel_ventas or panel_admin or panel_pricing %}
+      {% set panel_transporte_terrestre = panel == 'transporte-terrestre' %}
+      {% set panel_scoped = panel_ventas or panel_admin or panel_pricing or panel_transporte_terrestre %}
       <nav>
         <div class="nav-links">
           {% if session.get('es_admin') and not panel_scoped %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
@@ -129,7 +135,7 @@
           {% if puede_pricing and (panel_pricing or not panel_scoped) %}<a href="{{ url_for('pricing', panel='pricing' if panel_pricing else none) }}" class="{{ 'active' if active == 'pricing' else '' }}">Pricing Marítimo / Aéreo</a>{% endif %}
           {% if panel_pricing %}<a href="https://seguimiento-importaciones.vercel.app/reporte-pricing" target="_blank" rel="noopener noreferrer">Reportes</a>{% endif %}
           {% if puede_transporte_terrestre and panel_pricing %}<a href="{{ url_for('transporte_terrestre') }}" class="{{ 'active' if active == 'transporte_terrestre' else '' }}">Pricing Transporte Terrestre Internacional</a>{% endif %}
-          {% if puede_transporte_terrestre and not panel_scoped %}<a href="{{ url_for('transporte_terrestre') }}" class="{{ 'active' if active == 'transporte_terrestre' else '' }}">Transporte Terrestre Internacional</a>{% endif %}
+          {% if puede_transporte_terrestre and (panel_transporte_terrestre or not panel_scoped) %}<a href="{{ url_for('transporte_terrestre', panel='transporte-terrestre' if panel_transporte_terrestre else none) }}" class="{{ 'active' if active == 'transporte_terrestre' else '' }}">Transporte Terrestre Internacional</a>{% endif %}
           {% if puede_ver_catalogos and not panel_scoped %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>
         <div class="nav-user">
