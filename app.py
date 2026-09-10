@@ -1761,6 +1761,20 @@ def pricing_required(view):
     return wrapped
 
 
+def transporte_terrestre_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not sesion_activa():
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_transporte_terrestre():
+            flash("No tienes permiso para ver Transporte Terrestre Internacional.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
@@ -2047,6 +2061,15 @@ def usuario_puede_pricing():
     return bool(session.get("puede_pricing"))
 
 
+def usuario_puede_transporte_terrestre():
+    """Igual que usuario_puede_pricing(), pero para la bandeja de solicitudes
+    de Transporte Terrestre Internacional (otro departamento, mismo patrón:
+    app_user_permissions.puede_transporte_terrestre)."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_transporte_terrestre"))
+
+
 def usuario_puede_ver_ventas():
     """True = el usuario en sesión puede ver la pestaña Información de
     Ventas. Los administradores siempre pueden; para el resto se usa el
@@ -2160,6 +2183,7 @@ def inject_permisos():
         "puede_ver_catalogos": usuario_puede_ver_catalogos(),
         "puede_ver_crm": usuario_puede_ver_crm(),
         "puede_pricing": usuario_puede_pricing(),
+        "puede_transporte_terrestre": usuario_puede_transporte_terrestre(),
         "puede_autorizar_minutas": usuario_puede_autorizar_minutas(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
@@ -2187,6 +2211,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
+            coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
@@ -2262,6 +2287,7 @@ def login():
             session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
             session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
             session["puede_pricing"] = bool(fila["puede_pricing"])
+            session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
             session["vendedor_asociado"] = fila["vendedor_asociado"]
@@ -2337,6 +2363,7 @@ def sso():
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
+            coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
@@ -2368,6 +2395,7 @@ def sso():
     session["puede_ver_catalogos"] = bool(fila["puede_ver_catalogos"])
     session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
     session["puede_pricing"] = bool(fila["puede_pricing"])
+    session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
     session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
     session["vendedor_asociado"] = fila["vendedor_asociado"]
@@ -4512,6 +4540,16 @@ def generar_referencia_solicitud_maritimo(db):
     return f"COT-{siguiente}"
 
 
+def generar_referencia_solicitud_transporte_terrestre(db):
+    """Referencia secuencial 'COTTI-5000', 'COTTI-5001', ... para
+    crm_solicitudes_transporte_terrestre (arranca en 5000)."""
+    fila = db.execute(
+        "SELECT referencia FROM crm_solicitudes_transporte_terrestre ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    siguiente = int(fila["referencia"].split("-")[-1]) + 1 if fila and fila["referencia"] else 5000
+    return f"COTTI-{siguiente}"
+
+
 def construir_cotizaciones_crm(
     plazas_permitidas=None, vendedor_forzado=None, creador_extra=None, desarrollador_forzado=None,
     solo_propias=False, usuario_id_actual=None,
@@ -6020,6 +6058,51 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         for s in solicitudes_maritimo if s["respuesta_pricing"]
     ]
 
+    db = get_db()
+    solicitudes_transporte_terrestre_raw = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_embarque, s.estado, s.fecha_creacion, s.creado_por,
+            s.creado_en AS solicitud_en, s.visto_por_vendedor_en,
+            s.respuesta_transporte_terrestre, s.respondido_por, s.respondido_en,
+            r.ultima_respuesta_en
+        FROM crm_solicitudes_transporte_terrestre s
+        LEFT JOIN LATERAL (
+            SELECT max(creado_en) AS ultima_respuesta_en
+            FROM crm_solicitudes_transporte_terrestre_respuestas
+            WHERE solicitud_id = s.id
+        ) r ON true
+        WHERE s.cotizacion_id = %s
+        ORDER BY s.creado_en DESC
+    """, (cotizacion_id,)).fetchall()
+    db.close()
+
+    solicitudes_transporte_terrestre = []
+    for s in solicitudes_transporte_terrestre_raw:
+        s = dict(s)
+        s["fecha_entrega"] = s["ultima_respuesta_en"]
+        s["diferencia"] = (
+            formatear_duracion(s["ultima_respuesta_en"] - s["solicitud_en"])
+            if s["ultima_respuesta_en"] else None
+        )
+        s["es_nuevo"] = bool(
+            s["ultima_respuesta_en"]
+            and (not s["visto_por_vendedor_en"] or s["visto_por_vendedor_en"] < s["ultima_respuesta_en"])
+        )
+        solicitudes_transporte_terrestre.append(s)
+
+    # Igual que pricing_respuestas, pero para las respuestas de Transporte
+    # Terrestre Internacional.
+    transporte_terrestre_respuestas = [
+        {
+            "referencia": s["referencia"],
+            "tipo_embarque": s["tipo_embarque"] or "",
+            "respuesta": s["respuesta_transporte_terrestre"],
+            "respondido_por": nombre_desde_correo(s["respondido_por"]) or s["respondido_por"] or "",
+            "respondido_en": s["respondido_en"],
+        }
+        for s in solicitudes_transporte_terrestre if s["respuesta_transporte_terrestre"]
+    ]
+
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
     # al cliente: usa la firma capturada si existe, si no deriva un nombre
     # legible del correo de login (p.ej. "marielbis.camacaro@..." →
@@ -6120,6 +6203,14 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             for s in solicitudes_maritimo
         ],
         "pricing_respuestas": pricing_respuestas,
+        "solicitudes_transporte_terrestre": [
+            {"id": s["id"], "referencia": s["referencia"], "tipo_embarque": s["tipo_embarque"] or "",
+             "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or "",
+             "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
+             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
+            for s in solicitudes_transporte_terrestre
+        ],
+        "transporte_terrestre_respuestas": transporte_terrestre_respuestas,
     }
 
 
@@ -7076,6 +7167,69 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
     )
 
 
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/solicitud-transporte-terrestre/nueva", methods=["GET", "POST"])
+@crm_required
+def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
+    db = get_db()
+    cotizacion = db.execute(
+        "SELECT id, id_cotizacion, nombre_cotizacion, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
+    ).fetchone()
+    if cotizacion is None:
+        db.close()
+        return "No encontrado", 404
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        def campo(nombre, limite=100):
+            return (request.form.get(nombre, "") or "").strip()[:limite] or None
+
+        def campo_largo(nombre, limite=4000):
+            return (request.form.get(nombre, "") or "").strip()[:limite] or None
+
+        def si_no(nombre):
+            v = request.form.get(nombre)
+            return True if v == "si" else (False if v == "no" else None)
+
+        def fecha_hora(nombre):
+            v = (request.form.get(nombre, "") or "").strip()
+            return v or None
+
+        referencia = generar_referencia_solicitud_transporte_terrestre(db)
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_terrestre (
+                referencia, cotizacion_id, creado_por, nombre, correo_solicitante,
+                confirma_un_material, importacion_exportacion, tipo_embarque, tipo_unidad,
+                codigo_postal_origen, codigo_postal_destino, direccion_origen, direccion_destino,
+                direccion_aa, directa_transbordo, hacemos_cruce, hazmat, descripcion_material,
+                requisitos_comentarios, fecha_hora_recoleccion, fecha_hora_entrega, hit_ratio
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            referencia, cotizacion_id, session.get("usuario", ""),
+            campo("nombre"), campo("correo_solicitante"),
+            campo("confirma_un_material"), campo("importacion_exportacion"), campo("tipo_embarque"),
+            campo("tipo_unidad"), campo("codigo_postal_origen"), campo("codigo_postal_destino"),
+            campo_largo("direccion_origen"), campo_largo("direccion_destino"),
+            campo("direccion_aa"), campo("directa_transbordo"), si_no("hacemos_cruce"),
+            si_no("hazmat") or False, campo_largo("descripcion_material"),
+            campo_largo("requisitos_comentarios"), fecha_hora("fecha_hora_recoleccion"),
+            fecha_hora("fecha_hora_entrega"), campo("hit_ratio"),
+        ))
+        db.commit()
+        db.close()
+        flash(f"Solicitud {referencia} enviada a Transporte Terrestre Internacional.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    db.close()
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_solicitud_transporte_terrestre_form.html", nav_groups=nav_groups,
+        titulo_pagina="Solicitud a Transporte Terrestre Internacional",
+        cotizacion=cotizacion,
+    )
+
+
 ESTADOS_SOLICITUD_PRICING = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
 # Al guardar una respuesta hay que llegar a una decisión final: no se puede
 # dejar la solicitud en "Solicitud" ni "En proceso" desde este formulario.
@@ -7307,6 +7461,235 @@ def pricing_ver(solicitud_id):
     if idioma not in PRICING_IDIOMAS:
         idioma = "es"
     return render_template("pricing_pdf_ver.html", fila=fila, idioma=idioma, t=PRICING_TEXTOS[idioma])
+
+
+ESTADOS_SOLICITUD_TRANSPORTE_TERRESTRE = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
+# Igual que con Pricing: al guardar una respuesta hay que llegar a una
+# decisión final, no se puede dejar la solicitud en "Solicitud" ni "En proceso".
+ESTADOS_FINALES_TRANSPORTE_TERRESTRE = ["Cotizado", "Rechazada"]
+
+TRANSPORTE_TERRESTRE_TEXTOS = {
+    "es": {
+        "lang": "es",
+        "slogan": "Transporte Terrestre Internacional · Solicitud",
+        "generado": "Generado", "pidio": "Pidió", "fecha": "Fecha", "operativo_asignado": "Operativo asignado",
+        "datos_generales": "DATOS GENERALES", "tipo": "TIPO", "origen": "ORIGEN", "destino": "DESTINO",
+        "cp_origen": "CÓDIGO POSTAL ORIGEN", "cp_destino": "CÓDIGO POSTAL DESTINO",
+        "tipo_embarque": "TIPO DE EMBARQUE", "tipo_unidad": "TIPO DE UNIDAD",
+        "directa_transbordo": "¿DIRECTA O A TRANSBORDO?", "hacemos_cruce": "¿HACEMOS EL CRUCE?",
+        "hazmat": "HAZMAT", "hit_ratio": "HIT RATIO", "un_material": "CONFIRMA UN# DEL MATERIAL",
+        "recoleccion": "FECHA Y HORA RECOLECCIÓN", "entrega": "FECHA Y HORA ENTREGA",
+        "si": "Sí", "no": "No",
+        "direccion_origen": "Dirección origen:", "direccion_destino": "Dirección destino:",
+        "descripcion_material": "Descripción del material:", "direccion_aa": "Dirección del AA (si es importación):",
+        "requisitos_comentarios": "Requisitos / comentarios:", "correo_solicitante": "Correo del solicitante:",
+        "respuesta": "RESPUESTA DE TRANSPORTE TERRESTRE", "respuestas": "RESPUESTAS DE TRANSPORTE TERRESTRE",
+        "sin_respuesta": "Sin respuesta todavía.", "generico": "Transporte Terrestre",
+        "pie": "AV2 Logistics · Documento generado desde Transporte Terrestre Internacional para uso interno / envío al cliente.",
+        "regresar": "Regresar", "descargar_pdf": "Descargar PDF", "vista_previa_de": "Vista previa de",
+    },
+    "en": {
+        "lang": "en",
+        "slogan": "International Ground Transportation · Request",
+        "generado": "Generated", "pidio": "Requested by", "fecha": "Date",
+        "operativo_asignado": "Assigned operator",
+        "datos_generales": "GENERAL DATA", "tipo": "TYPE", "origen": "ORIGIN", "destino": "DESTINATION",
+        "cp_origen": "ORIGIN ZIP CODE", "cp_destino": "DESTINATION ZIP CODE",
+        "tipo_embarque": "SHIPMENT TYPE", "tipo_unidad": "UNIT TYPE",
+        "directa_transbordo": "DIRECT OR TRANSLOAD?", "hacemos_cruce": "DO WE HANDLE THE CROSSING?",
+        "hazmat": "HAZMAT", "hit_ratio": "HIT RATIO", "un_material": "CONFIRM MATERIAL UN#",
+        "recoleccion": "PICKUP DATE AND TIME", "entrega": "DELIVERY DATE AND TIME",
+        "si": "Yes", "no": "No",
+        "direccion_origen": "Origin address:", "direccion_destino": "Destination address:",
+        "descripcion_material": "Material description:", "direccion_aa": "Customs broker address (if import):",
+        "requisitos_comentarios": "Requirements / comments:", "correo_solicitante": "Requester's email:",
+        "respuesta": "GROUND TRANSPORTATION RESPONSE", "respuestas": "GROUND TRANSPORTATION RESPONSES",
+        "sin_respuesta": "No response yet.", "generico": "Ground Transportation",
+        "pie": "AV2 Logistics · Document generated from International Ground Transportation for internal use / sending to the client.",
+        "regresar": "Back", "descargar_pdf": "Download PDF", "vista_previa_de": "Preview of",
+    },
+}
+
+
+@app.route("/transporte-terrestre")
+@transporte_terrestre_required
+def transporte_terrestre():
+    db = get_db()
+    filas = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre,
+            op.nombre_operativo AS operativo_asignado
+        FROM crm_solicitudes_transporte_terrestre s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
+        ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
+    """).fetchall()
+    db.close()
+    return render_template("transporte_terrestre.html", filas=filas)
+
+
+@app.route("/transporte-terrestre/<int:solicitud_id>")
+@transporte_terrestre_required
+def transporte_terrestre_detalle(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre
+        FROM crm_solicitudes_transporte_terrestre s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None:
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for("transporte_terrestre"))
+    operativos = db.execute("""
+        SELECT co.id, co.nombre_operativo
+        FROM catalogo_operativos co
+        LEFT JOIN app_user_permissions p ON p.user_id = co.user_id
+        WHERE co.activo = true
+          AND (coalesce(p.es_admin, false) OR coalesce(p.puede_transporte_terrestre, false) OR co.id = %s)
+        ORDER BY co.nombre_operativo
+    """, (fila["operativo_asignado_id"],)).fetchall()
+    respuestas = db.execute("""
+        SELECT id, respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_terrestre_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+    return render_template(
+        "transporte_terrestre_detalle.html", fila=fila, estados=ESTADOS_FINALES_TRANSPORTE_TERRESTRE,
+        operativos=operativos, respuestas=respuestas,
+    )
+
+
+@app.route("/transporte-terrestre/<int:solicitud_id>/responder", methods=["POST"])
+@transporte_terrestre_required
+def transporte_terrestre_responder(solicitud_id):
+    estado = request.form.get("estado", "").strip()
+    if estado not in ESTADOS_FINALES_TRANSPORTE_TERRESTRE:
+        flash("Elige Cotizado o Rechazada para guardar la respuesta.")
+        return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
+    respuesta = (request.form.get("respuesta_transporte_terrestre", "") or "").strip()[:4000] or None
+    operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()
+    operativo_id = int(operativo_raw) if operativo_raw.isdigit() else None
+    usuario = session.get("usuario", "")
+
+    db = get_db()
+    db.execute("""
+        UPDATE crm_solicitudes_transporte_terrestre
+        SET estado = %s, respuesta_transporte_terrestre = %s, respondido_por = %s, respondido_en = now(),
+            operativo_asignado_id = %s
+        WHERE id = %s
+    """, (estado, respuesta, usuario, operativo_id, solicitud_id))
+    if respuesta:
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_terrestre_respuestas (solicitud_id, respuesta, respondido_por)
+            VALUES (%s, %s, %s)
+        """, (solicitud_id, respuesta, usuario))
+    db.commit()
+    db.close()
+    flash("Solicitud actualizada.")
+    return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
+
+
+def puede_ver_solicitud_transporte_terrestre(db, fila):
+    """True si el usuario en sesión puede ver esta solicitud: es del
+    departamento de Transporte Terrestre, o tiene acceso al CRM y puede ver
+    la cotización de la que salió (mismo criterio de plazas que el resto
+    del CRM). Calcado de puede_ver_solicitud_pricing()."""
+    if usuario_puede_transporte_terrestre():
+        return True
+    if not usuario_puede_ver_crm():
+        return False
+    if not fila["cotizacion_id"]:
+        return False
+    return cotizacion_visible_para_usuario(db, fila["cotizacion_id"])
+
+
+@app.route("/transporte-terrestre/<int:solicitud_id>/pdf")
+@login_required
+def transporte_terrestre_pdf(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre
+        FROM crm_solicitudes_transporte_terrestre s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_terrestre(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+    operativo = None
+    if fila["operativo_asignado_id"]:
+        operativo = db.execute(
+            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
+        ).fetchone()
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_terrestre_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en ASC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+    idioma = request.args.get("idioma", "es")
+    if idioma not in PRICING_IDIOMAS:
+        idioma = "es"
+
+    html = render_template(
+        "transporte_terrestre_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL), idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma],
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF de la solicitud.")
+        return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=request.args.get("descargar") == "1",
+        download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
+    )
+
+
+@app.route("/transporte-terrestre/<int:solicitud_id>/ver")
+@login_required
+def transporte_terrestre_ver(solicitud_id):
+    """Pantalla intermedia para revisar el PDF de una solicitud (visor +
+    botón de descarga explícito) antes de que el vendedor decida guardarlo.
+    Marca la solicitud como vista, lo que le quita el aviso de "Nuevo" que
+    ve el vendedor en la cotización cuando Transporte Terrestre responde."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT id, referencia, cotizacion_id FROM crm_solicitudes_transporte_terrestre WHERE id = %s",
+        (solicitud_id,),
+    ).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_terrestre(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_terrestre SET visto_por_vendedor_en = now() WHERE id = %s",
+        (solicitud_id,),
+    )
+    db.commit()
+    db.close()
+    idioma = request.args.get("idioma", "es")
+    if idioma not in PRICING_IDIOMAS:
+        idioma = "es"
+    return render_template("transporte_terrestre_pdf_ver.html", fila=fila, idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma])
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
@@ -7962,6 +8345,7 @@ PERMISOS_LISTA = [
     ("puede_comisiones", "Comisiones"),
     ("puede_ver_crm", "CRM"),
     ("puede_pricing", "Pricing"),
+    ("puede_transporte_terrestre", "Transporte Terrestre Internacional"),
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
@@ -7984,6 +8368,7 @@ def permisos_actualizar():
             coalesce(p.puede_ver_catalogos, false) AS puede_ver_catalogos,
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
+            coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id

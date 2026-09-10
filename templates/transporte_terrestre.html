@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Transporte Terrestre Internacional{% endblock %}
+{% set active = "transporte_terrestre" %}
+{% block extra_head %}
+<style>
+  .pricing-badge {
+    display: inline-block; font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
+  }
+  .pricing-badge.solicitud { background: #fef3de; color: #92400e; }
+  .pricing-badge.en-proceso { background: #dbeafe; color: var(--accent-dark); }
+  .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
+  .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
+
+  .tabla-pricing { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .tabla-pricing th {
+    text-align: left; padding: .55rem .6rem; color: var(--ink-2); font-weight: 700;
+    border-bottom: 1px solid var(--border); background: #f8fafc; white-space: nowrap;
+  }
+  .tabla-pricing td { padding: .7rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tabla-pricing tr:last-child td { border-bottom: none; }
+  .fila-pricing { cursor: pointer; }
+  .fila-pricing:hover td { background: #f8fafc; }
+  .fila-pricing.cotizada td { background: var(--ok-wash); }
+  .fila-pricing.cotizada:hover td { background: #c7f0d8; }
+  .fila-pricing .referencia { font-weight: 700; }
+  .fila-pricing .cliente { color: var(--ink-3); font-size: .78rem; }
+  .col-operativo { color: var(--ink-2); }
+  .col-operativo.sin-asignar { color: var(--ink-4); font-style: italic; }
+</style>
+{% endblock %}
+{% block content %}
+    <h2 style="margin: 0 0 .2rem;">Transporte Terrestre Internacional</h2>
+    <p class="hint" style="margin: 0 0 1.5rem;">Solicitudes de Transporte Terrestre Internacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+
+    {% if filas %}
+    <table class="tabla-pricing">
+      <thead>
+        <tr>
+          <th>Referencia</th>
+          <th>Tipo</th>
+          <th>Fecha</th>
+          <th>Operativo asignado</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fila in filas %}
+        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}" onclick="window.location.href='{{ url_for('transporte_terrestre_detalle', solicitud_id=fila.id) }}'">
+          <td>
+            <div class="referencia">{{ fila.referencia }}</div>
+            <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
+          </td>
+          <td>{{ fila.tipo_embarque or '—' }}</td>
+          <td>{{ fila.fecha_creacion }}</td>
+          <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
+          <td><span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">Todavía no hay solicitudes a Transporte Terrestre Internacional.</p>
+    {% endif %}
+{% endblock %}
