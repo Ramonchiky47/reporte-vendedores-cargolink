@@ -127,11 +127,13 @@
       <option value="">Todas las plazas</option>
       {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
     </select>
-    <select name="vendedor" onchange="this.form.submit()">
+    <select name="vendedor" onchange="this.form.submit()" {{ 'disabled' if desarrollador_filtro else '' }}
+      title="{{ 'Quita el filtro de Desarrollador para poder elegir un Vendedor' if desarrollador_filtro else '' }}">
       <option value="">Todos los vendedores</option>
       {% for v in vendedores_opciones %}<option value="{{ v }}" {{ 'selected' if vendedor_filtro == v else '' }}>{{ v }}</option>{% endfor %}
     </select>
-    <select name="desarrollador" onchange="this.form.submit()">
+    <select name="desarrollador" onchange="this.form.submit()" {{ 'disabled' if vendedor_filtro else '' }}
+      title="{{ 'Quita el filtro de Vendedor para poder elegir un Desarrollador' if vendedor_filtro else '' }}">
       <option value="">Todos los desarrolladores</option>
       {% for d in desarrolladores_opciones %}<option value="{{ d }}" {{ 'selected' if desarrollador_filtro == d else '' }}>{{ d }}</option>{% endfor %}
     </select>

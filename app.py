@@ -6701,7 +6701,12 @@ def crm_seccion(slug):
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
-        desarrollador_filtro = request.args.get("desarrollador", "").strip()
+        # Vendedor y Desarrollador son mutuamente excluyentes (ver
+        # crm_inicio.html: el select del otro se deshabilita en cuanto se
+        # elige uno) — si de todos modos llegan los dos en la URL (ej. un
+        # enlace viejo editado a mano), Vendedor manda y se ignora
+        # Desarrollador, en vez de combinarlos.
+        desarrollador_filtro = "" if vendedor_filtro else request.args.get("desarrollador", "").strip()
         datos = construir_inicio_crm(
             periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
             creador_extra_cotizaciones=creador_extra_para_vendedor(vendedor_filtro),
