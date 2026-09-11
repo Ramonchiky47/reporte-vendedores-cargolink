@@ -5435,10 +5435,22 @@ def construir_inicio_crm(
         "vendedores_catalogo", 60, "SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor", db=db
     )
     plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in vendedores_catalogo}
-    desarrolladores_catalogo = consulta_sql_cacheada(
+    desarrolladores_catalogo_raw = consulta_sql_cacheada(
         "desarrolladores_catalogo", 60,
         "SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador", db=db,
     )
+    # "AV2 CUSTOMER" (plaza "Sin Customer") es un valor genérico que
+    # reporte_bookings.ejecutivo trae por default cuando el booking no tiene
+    # un desarrollador real asignado — no es una persona. Dejarlo pasar como
+    # si fuera un desarrollador más duplicaba en "Actividad por desarrollador"
+    # exactamente los mismos bookings/profit que ya se ven por su vendedor en
+    # "Actividad por usuario". Se excluye del catálogo (para que no aparezca
+    # en el selector del filtro) y también de "ejecutivo" más abajo (para que
+    # no cuente como si fuera un desarrollador real en ningún cálculo).
+    desarrolladores_genericos_norm = {
+        normalizar(r["desarrollador"]) for r in desarrolladores_catalogo_raw if r["plaza"] == "Sin Customer"
+    }
+    desarrolladores_catalogo = [r for r in desarrolladores_catalogo_raw if r["plaza"] != "Sin Customer"]
     plaza_por_desarrollador = {normalizar(r["desarrollador"]): r["plaza"] for r in desarrolladores_catalogo}
 
     bookings = db.execute(
@@ -5507,6 +5519,8 @@ def construir_inicio_crm(
         vendedor = r["vendedor"] or "#N/D"
         plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
         ejecutivo = normalizar(r["ejecutivo"]) or None
+        if ejecutivo in desarrolladores_genericos_norm:
+            ejecutivo = None
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if plaza_filtro and plaza != plaza_filtro:
