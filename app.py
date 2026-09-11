@@ -5788,6 +5788,21 @@ def construir_inicio_crm(
     ranking = sorted(resumen_vendedor.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
     ranking_desarrolladores = sorted(resumen_desarrollador.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
 
+    # Cuando se filtra por un vendedor o desarrollador puntual, las tablas
+    # de "Actividad por usuario/desarrollador" deben mostrar solo a esa
+    # persona — no a terceros que aparecen ahí nada más porque compartieron
+    # algún booking con ella (p. ej. filtrar por un desarrollador dejaba ver
+    # en "Actividad por usuario" a todos los vendedores de sus bookings, en
+    # vez de mostrar solo la información de la persona elegida).
+    if vendedor_filtro_norm:
+        ranking = [r for r in ranking if normalizar(r["nombre"]) == vendedor_filtro_norm]
+        if not desarrollador_filtro_norm:
+            ranking_desarrolladores = []
+    if desarrollador_filtro_norm:
+        ranking_desarrolladores = [r for r in ranking_desarrolladores if normalizar(r["nombre"]) == desarrollador_filtro_norm]
+        if not vendedor_filtro_norm:
+            ranking = []
+
     por_vencer, vencidas = [], []
     for f in filas_cot:
         fv = f["fecha_vencimiento"]
