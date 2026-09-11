@@ -689,6 +689,24 @@ def normalizar(texto):
     return (texto or "").strip().upper()
 
 
+def coincide_desarrollador(nombre_catalogo, nombre_asignado):
+    """Compara un nombre de desarrollador tal como lo elige un admin del
+    catálogo (Catálogos → Desarrolladores / desarrollador_asociado de una
+    cuenta) contra el nombre tal como llega sincronizado en
+    asignacion_de_clientes.desarrollador — a veces con nombre completo
+    (con segundo nombre) donde el catálogo usa una versión corta, p.ej.
+    catálogo "GRECIA AGUIRRE" vs asignación "GRECIA NATALY AGUIRRE" (mismo
+    patrón real con "RUSSBETH" ⊂ "RUSSBETH HERNANDEZ", "MARA" ⊂ "MARA .",
+    etc.). Un solo `!=` entre ambos dejaba a esas cuentas sin ver ninguna
+    de sus cuentas/cotizaciones pese a estar bien asociadas. Empata si son
+    iguales o si las palabras de uno son subconjunto de las del otro."""
+    if not nombre_catalogo or not nombre_asignado:
+        return False
+    a = set(normalizar(nombre_catalogo).split())
+    b = set(normalizar(nombre_asignado).split())
+    return bool(a) and bool(b) and (a <= b or b <= a)
+
+
 def json_para_js(datos):
     """json.dumps a salvo de </script> embebido dentro de un <script> inline."""
     return json.dumps(datos).replace("</", "<\\/")
@@ -1965,7 +1983,7 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
     """, (cliente_folio,)).fetchone()
     if vendedor_forzado and normalizar(fila["vendedor"] if fila else None) != normalizar(vendedor_forzado):
         return False
-    if desarrollador_forzado and normalizar(fila["desarrollador"] if fila else None) != normalizar(desarrollador_forzado):
+    if desarrollador_forzado and not coincide_desarrollador(desarrollador_forzado, fila["desarrollador"] if fila else None):
         return False
     if plazas_permitidas is None:
         return True
@@ -2010,8 +2028,8 @@ def usuario_puede_ver_contacto(db, contacto_id):
         if normalizar(vendedor_forzado) not in vendedores_contacto:
             return False
     if desarrollador_forzado:
-        desarrolladores_contacto = {normalizar(f["desarrollador"]) for f in filas}
-        if normalizar(desarrollador_forzado) not in desarrolladores_contacto:
+        desarrolladores_contacto = [f["desarrollador"] for f in filas if f["desarrollador"]]
+        if not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
             return False
     if plazas_permitidas is None:
         return True
@@ -3990,7 +4008,6 @@ def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarr
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
-    desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
@@ -3999,7 +4016,7 @@ def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarr
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
-        if desarrollador_forzado_norm is not None and normalizar(r["desarrollador"]) != desarrollador_forzado_norm:
+        if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["desarrollador"]):
             continue
         filas.append({
             "folio": r["folio"],
@@ -4155,7 +4172,6 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desar
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
-    desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
     resultado = []
     for r in filas:
         vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
@@ -4164,9 +4180,9 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desar
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
-        if desarrollador_forzado_norm is not None:
-            desarrolladores_contacto = {normalizar(d) for d in r["desarrolladores"]}
-            if desarrolladores_contacto and desarrollador_forzado_norm not in desarrolladores_contacto:
+        if desarrollador_forzado is not None:
+            desarrolladores_contacto = r["desarrolladores"]
+            if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
                 continue
         tiene_booking = any(normalizar(cl) in clientes_con_booking for cl in r["clientes"])
         resultado.append({
@@ -4231,7 +4247,7 @@ def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrol
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
-        if desarrollador_forzado_norm is not None and normalizar(m["desarrollador"]) != desarrollador_forzado_norm:
+        if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, m["desarrollador"]):
             continue
         clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
 
@@ -4279,7 +4295,6 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
-    desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
     miembros = []
     for m in miembros_raw:
         vkey = normalizar(m["vendedor"])
@@ -4288,7 +4303,7 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
-        if desarrollador_forzado_norm is not None and normalizar(m["desarrollador"]) != desarrollador_forzado_norm:
+        if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, m["desarrollador"]):
             continue
         miembros.append({"folio": m["folio"], "cliente": m["razon_social"], "vendedor": m["vendedor"] or "#N/D"})
 
@@ -4338,8 +4353,8 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
         db.close()
         return None
     if desarrollador_forzado:
-        desarrolladores_contacto = {normalizar(c["desarrollador"]) for c in clientes}
-        if desarrolladores_contacto and normalizar(desarrollador_forzado) not in desarrolladores_contacto:
+        desarrolladores_contacto = [c["desarrollador"] for c in clientes if c["desarrollador"]]
+        if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
             db.close()
             return None
 
@@ -4410,7 +4425,7 @@ def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, 
             return False
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             return False
-        if desarrollador_forzado_norm is not None and normalizar(desarrollador) != desarrollador_forzado_norm:
+        if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, desarrollador):
             return False
         return True
 
@@ -4653,7 +4668,7 @@ def construir_cotizaciones_crm(
                     continue
                 if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
                     continue
-                if desarrollador_forzado_norm is not None and normalizar(r["cliente_desarrollador"]) != desarrollador_forzado_norm:
+                if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["cliente_desarrollador"]):
                     continue
             cliente_texto = r["cliente_nombre"] or "#N/D"
             vendedor_texto = r["cliente_vendedor"] or "#N/D"
@@ -6406,7 +6421,6 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
-    desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
     clientes = []
     for r in clientes_raw:
         vkey = normalizar(r["vendedor"])
@@ -6415,7 +6429,7 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
-        if desarrollador_forzado_norm is not None and normalizar(r["desarrollador"]) != desarrollador_forzado_norm:
+        if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["desarrollador"]):
             continue
         clientes.append(r)
     return clientes
@@ -6445,7 +6459,6 @@ def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=N
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
-    desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
     contactos = []
     for r in contactos_raw:
         vendedores_contacto = {normalizar(v) for v in r["vendedores"]}
@@ -6454,9 +6467,9 @@ def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=N
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
-        if desarrollador_forzado_norm is not None:
-            desarrolladores_contacto = {normalizar(d) for d in r["desarrolladores"]}
-            if desarrolladores_contacto and desarrollador_forzado_norm not in desarrolladores_contacto:
+        if desarrollador_forzado is not None:
+            desarrolladores_contacto = r["desarrolladores"]
+            if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
                 continue
         contactos.append(r)
     return contactos
