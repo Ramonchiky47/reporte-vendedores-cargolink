@@ -5372,16 +5372,22 @@ def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=N
 
 def construir_inicio_crm(
     periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, db=None,
-    creador_extra_cotizaciones=None,
+    creador_extra_cotizaciones=None, desarrollador_filtro=None,
 ):
     """Dashboard de CRM → Inicio: actividad de cotización (crm_cotizaciones)
     y de cierre (reporte_bookings) del periodo elegido, comparada contra el
     mismo tramo del periodo anterior; más una tendencia diaria fija de los
     últimos 30 días y alertas de vencimiento. Respeta las mismas
-    plazas_permitidas que el resto del CRM, y además Plaza/Vendedor del
-    filtro. El cruce cotización↔vendedor es por nombre (firma capturada, o
-    si no hay, un nombre derivado del correo de login) — es un cruce por
-    mejor esfuerzo, no una relación garantizada en la base.
+    plazas_permitidas que el resto del CRM, y además Plaza/Vendedor/
+    Desarrollador del filtro. El cruce cotización↔vendedor es por nombre
+    (firma capturada, o si no hay, un nombre derivado del correo de login)
+    — es un cruce por mejor esfuerzo, no una relación garantizada en la
+    base. `desarrollador_filtro` solo restringe lo que sí tiene esa
+    atribución (bookings vía reporte_bookings.ejecutivo, y cotizaciones vía
+    el creador asociado a un desarrollador) — Clientes nuevos y Actividades
+    (crm_tareas) no tienen ejecutivo capturado, así que ese filtro no les
+    aplica (igual que hoy vendedor_filtro tampoco filtra nada que no tenga
+    vendedor).
 
     `db`: conexión ya abierta opcional — para cuando el llamador necesita
     llamar esta función varias veces seguidas (la tendencia de Resultados,
@@ -5490,6 +5496,7 @@ def construir_inicio_crm(
 
     plaza_filtro = plaza_filtro or ""
     vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
+    desarrollador_filtro_norm = normalizar(desarrollador_filtro) if desarrollador_filtro else ""
 
     filas_booking = []
     for r in bookings:
@@ -5499,13 +5506,15 @@ def construir_inicio_crm(
         d = fecha.astimezone(TZ_LOCAL).date()
         vendedor = r["vendedor"] or "#N/D"
         plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
+        ejecutivo = normalizar(r["ejecutivo"]) or None
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if plaza_filtro and plaza != plaza_filtro:
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
-        ejecutivo = normalizar(r["ejecutivo"]) or None
+        if desarrollador_filtro_norm and ejecutivo != desarrollador_filtro_norm:
+            continue
         filas_booking.append({
             "d": d, "vendedor": vendedor, "plaza": plaza,
             "ejecutivo": r["ejecutivo"] if ejecutivo else None,
@@ -5588,8 +5597,15 @@ def construir_inicio_crm(
         if es_creador_extra and vendedor_filtro_norm:
             identidad_mostrar = vendedor_filtro
             identidad = vendedor_filtro_norm
-        elif vendedor_filtro_norm and identidad != vendedor_filtro_norm:
-            continue
+        else:
+            if vendedor_filtro_norm and identidad != vendedor_filtro_norm:
+                continue
+            # La identidad de una cotización es un solo valor (vendedor O
+            # desarrollador asociado al creador, nunca ambos) — si se filtra
+            # por los dos a la vez, ninguna cotización puede cumplir las dos
+            # cosas simultáneamente, lo cual es correcto (no un bug).
+            if desarrollador_filtro_norm and identidad != desarrollador_filtro_norm:
+                continue
         filas_cot.append({
             "d": d, "id": r["id"], "id_cotizacion": r["id_cotizacion"],
             "cliente": r["razon_social"] or r["cliente_prospecto"] or "Prospecto",
@@ -5791,6 +5807,11 @@ def construir_inicio_crm(
         if r["vendedor"] and (plazas_permitidas is None or r["plaza"] in plazas_permitidas)
         and (not plaza_filtro or r["plaza"] == plaza_filtro)
     })
+    desarrolladores_opciones = sorted({
+        r["desarrollador"] for r in desarrolladores_catalogo
+        if r["desarrollador"] and (plazas_permitidas is None or r["plaza"] in plazas_permitidas)
+        and (not plaza_filtro or r["plaza"] == plaza_filtro)
+    })
 
     return {
         "kpis": kpis,
@@ -5806,6 +5827,7 @@ def construir_inicio_crm(
         "vencidas": vencidas[:8],
         "plazas_opciones": plazas_opciones,
         "vendedores_opciones": vendedores_opciones,
+        "desarrolladores_opciones": desarrolladores_opciones,
         "fecha_inicio_larga": fecha_larga_es(fecha_inicio),
         "fecha_fin_larga": fecha_larga_es(fecha_fin),
         "fecha_inicio_anterior_larga": fecha_larga_es(fecha_inicio_anterior),
@@ -6664,16 +6686,18 @@ def crm_seccion(slug):
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
+        desarrollador_filtro = request.args.get("desarrollador", "").strip()
         datos = construir_inicio_crm(
             periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
             creador_extra_cotizaciones=creador_extra_para_vendedor(vendedor_filtro),
+            desarrollador_filtro=desarrollador_filtro,
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
         return render_template(
             "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
-            plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
+            plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro, desarrollador_filtro=desarrollador_filtro,
             serie_json=json_para_js(datos["serie"]), **datos,
         )
 

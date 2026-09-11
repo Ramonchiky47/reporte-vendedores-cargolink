@@ -131,6 +131,10 @@
       <option value="">Todos los vendedores</option>
       {% for v in vendedores_opciones %}<option value="{{ v }}" {{ 'selected' if vendedor_filtro == v else '' }}>{{ v }}</option>{% endfor %}
     </select>
+    <select name="desarrollador" onchange="this.form.submit()">
+      <option value="">Todos los desarrolladores</option>
+      {% for d in desarrolladores_opciones %}<option value="{{ d }}" {{ 'selected' if desarrollador_filtro == d else '' }}>{{ d }}</option>{% endfor %}
+    </select>
     <div class="caja-personalizado" id="caja-personalizado" {{ 'hidden' if periodo != 'personalizado' else '' }}>
       <input type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
       <input type="date" name="fecha_fin" value="{{ fecha_fin }}">
