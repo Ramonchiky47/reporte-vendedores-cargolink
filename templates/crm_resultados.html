@@ -246,7 +246,7 @@
 {% macro fmt_valor(valor, es_moneda) %}{% if es_moneda %}${{ '{:,.0f}'.format(valor) }}{% else %}{{ '{:.0f}'.format(valor) }}{% endif %}{% endmacro %}
 
 {% macro anillo(fila, radio, viewbox) %}
-{% set pendiente = fila.campo_logrado is none %}
+{% set pendiente = fila.ach_pct is none %}
 {% set clase = clase_pct(fila.ach_pct)|trim %}
 {% set circ = 2 * 3.14159265 * radio %}
 {% set frac = 0 if pendiente else (1 if fila.ach_pct >= 100 else fila.ach_pct / 100) %}
@@ -260,7 +260,7 @@
 {% endmacro %}
 
 {% macro tarjeta_sc(fila) %}
-{% set pendiente = fila.campo_logrado is none %}
+{% set pendiente = fila.ach_pct is none %}
 {% set clase = clase_pct(fila.ach_pct)|trim %}
 <div class="sc-tile {{ 'sc-tile--pending' if pendiente else '' }}">
   {% if pendiente %}<span class="sc-badge-pend">Pendiente</span>{% endif %}
@@ -274,7 +274,7 @@
   </div>
   <div class="sc-tile__cifras">
     <span>Target <b class="num">{% if fila.sin_presupuesto %}—{% else %}{{ fmt_valor(fila.target, fila.es_moneda) }}{% endif %}</b></span>
-    {% if pendiente %}<span>Sin registro en Tareas</span>{% else %}<span>Achieved <b class="num">{{ fmt_valor(fila.logrado or 0, fila.es_moneda) }}</b></span>{% endif %}
+    {% if pendiente %}<span>{{ 'Sin presupuesto capturado' if fila.sin_presupuesto else 'Sin registro en Tareas' }}</span>{% else %}<span>Achieved <b class="num">{{ fmt_valor(fila.logrado or 0, fila.es_moneda) }}</b></span>{% endif %}
   </div>
   <div class="sc-tile__pie">
     <span class="sc-chip num">Weight {{ fila.peso }}%</span>
@@ -362,7 +362,7 @@
     </div>
     <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · sin nada elegido verás el Scorecard de toda la compañía; con solo Plaza, el del grupo (Vendedor se limita a esa plaza); con Vendedor, el individual</p>
     <div class="r-contexto">
-      <span class="r-contexto-badge">{{ 'Compañía' if scorecard_tipo == 'compania' else ('Plaza' if scorecard_tipo == 'grupo' else 'Vendedor') }}</span>
+      <span class="r-contexto-badge">{{ 'Compañía' if scorecard_tipo == 'compania' else ('Plaza' if scorecard_tipo == 'grupo' else ('Desarrollador' if scorecard_tipo == 'desarrollador' else 'Vendedor')) }}</span>
       <span class="r-contexto-nombre">{{ scorecard_titulo }}</span>
     </div>
   </header>
@@ -473,8 +473,8 @@
   <div class="scorecard scorecard--vacio">Sin actividad registrada {{ 'este mes.' if es_compania else 'en ' + plaza_filtro + ' para este mes.' }}</div>
   {% endif %}
 
-  {% elif scorecard_tipo == "vendedor" %}
-  <div class="view-label"><span>Vista por vendedor</span></div>
+  {% elif scorecard_tipo in ("vendedor", "desarrollador") %}
+  <div class="view-label"><span>{{ 'Vista por desarrollador' if scorecard_tipo == 'desarrollador' else 'Vista por vendedor' }}</span></div>
   <section class="scorecard" aria-label="Scorecard mensual de {{ scorecard_titulo }}">
     <div class="scorecard__head">
       <div>

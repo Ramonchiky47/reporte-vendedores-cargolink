@@ -5134,6 +5134,7 @@ def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13):
 
 def construir_detalle_resultados_mes(
     fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
+    desarrollador_filtro=None,
 ):
     """Detalle a nivel cliente/cotización para CRM → Resultados, acotado al
     mes elegido: roster de clientes asociados con su venta del mes (mismo
@@ -5224,6 +5225,7 @@ def construir_detalle_resultados_mes(
 
     plaza_filtro = plaza_filtro or ""
     vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
+    desarrollador_por_cliente = {normalizar(r["razon_social"]): r["desarrollador"] for r in filas_asignacion}
 
     # ---- Tabla: roster de clientes asociados con su venta del mes ----
     resumen_clientes = []
@@ -5235,6 +5237,8 @@ def construir_detalle_resultados_mes(
         if plaza_filtro and plaza != plaza_filtro:
             continue
         if vendedor_filtro_norm and vkey != vendedor_filtro_norm:
+            continue
+        if desarrollador_filtro and not coincide_desarrollador(desarrollador_filtro, r["desarrollador"]):
             continue
         ckey = normalizar(r["razon_social"])
         agg = booking_por_cliente_mes.get(ckey, {"cant": 0, "profit": 0.0})
@@ -5287,6 +5291,10 @@ def construir_detalle_resultados_mes(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
+        if desarrollador_filtro and not coincide_desarrollador(
+            desarrollador_filtro, desarrollador_por_cliente.get(normalizar(r["cliente_servicio"]))
+        ):
+            continue
         agg = booking_por_cliente_mes.get(normalizar(r["cliente_servicio"]), {"cant": 0, "profit": 0.0})
         clientes_nuevos_detalle.append({
             "cliente": r["cliente_servicio"],
@@ -5327,6 +5335,8 @@ def construir_detalle_resultados_mes(
         if es_creador_extra and vendedor_filtro_norm:
             identidad_mostrar = vendedor_filtro
         elif vendedor_filtro_norm and normalizar(identidad_mostrar) != vendedor_filtro_norm:
+            continue
+        elif desarrollador_filtro and normalizar(identidad_mostrar) != normalizar(desarrollador_filtro):
             continue
         estatus = calcular_estatus_cotizacion(r["estatus"], r["fecha_vencimiento"], r["ganada_desde"] is not None, hoy)
         cotizaciones_por_estatus[estatus].append({
@@ -6727,13 +6737,16 @@ def crm_seccion(slug):
         )
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
-        vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
+        desarrollador_forzado = desarrollador_forzado_usuario()
+        vendedor_filtro = vendedor_forzado or ("" if desarrollador_forzado else request.args.get("vendedor", "").strip())
         # Vendedor y Desarrollador son mutuamente excluyentes (ver
         # crm_inicio.html: el select del otro se deshabilita en cuanto se
         # elige uno) — si de todos modos llegan los dos en la URL (ej. un
         # enlace viejo editado a mano), Vendedor manda y se ignora
-        # Desarrollador, en vez de combinarlos.
-        desarrollador_filtro = "" if vendedor_filtro else request.args.get("desarrollador", "").strip()
+        # Desarrollador, en vez de combinarlos. Un usuario con "Solo ver sus
+        # cuentas" (desarrollador_forzado) siempre manda sobre cualquier
+        # vendedor/desarrollador que llegue por la URL.
+        desarrollador_filtro = desarrollador_forzado or ("" if vendedor_filtro else request.args.get("desarrollador", "").strip())
         datos = construir_inicio_crm(
             periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
             creador_extra_cotizaciones=creador_extra_para_vendedor(vendedor_filtro),
@@ -6741,6 +6754,8 @@ def crm_seccion(slug):
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
+        if desarrollador_forzado:
+            datos["desarrolladores_opciones"] = [desarrollador_forzado]
         return render_template(
             "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
@@ -6760,11 +6775,18 @@ def crm_seccion(slug):
         fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
-        vendedor_filtro = vendedor_forzado or request.args.get("vendedor", "").strip()
+        desarrollador_forzado = desarrollador_forzado_usuario()
+        vendedor_filtro = vendedor_forzado or ("" if desarrollador_forzado else request.args.get("vendedor", "").strip())
+        # "Solo ver sus cuentas" (desarrollador) no tiene selector propio en
+        # Resultados todavía — se fuerza directo, sin pasar por la URL, para
+        # que un usuario así restringido siempre vea únicamente el
+        # Scorecard/detalle de su desarrollador, igual que ya pasa con
+        # vendedor_forzado.
+        desarrollador_filtro = desarrollador_forzado
         creador_extra = creador_extra_para_vendedor(vendedor_filtro)
         datos = construir_inicio_crm(
             "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
-            creador_extra_cotizaciones=creador_extra,
+            creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
@@ -6776,6 +6798,11 @@ def crm_seccion(slug):
             scorecard = construir_scorecard_vendedor(resumen)
             scorecard_tipo = "vendedor"
             scorecard_titulo = vendedor_filtro
+        elif desarrollador_filtro:
+            resumen = datos["ranking_desarrolladores"][0] if datos["ranking_desarrolladores"] else None
+            scorecard = construir_scorecard_vendedor(resumen)
+            scorecard_tipo = "desarrollador"
+            scorecard_titulo = desarrollador_filtro
         elif plaza_filtro:
             resumenes_plaza = [r for r in datos["resumen_vendedor"].values() if r["plaza"] == plaza_filtro]
             scorecard = construir_scorecard_grupo(resumenes_plaza)
@@ -6787,10 +6814,13 @@ def crm_seccion(slug):
             scorecard_titulo = "Todas las plazas"
 
         tendencia_svg = None
-        if scorecard:
+        if scorecard and not desarrollador_filtro:
             # Año en curso: de enero al mes seleccionado (en enero no hay
             # tendencia que graficar — construir_svg_tendencia regresa None
             # con menos de 2 meses, y la gráfica simplemente no aparece).
+            # construir_tendencia_resultado todavía no soporta desarrollador,
+            # así que por ahora se omite la tendencia para ese caso en vez
+            # de mostrar una equivocada (sin filtrar).
             puntos_tendencia = construir_tendencia_resultado(
                 plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas_usuario(),
                 creador_extra_cotizaciones=creador_extra,
@@ -6799,7 +6829,7 @@ def crm_seccion(slug):
 
         detalle = construir_detalle_resultados_mes(
             fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
-            creador_extra_cotizaciones=creador_extra,
+            creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
         )
 
         return render_template(
