@@ -5194,7 +5194,7 @@ def sumar_meses(fecha, meses):
     return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
 
 
-def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13):
+def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13, meses_cobertura_minima=12):
     """"Cliente nuevo" = no tuvo ningún booking en los `meses_ventana` meses
     previos y sí tiene uno en el mes evaluado — cuenta tanto su primera
     compra de siempre como una reactivación después de una ausencia larga
@@ -5202,14 +5202,23 @@ def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13):
     cliente que vuelve a comprar tras año y medio de inactividad nunca se
     contaba). `bookings_todos` debe traer TODOS los bookings de cada
     cliente (no solo el primero), con al menos cliente_servicio/vendedor/
-    fecha (fecha como date, ya en hora local). Solo se confía en un evento
-    si el historial disponible cubre al menos `meses_ventana` meses antes
-    de esa fecha — si no, no hay forma de saber si de verdad no compró
-    antes o si el historial simplemente no llega tan atrás."""
+    fecha (fecha como date, ya en hora local).
+
+    `meses_cobertura_minima` es un resguardo APARTE, deliberadamente más
+    chico que `meses_ventana`: cuánto historial hace falta tener capturado
+    antes de un evento para siquiera confiar en el dato — si no, no hay
+    forma de saber si de verdad no compró antes o si el historial
+    simplemente no llega tan atrás. Con los 13 meses completos de
+    `meses_ventana`, un cliente cuya primera compra de siempre cae a
+    escasos días de que arrancó la captura de datos (caso real: Promotora
+    Larba, primera compra 2026-01-30, datos desde 2025-01-01 — a 2 días de
+    cumplir los 13 meses exactos) se descartaba aunque en la práctica es
+    clarísimo que sí es nueva. 12 meses de cobertura ya alcanza para
+    confiar en el dato sin quedar a expensas de ese filo de días."""
     fechas_todas = [r["fecha"] for r in bookings_todos if r["fecha"] is not None]
     if not fechas_todas:
         return []
-    primer_dia_valido = sumar_meses(min(fechas_todas), meses_ventana)
+    primer_dia_valido = sumar_meses(min(fechas_todas), meses_cobertura_minima)
 
     por_cliente = {}
     for r in bookings_todos:
