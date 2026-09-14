@@ -55,6 +55,25 @@
   }
   .btn-borrar:hover{ background:var(--surface-2); color:var(--ink); }
 
+  .meses-pill{ position:relative; }
+  .meses-pill__btn{
+    appearance:none; -webkit-appearance:none; border:none; background:transparent; color:var(--ink);
+    font:600 .86rem/1.3 var(--font-body); padding:0 1.1rem 0 0; cursor:pointer; width:100%; text-align:left;
+  }
+  .meses-panel{
+    position:absolute; top:calc(100% + 6px); left:0; z-index:30; width:300px;
+    background:var(--surface); border:1px solid var(--line-strong); border-radius:12px;
+    box-shadow:var(--shadow); padding:.75rem;
+  }
+  .meses-panel__anio{ font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin:.6rem 0 .3rem; }
+  .meses-panel__anio:first-child{ margin-top:0; }
+  .meses-panel__grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:.2rem; }
+  .meses-panel__grid label{ display:flex; align-items:center; gap:.35rem; font-size:.82rem; color:var(--ink); padding:.25rem .35rem; border-radius:6px; cursor:pointer; }
+  .meses-panel__grid label:hover{ background:var(--surface-2); }
+  .meses-panel__grid input{ margin:0; }
+  .meses-panel__acciones{ display:flex; justify-content:space-between; gap:.5rem; margin-top:.7rem; padding-top:.6rem; border-top:1px solid var(--line); }
+  .meses-panel__acciones .btn-aplicar, .meses-panel__acciones .btn-borrar{ padding:.4rem .9rem; font-size:.78rem; height:auto; }
+
   .r-head-range{ margin:1.1rem 0 0; font-size:.8rem; color:var(--ink-faint); border-top:1px solid var(--line); padding-top:1rem; }
   .r-head-range b{ color:var(--ink-soft); font-weight:600; }
   .r-contexto{ display:flex; align-items:center; gap:.6rem; margin-top:.9rem; }
@@ -336,14 +355,34 @@
         <p class="r-head-sub">Cierre de mes: actividad de cotización y cierre de reporte_bookings, comparado contra el mes anterior.</p>
       </div>
       <form class="r-filters" method="get" id="form-resultados">
-        <label class="select-pill">
-          <span class="select-pill__label">Mes</span>
-          <select name="mes" onchange="this.form.submit()">
+        <div class="select-pill meses-pill" id="meses-pill">
+          <span class="select-pill__label">Meses</span>
+          <button type="button" class="meses-pill__btn" id="meses-btn">
+            {% if meses_seleccionados|length == 1 %}
+              {{ opciones_mes|selectattr("value", "equalto", meses_seleccionados[0])|map(attribute="label")|first }}
+            {% else %}
+              {{ meses_seleccionados|length }} meses
+            {% endif %}
+          </button>
+          <div class="meses-panel" id="meses-panel" hidden>
+            {% set anios_vistos = [] %}
             {% for opt in opciones_mes %}
-            <option value="{{ opt.value }}" {{ 'selected' if opt.value == mes_seleccionado else '' }}>{{ opt.label }}</option>
+              {% set anio = opt.value.split('-')[0] %}
+              {% if anio not in anios_vistos %}
+                {% if anios_vistos %}</div>{% endif %}
+                <p class="meses-panel__anio">{{ anio }}</p>
+                <div class="meses-panel__grid">
+                {% set _ = anios_vistos.append(anio) %}
+              {% endif %}
+              <label><input type="checkbox" name="meses" value="{{ opt.value }}" {{ 'checked' if opt.value in meses_seleccionados else '' }}> {{ opt.label.split(' - ')[0][:3] }}</label>
+              {% if loop.last %}</div>{% endif %}
             {% endfor %}
-          </select>
-        </label>
+            <div class="meses-panel__acciones">
+              <button type="button" class="btn-borrar" id="meses-limpiar">Solo mes actual</button>
+              <button type="button" class="btn-aplicar" id="meses-aplicar">Aplicar</button>
+            </div>
+          </div>
+        </div>
         <label class="select-pill">
           <span class="select-pill__label">Plaza</span>
           <select name="plaza" id="filtro-plaza">
@@ -360,7 +399,11 @@
         </label>
       </form>
     </div>
+    {% if es_acumulado %}
+    <p class="r-head-range">Acumulado de <b>{{ meses_seleccionados_larga }}</b> · sin comparación contra periodo anterior (no aplica para una selección libre de meses) · sin nada elegido verás el Scorecard de toda la compañía; con solo Plaza, el del grupo (Vendedor se limita a esa plaza); con Vendedor, el individual</p>
+    {% else %}
     <p class="r-head-range">Del <b>{{ fecha_inicio_larga }}</b> al <b>{{ fecha_fin_larga }}</b>, vs. {{ etiqueta_anterior }} · sin nada elegido verás el Scorecard de toda la compañía; con solo Plaza, el del grupo (Vendedor se limita a esa plaza); con Vendedor, el individual</p>
+    {% endif %}
     <div class="r-contexto">
       <span class="r-contexto-badge">{{ 'Compañía' if scorecard_tipo == 'compania' else ('Plaza' if scorecard_tipo == 'grupo' else ('Desarrollador' if scorecard_tipo == 'desarrollador' else 'Vendedor')) }}</span>
       <span class="r-contexto-nombre">{{ scorecard_titulo }}</span>
@@ -452,7 +495,7 @@
       <span class="composition__caption">Roster {{ 'de la compañía' if es_compania else 'del grupo' }}</span>
       <div class="roster__list">
         {% for r in scorecard.roster %}
-        <a class="roster__item" href="{{ url_for('crm_seccion', slug='resultados', mes=mes_seleccionado, plaza=plaza_filtro, vendedor=r.nombre) }}">
+        <a class="roster__item" href="{{ url_for('crm_seccion', slug='resultados', meses=meses_seleccionados, plaza=plaza_filtro, vendedor=r.nombre) }}">
           <span class="roster__nombre">{{ r.nombre }}</span>
           <div class="roster__barra"><div class="roster__fill" style="width:{{ 100 if r.resultado >= 100 else r.resultado }}%; background:var(--{{ clase_pct(r.resultado)|trim }})"></div></div>
           <span class="pill pill--{{ clase_pct(r.resultado)|trim }} num">{{ '%.1f'|format(r.resultado) }}%</span>
@@ -649,6 +692,37 @@
     selectVendedor.value = "";
     form.submit();
   });
+})();
+
+(function () {
+  var pill = document.getElementById("meses-pill");
+  var btn = document.getElementById("meses-btn");
+  var panel = document.getElementById("meses-panel");
+  var aplicar = document.getElementById("meses-aplicar");
+  var limpiar = document.getElementById("meses-limpiar");
+  var form = document.getElementById("form-resultados");
+  if (!pill || !btn || !panel || !form) return;
+
+  btn.addEventListener("click", function () { panel.hidden = !panel.hidden; });
+  document.addEventListener("click", function (e) {
+    if (!pill.contains(e.target)) panel.hidden = true;
+  });
+  if (aplicar) {
+    aplicar.addEventListener("click", function () {
+      panel.hidden = true;
+      form.submit();
+    });
+  }
+  if (limpiar) {
+    limpiar.addEventListener("click", function () {
+      var casillas = panel.querySelectorAll('input[name="meses"]');
+      casillas.forEach(function (cb) { cb.checked = false; });
+      var actual = panel.querySelector('input[value="{{ mes_default }}"]');
+      if (actual) actual.checked = true;
+      panel.hidden = true;
+      form.submit();
+    });
+  }
 })();
 </script>
 {% endblock %}

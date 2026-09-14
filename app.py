@@ -4911,6 +4911,104 @@ def construir_tendencia_resultado(
     return puntos
 
 
+def construir_resultados_acumulado(
+    meses_lista, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
+    desarrollador_filtro=None,
+):
+    """Igual que construir_inicio_crm + construir_detalle_resultados_mes,
+    pero sumando un conjunto arbitrario de meses (no necesariamente
+    contiguos) elegidos a mano en Resultados — p.ej. Enero + Marzo, sin
+    Febrero. No hay "periodo anterior" contra el cual comparar (no aplica
+    para una selección libre), así que los KPIs no traen delta. Una sola
+    conexión para todas las llamadas, igual que construir_tendencia_
+    resultado — contra Supabase abrir la conexión pesa más que las
+    consultas mismas."""
+    meses_ordenados = sorted(meses_lista)
+    db = get_db()
+
+    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0}
+    resumen_vendedor = {}
+    ranking_desarrolladores_map = {}
+    plazas_opciones = set()
+    vendedores_opciones = set()
+    desarrolladores_opciones = set()
+    clientes_nuevos_detalle = []
+    cotizaciones_por_estatus = {"vigente": [], "vencido": [], "ganada": [], "perdida": []}
+    detalle_ultimo_mes = None
+    campos_resumen_vendedor = (
+        "bookings", "venta", "profit", "cotizaciones", "presupuesto",
+        "clientes_nuevos", "customer_facing_visit", "virtual_meeting",
+    )
+
+    for mes in meses_ordenados:
+        anio, mnum = (int(x) for x in mes.split("-"))
+        fecha_inicio_mes = date(anio, mnum, 1)
+        fecha_fin_mes = date(anio, mnum, calendar.monthrange(anio, mnum)[1])
+
+        datos_mes = construir_inicio_crm(
+            "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db,
+            creador_extra_cotizaciones=creador_extra_cotizaciones, desarrollador_filtro=desarrollador_filtro,
+        )
+        k = datos_mes["kpis"]
+        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos"):
+            kpis[campo] += k[campo]
+
+        for key, fila in datos_mes["resumen_vendedor"].items():
+            acc = resumen_vendedor.setdefault(key, {
+                "nombre": fila["nombre"], "plaza": fila["plaza"],
+                **{campo: (0.0 if campo in ("venta", "profit", "presupuesto") else 0) for campo in campos_resumen_vendedor},
+            })
+            for campo in campos_resumen_vendedor:
+                acc[campo] += fila.get(campo, 0) or 0
+
+        for fila in datos_mes["ranking_desarrolladores"]:
+            key = normalizar(fila["nombre"])
+            acc = ranking_desarrolladores_map.setdefault(key, {
+                "nombre": fila["nombre"], "plaza": fila["plaza"], "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0,
+            })
+            for campo in ("bookings", "venta", "profit", "cotizaciones"):
+                acc[campo] += fila.get(campo, 0) or 0
+
+        plazas_opciones.update(p for p in datos_mes["plazas_opciones"] if p)
+        vendedores_opciones.update(datos_mes["vendedores_opciones"])
+        desarrolladores_opciones.update(datos_mes["desarrolladores_opciones"])
+
+        detalle_mes = construir_detalle_resultados_mes(
+            fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
+            creador_extra_cotizaciones=creador_extra_cotizaciones, desarrollador_filtro=desarrollador_filtro,
+        )
+        clientes_nuevos_detalle.extend(detalle_mes["clientes_nuevos_detalle"])
+        cotizaciones_por_estatus["vigente"].extend(detalle_mes["cotizaciones_vigentes"])
+        cotizaciones_por_estatus["vencido"].extend(detalle_mes["cotizaciones_vencidas"])
+        cotizaciones_por_estatus["ganada"].extend(detalle_mes["cotizaciones_ganadas"])
+        cotizaciones_por_estatus["perdida"].extend(detalle_mes["cotizaciones_perdidas"])
+        # La cuadrícula "Venta por cliente" (Ene..mes) ya de por sí muestra
+        # el año corrido hasta un mes de referencia — se toma la del mes
+        # más reciente elegido, que ya cubre todos los meses anteriores
+        # marcados o no.
+        detalle_ultimo_mes = detalle_mes
+    db.close()
+
+    clientes_nuevos_detalle.sort(key=lambda f: -f["profit"])
+    cotizaciones_por_estatus["vigente"].sort(key=lambda f: f["fecha_vencimiento"] or date.max)
+    cotizaciones_por_estatus["vencido"].sort(key=lambda f: f["fecha_vencimiento"] or date.max)
+    cotizaciones_por_estatus["ganada"].sort(key=lambda f: f["ganada_desde"] or date.min, reverse=True)
+    cotizaciones_por_estatus["perdida"].sort(key=lambda f: f["perdida_desde"] or date.min, reverse=True)
+    ranking_desarrolladores = sorted(ranking_desarrolladores_map.values(), key=lambda r: (-r["profit"], -r["cotizaciones"]))
+
+    return {
+        "kpis": kpis,
+        "resumen_vendedor": resumen_vendedor,
+        "ranking_desarrolladores": ranking_desarrolladores,
+        "plazas_opciones": sorted(plazas_opciones),
+        "vendedores_opciones": sorted(vendedores_opciones),
+        "desarrolladores_opciones": sorted(desarrolladores_opciones),
+        "clientes_nuevos_detalle": clientes_nuevos_detalle,
+        "cotizaciones_por_estatus": cotizaciones_por_estatus,
+        "detalle_ultimo_mes": detalle_ultimo_mes,
+    }
+
+
 def fmt_moneda_compacta(v):
     if v is None:
         return "—"
@@ -6768,8 +6866,18 @@ def crm_seccion(slug):
         anio_cerrado = hoy.year if hoy.month > 1 else hoy.year - 1
         mes_cerrado = hoy.month - 1 if hoy.month > 1 else 12
         mes_default = f"{anio_cerrado}-{mes_cerrado:02d}"
-        mes_param = request.args.get("mes", "").strip()
-        mes_seleccionado = mes_param if mes_param in MESES_VALIDOS else mes_default
+        # "Meses" (plural, checkboxes) es lo nuevo — permite marcar cualquier
+        # combinación de meses (no necesariamente contiguos) para ver su
+        # acumulado. Se conserva "mes" (singular) como respaldo por si llega
+        # un enlace viejo. Sin nada en la URL, se cae al único mes cerrado
+        # más reciente — mismo comportamiento de siempre.
+        meses_param = [m for m in request.args.getlist("meses") if m in MESES_VALIDOS]
+        if not meses_param:
+            mes_param = request.args.get("mes", "").strip()
+            meses_param = [mes_param if mes_param in MESES_VALIDOS else mes_default]
+        meses_seleccionados = sorted(set(meses_param))
+        es_acumulado = len(meses_seleccionados) > 1
+        mes_seleccionado = meses_seleccionados[-1]
         anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
         fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
         fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
@@ -6784,10 +6892,48 @@ def crm_seccion(slug):
         # vendedor_forzado.
         desarrollador_filtro = desarrollador_forzado
         creador_extra = creador_extra_para_vendedor(vendedor_filtro)
-        datos = construir_inicio_crm(
-            "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
-            creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
-        )
+
+        plazas_permitidas = plazas_permitidas_usuario()
+        tendencia_svg = None
+        meses_seleccionados_larga = None
+
+        if es_acumulado:
+            resultado = construir_resultados_acumulado(
+                meses_seleccionados, plaza_filtro, vendedor_filtro, plazas_permitidas,
+                creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+            )
+            datos = resultado
+            kpis = dict(resultado["kpis"])
+            for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos"):
+                kpis[f"{campo}_delta"] = None
+                kpis[f"{campo}_anterior"] = 0
+            etiqueta_meses = {opt["value"]: opt["label"].split(" - ")[0] for opt in opciones_mes()}
+            meses_seleccionados_larga = ", ".join(
+                f"{etiqueta_meses.get(m, m)} {m[:4]}" for m in meses_seleccionados
+            )
+            detalle = dict(resultado["detalle_ultimo_mes"] or {})
+            por_estatus = resultado["cotizaciones_por_estatus"]
+            detalle["clientes_nuevos_detalle"] = resultado["clientes_nuevos_detalle"]
+            detalle["cotizaciones_vigentes"] = por_estatus["vigente"]
+            detalle["cotizaciones_vencidas"] = por_estatus["vencido"]
+            detalle["cotizaciones_ganadas"] = por_estatus["ganada"]
+            detalle["cotizaciones_perdidas"] = por_estatus["perdida"]
+            plazas_opciones_set = set()
+            for m in meses_seleccionados:
+                plazas_opciones_set.update(plazas_con_presupuesto(m, plazas_permitidas))
+            plazas_opciones_resultados = sorted(plazas_opciones_set)
+        else:
+            datos = construir_inicio_crm(
+                "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
+                creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+            )
+            kpis = datos["kpis"]
+            detalle = construir_detalle_resultados_mes(
+                fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
+                creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+            )
+            plazas_opciones_resultados = plazas_con_presupuesto(mes_seleccionado, plazas_permitidas)
+
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
         scorecard = None
@@ -6813,32 +6959,28 @@ def crm_seccion(slug):
             scorecard_tipo = "compania"
             scorecard_titulo = "Todas las plazas"
 
-        tendencia_svg = None
-        if scorecard and not desarrollador_filtro:
+        if scorecard and not desarrollador_filtro and not es_acumulado:
             # Año en curso: de enero al mes seleccionado (en enero no hay
             # tendencia que graficar — construir_svg_tendencia regresa None
             # con menos de 2 meses, y la gráfica simplemente no aparece).
-            # construir_tendencia_resultado todavía no soporta desarrollador,
-            # así que por ahora se omite la tendencia para ese caso en vez
-            # de mostrar una equivocada (sin filtrar).
+            # construir_tendencia_resultado todavía no soporta desarrollador
+            # ni una selección libre de meses, así que por ahora se omite la
+            # tendencia en esos casos en vez de mostrar una equivocada.
             puntos_tendencia = construir_tendencia_resultado(
-                plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas_usuario(),
+                plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas,
                 creador_extra_cotizaciones=creador_extra,
             )
             tendencia_svg = construir_svg_tendencia(puntos_tendencia)
 
-        detalle = construir_detalle_resultados_mes(
-            fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
-            creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
-        )
-
         return render_template(
             "crm_resultados.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
-            mes_seleccionado=mes_seleccionado, opciones_mes=opciones_mes(), kpis=datos["kpis"],
-            fecha_inicio_larga=datos["fecha_inicio_larga"], fecha_fin_larga=datos["fecha_fin_larga"],
-            etiqueta_anterior=datos["etiqueta_anterior"],
+            mes_seleccionado=mes_seleccionado, meses_seleccionados=meses_seleccionados, opciones_mes=opciones_mes(),
+            es_acumulado=es_acumulado, meses_seleccionados_larga=meses_seleccionados_larga, mes_default=mes_default,
+            kpis=kpis,
+            fecha_inicio_larga=datos.get("fecha_inicio_larga"), fecha_fin_larga=datos.get("fecha_fin_larga"),
+            etiqueta_anterior=datos.get("etiqueta_anterior"),
             plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro,
-            plazas_opciones=plazas_con_presupuesto(mes_seleccionado, plazas_permitidas_usuario()),
+            plazas_opciones=plazas_opciones_resultados,
             vendedores_opciones=datos["vendedores_opciones"],
             scorecard=scorecard, scorecard_tipo=scorecard_tipo, scorecard_titulo=scorecard_titulo,
             tendencia_svg=tendencia_svg, detalle=detalle,
