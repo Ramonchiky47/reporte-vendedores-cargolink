@@ -157,7 +157,7 @@
       {% if session.get('es_admin') %}
       <div class="com-cargar-form" id="com-cargar-form" style="display:none;">
         <p class="hint">Trae el detalle de un folio de Egresos → Liquidación de vendedores y lo guarda en esta app.</p>
-        <form method="post" action="{{ url_for('comisiones_cargar') }}" class="row">
+        <form method="post" action="{{ url_for('comisiones_cargar') }}" class="row" onsubmit="var b=this.querySelector('button[type=submit]'); if(b.disabled) return false; b.disabled=true; b.textContent='Cargando…';">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="field" style="max-width:340px;">
             <label for="folio">Folio</label>
@@ -185,7 +185,7 @@
           ("{{ folio_actual }} {{ descripcion }}").
           {% if cobros_cargados %}<b>{{ cobros_cargados }}</b> cobro(s) ya vinculado(s) a este folio — al traer de nuevo se reemplazan.{% endif %}
         </p>
-        <form method="post" action="{{ url_for('comisiones_cobros_cargar') }}" class="row">
+        <form method="post" action="{{ url_for('comisiones_cobros_cargar') }}" class="row" onsubmit="var b=this.querySelector('button[type=submit]'); if(b.disabled) return false; b.disabled=true; b.textContent='Trayendo…';">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="folio" value="{{ folio_actual }}">
           <input type="hidden" name="descripcion" value="{{ descripcion }}">

@@ -295,6 +295,19 @@ def init_db():
         );
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_comisiones_liq_folio ON comisiones_liquidacion_detalle (folio);")
+    # Antes "+ Cargar folio" solo hacía DELETE + INSERT del folio, sin
+    # ninguna protección contra dos solicitudes al mismo tiempo (p. ej. un
+    # doble clic mientras se espera la respuesta lenta de CargoLink): las
+    # dos alcanzaban a borrar antes de que ninguna insertara, y las dos
+    # insertaban su propio detalle completo encima — el folio 60 quedó así
+    # con sus 422 bookings duplicados (844 filas). Este índice único hace
+    # que un (folio, booking, folio_cobro) repetido sea imposible a nivel
+    # de base de datos; comisiones_cargar() ahora hace upsert en vez de
+    # insert simple para aprovecharlo.
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_comisiones_liq_folio_booking_cobro "
+        "ON comisiones_liquidacion_detalle (folio, booking, folio_cobro);"
+    )
     db.execute("""
         CREATE TABLE IF NOT EXISTS comisiones_cobros_detalle (
             id bigint generated always as identity primary key,
@@ -3049,6 +3062,15 @@ def comisiones_cargar():
         return redirect(url_for("comisiones"))
 
     db = get_db()
+    # Se borra lo que ya no viene en el detalle fresco de CargoLink (p. ej.
+    # un booking que se cayó de la liquidación), pero la inserción es un
+    # upsert sobre (folio, booking, folio_cobro) en vez de un INSERT plano:
+    # si dos solicitudes de "Cargar folio" para el mismo folio corren
+    # traslapadas (un doble clic mientras se espera la respuesta lenta de
+    # CargoLink), la segunda actualiza las filas de la primera en vez de
+    # duplicarlas — antes las dos alcanzaban a borrar antes de que ninguna
+    # insertara, y terminaban insertando el detalle completo dos veces
+    # (le pasó al folio 60: 422 bookings duplicados, 844 filas).
     db.execute("DELETE FROM comisiones_liquidacion_detalle WHERE folio = %s", (folio,))
     for d in resultado["detalle"]:
         db.execute(
@@ -3057,6 +3079,16 @@ def comisiones_cargar():
                 (folio, descripcion, booking, folio_cobro, profit, vendedor, pct_vendedor,
                  total_vendedor, desarrollador, pct_desarrollador, total_desarrollador)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (folio, booking, folio_cobro) DO UPDATE SET
+                descripcion = EXCLUDED.descripcion,
+                profit = EXCLUDED.profit,
+                vendedor = EXCLUDED.vendedor,
+                pct_vendedor = EXCLUDED.pct_vendedor,
+                total_vendedor = EXCLUDED.total_vendedor,
+                desarrollador = EXCLUDED.desarrollador,
+                pct_desarrollador = EXCLUDED.pct_desarrollador,
+                total_desarrollador = EXCLUDED.total_desarrollador,
+                cargado_en = now()
             """,
             (
                 resultado["folio"], resultado["descripcion"], d["booking"], d["folio_cobro"], d["profit"],
