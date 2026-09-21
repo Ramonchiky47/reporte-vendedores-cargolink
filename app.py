@@ -4642,15 +4642,24 @@ def construir_cotizaciones_crm(
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
         LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
         LEFT JOIN LATERAL (
-            SELECT s.estado AS estado_mas_reciente, s.visto_por_vendedor_en, r.ultima_respuesta_en
-            FROM crm_solicitudes_maritimo_aereo s
-            LEFT JOIN LATERAL (
-                SELECT max(creado_en) AS ultima_respuesta_en
-                FROM crm_solicitudes_pricing_respuestas
-                WHERE solicitud_id = s.id
-            ) r ON true
-            WHERE s.cotizacion_id = co.id
-            ORDER BY s.creado_en DESC
+            -- La solicitud de Pricing más reciente de la cotización, sin
+            -- importar si es Marítimo/Aéreo o Transporte Terrestre
+            -- Internacional — antes solo se veía la de Marítimo/Aéreo, así
+            -- que una solicitud de Terrestre nunca prendía el indicador
+            -- "Pricing" (New/Pendiente/Ok) en el listado de Cotizaciones.
+            SELECT estado_mas_reciente, visto_por_vendedor_en, ultima_respuesta_en
+            FROM (
+                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
+                       (SELECT max(creado_en) FROM crm_solicitudes_pricing_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                FROM crm_solicitudes_maritimo_aereo s
+                WHERE s.cotizacion_id = co.id
+                UNION ALL
+                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
+                       (SELECT max(creado_en) FROM crm_solicitudes_transporte_terrestre_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                FROM crm_solicitudes_transporte_terrestre s
+                WHERE s.cotizacion_id = co.id
+            ) combinado
+            ORDER BY creado_en DESC
             LIMIT 1
         ) sp ON true
         ORDER BY co.fecha_creacion DESC, co.id DESC
