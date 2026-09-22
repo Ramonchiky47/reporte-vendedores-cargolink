@@ -82,6 +82,7 @@
   .rayita { width: 4px; align-self: stretch; border-radius: 3px; flex-shrink: 0; }
   .rayita.warning { background: var(--warning); }
   .rayita.critical { background: var(--peligro); }
+  .rayita.good { background: var(--exito); }
   .item-alerta__cuerpo { flex: 1; min-width: 0; }
   .item-alerta__titulo { font-size: 0.82rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item-alerta__sub { font-size: 0.74rem; color: #888; }
@@ -321,6 +322,24 @@
         {% endfor %}
       {% else %}
         <div class="estado-vacio"><strong>Sin pendientes</strong>Ninguna cotización vencida ahora mismo.</div>
+      {% endif %}
+    </div>
+    <div class="tarjeta">
+      <div class="tarjeta__cabecera">
+        <div><p class="tarjeta__titulo">Clientes nuevos</p><p class="tarjeta__pista">Primera compra, o reactivación tras 13+ meses sin comprar</p></div>
+      </div>
+      {% if clientes_nuevos_detalle %}
+        {% for c in clientes_nuevos_detalle %}
+        <div class="item-alerta" style="cursor:default;">
+          <div class="rayita good"></div>
+          <div class="item-alerta__cuerpo">
+            <div class="item-alerta__titulo">{{ c.cliente }}</div>
+            <div class="item-alerta__sub">{{ c.vendedor }} · {{ c.fecha.strftime('%d %b') }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="estado-vacio"><strong>Sin clientes nuevos</strong>Ninguno en este periodo/filtro.</div>
       {% endif %}
     </div>
   </div>

@@ -5837,7 +5837,7 @@ def construir_inicio_crm(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
-        filas_cliente_nuevo.append({"d": r["fecha"], "vendedor": vendedor})
+        filas_cliente_nuevo.append({"d": r["fecha"], "vendedor": vendedor, "cliente": r["cliente_servicio"]})
 
     # Achieved real de las categorías "Activities" del Scorecard (Customer
     # Facing Visit / Virtual Meeting): solo cuentan las tareas ya
@@ -5923,6 +5923,10 @@ def construir_inicio_crm(
     cot_anterior = en_rango(filas_cot, fecha_inicio_anterior, fecha_fin_anterior)
     clientes_nuevos_periodo = en_rango(filas_cliente_nuevo, fecha_inicio, fecha_fin)
     clientes_nuevos_anterior = en_rango(filas_cliente_nuevo, fecha_inicio_anterior, fecha_fin_anterior)
+    clientes_nuevos_detalle = sorted(
+        [{"cliente": f["cliente"], "vendedor": f["vendedor"], "fecha": f["d"]} for f in clientes_nuevos_periodo],
+        key=lambda f: f["fecha"], reverse=True,
+    )
     tareas_periodo = en_rango(filas_tarea, fecha_inicio, fecha_fin)
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
@@ -6135,6 +6139,7 @@ def construir_inicio_crm(
         "ranking_desarrolladores": ranking_desarrolladores,
         "por_vencer": por_vencer[:8],
         "vencidas": vencidas[:8],
+        "clientes_nuevos_detalle": clientes_nuevos_detalle,
         "plazas_opciones": plazas_opciones,
         "vendedores_opciones": vendedores_opciones,
         "desarrolladores_opciones": desarrolladores_opciones,
