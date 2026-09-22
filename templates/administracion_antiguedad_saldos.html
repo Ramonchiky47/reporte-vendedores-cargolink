@@ -181,13 +181,13 @@
               {% for g in clientes_agrupados %}
               {% set contacto = contactos_por_id.get(g.id_cliente) %}
               <tr class="adm-grupo-header" data-cliente="{{ g.cliente|lower }}" data-grupo="grupo-{{ loop.index }}"
-                  data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}">
+                  data-cliente-grupo="{{ g.cliente }}" data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}">
                 <td class="adm-check-col">
                   {% if g.id_cliente %}
                   <input type="checkbox" name="cliente_envio" value="{{ g.id_cliente }}" {{ 'checked' if g.id_cliente in envio_activo else '' }}>
                   {% endif %}
                 </td>
-                <td><span class="adm-flecha">▸</span>{{ g.cliente }}</td>
+                <td><span class="adm-flecha">🔍</span>{{ g.cliente }}</td>
                 <td>
                   {% if contacto %}
                   {{ contacto[1] }}
@@ -318,18 +318,6 @@
     });
   }
 
-  if (vistaAgrupada) {
-    vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
-      header.addEventListener("click", () => {
-        const detalle = vistaAgrupada.querySelector('.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
-        if (!detalle) return;
-        detalle.hidden = !detalle.hidden;
-        const flecha = header.querySelector(".adm-flecha");
-        if (flecha) flecha.textContent = detalle.hidden ? "▸" : "▾";
-      });
-    });
-  }
-
   const envioContador = document.getElementById("envio-contador");
   function actualizarContador() {
     if (!envioContador) return;
@@ -428,7 +416,52 @@
     tr.addEventListener("click", () => abrirCliente(tr.dataset.clienteReal, tr.dataset.moneda));
   });
 
-  function cerrarModal() { modal.classList.remove("abierto"); }
+  // Vista "Agrupada por cliente": en vez de expandir el desglose por moneda
+  // dentro de la propia fila (quedaba apretado y las columnas se veían
+  // encimadas), se abre en la misma ventana emergente que ya usa el resto de
+  // la página, con la tabla de buckets a todo lo ancho.
+  function ocultarExportarModal() {
+    linkExcel.style.display = "none";
+    linkPdf.style.display = "none";
+  }
+  function mostrarExportarModal() {
+    linkExcel.style.display = "";
+    linkPdf.style.display = "";
+  }
+
+  if (vistaAgrupada) {
+    vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
+      header.addEventListener("click", () => {
+        const detalle = vistaAgrupada.querySelector('.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
+        if (!detalle) return;
+        const tabla = detalle.querySelector("table");
+        if (!tabla) return;
+        // El desglose siempre se ve completo aquí, sin importar si el
+        // selector de moneda de arriba dejó alguna fila oculta.
+        const tablaClon = tabla.cloneNode(true);
+        tablaClon.querySelectorAll("tr[hidden]").forEach((tr) => { tr.hidden = false; });
+        ocultarExportarModal();
+        contenido.innerHTML = `
+          <p class="adm-modal-titulo">${header.dataset.clienteGrupo} — saldo por moneda</p>
+          <div style="overflow-x:auto;">${tablaClon.outerHTML}</div>
+          <p class="hint" style="margin-top:.75rem;">Clic en una fila para ver el detalle de sus facturas.</p>
+        `;
+        modal.classList.add("abierto");
+      });
+    });
+  }
+
+  // Dentro del popup de desglose por cliente, cada fila de moneda es
+  // clickeable para profundizar al detalle de facturas (delegado porque esas
+  // filas se inyectan dinámicamente vía innerHTML).
+  contenido.addEventListener("click", (e) => {
+    const fila = e.target.closest("tr[data-moneda][data-cliente-real]");
+    if (!fila) return;
+    mostrarExportarModal();
+    abrirCliente(fila.dataset.clienteReal, fila.dataset.moneda);
+  });
+
+  function cerrarModal() { modal.classList.remove("abierto"); mostrarExportarModal(); }
   document.getElementById("adm-modal-cerrar").addEventListener("click", cerrarModal);
   modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
