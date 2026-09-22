@@ -1193,10 +1193,37 @@ def obtener_contactos_por_cliente():
 
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
-    """Envía un correo HTML por SMTP usando las credenciales en variables
-    de entorno (SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_PASSWORD, y
-    opcionalmente SMTP_FROM si el remitente es distinto del usuario).
+    """Envía un correo HTML. Si existe RESEND_API_KEY se usa Resend (API
+    HTTPS, sin necesidad de verificar dominio propio — funciona de
+    inmediato con su remitente de pruebas onboarding@resend.dev);
+    si no, se usa SMTP con las credenciales en variables de entorno
+    (SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_PASSWORD, y opcionalmente
+    SMTP_FROM si el remitente es distinto del usuario).
     adjuntos: lista opcional de (nombre_archivo, bytes_pdf) a adjuntar."""
+    resend_api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
+    if resend_api_key:
+        remitente_resend = (os.environ.get("RESEND_FROM") or "onboarding@resend.dev").strip()
+        payload = {
+            "from": remitente_resend,
+            "to": [destinatario],
+            "subject": asunto,
+            "html": cuerpo_html,
+        }
+        if adjuntos:
+            payload["attachments"] = [
+                {"filename": nombre_archivo, "content": base64.b64encode(contenido).decode("ascii")}
+                for nombre_archivo, contenido in adjuntos
+            ]
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {resend_api_key}", "Content-Type": "application/json"},
+            data=json.dumps(payload),
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            raise RuntimeError(f"Resend respondió {resp.status_code}: {resp.text}")
+        return
+
     host = (os.environ.get("SMTP_HOST") or "").strip()
     puerto = (os.environ.get("SMTP_PORT") or "").strip()
     usuario = (os.environ.get("SMTP_USUARIO") or "").strip()
@@ -3574,11 +3601,13 @@ def administracion_antiguedad_saldos_enviar_ahora():
         flash("No seleccionaste ningún cliente para enviar.")
         return redirect(url_for("administracion_antiguedad_saldos"))
 
-    if not all((os.environ.get("SMTP_HOST"), os.environ.get("SMTP_PORT"),
-                os.environ.get("SMTP_USUARIO"), os.environ.get("SMTP_PASSWORD"))):
+    tiene_resend = bool(os.environ.get("RESEND_API_KEY"))
+    tiene_smtp = all((os.environ.get("SMTP_HOST"), os.environ.get("SMTP_PORT"),
+                       os.environ.get("SMTP_USUARIO"), os.environ.get("SMTP_PASSWORD")))
+    if not (tiene_resend or tiene_smtp):
         flash(
-            "Faltan las variables de entorno SMTP_HOST / SMTP_PORT / SMTP_USUARIO / SMTP_PASSWORD "
-            "para poder enviar correos."
+            "Faltan las variables de entorno para poder enviar correos: define RESEND_API_KEY, "
+            "o bien SMTP_HOST / SMTP_PORT / SMTP_USUARIO / SMTP_PASSWORD."
         )
         return redirect(url_for("administracion_antiguedad_saldos"))
 
