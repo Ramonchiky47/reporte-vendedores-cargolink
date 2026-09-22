@@ -1766,6 +1766,24 @@ def admin_required(view):
     return wrapped
 
 
+def administracion_o_admin_required(view):
+    """Como admin_required, pero también deja pasar a quien tenga el
+    permiso individual de Administración (Catálogos → Permisos de
+    Usuario) — para el catálogo de Clientes por Pagar, que es donde se
+    captura el correo que usa el envío de cobranza de Administración."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not sesion_activa():
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_ver_administracion():
+            flash("Esa sección es solo para administradores.")
+            return redirect(url_for("dashboard_plazas_vendedores"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def reportes_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -9320,7 +9338,7 @@ def obtener_clientes_disponibles_antiguedad():
 
 
 @app.route("/catalogos/clientes-por-pagar", methods=["GET", "POST"])
-@admin_required
+@administracion_o_admin_required
 def catalogo_clientes_por_pagar():
     db = get_db()
     if request.method == "POST":
@@ -9355,7 +9373,7 @@ def catalogo_clientes_por_pagar():
 
 
 @app.route("/catalogos/clientes-por-pagar/<int:fila_id>/editar", methods=["GET", "POST"])
-@admin_required
+@administracion_o_admin_required
 def catalogo_clientes_por_pagar_editar(fila_id):
     db = get_db()
     if request.method == "POST":
@@ -9377,7 +9395,7 @@ def catalogo_clientes_por_pagar_editar(fila_id):
 
 
 @app.route("/catalogos/clientes-por-pagar/<int:fila_id>/eliminar", methods=["POST"])
-@admin_required
+@administracion_o_admin_required
 def catalogo_clientes_por_pagar_eliminar(fila_id):
     db = get_db()
     db.execute("DELETE FROM catalogo_clientes_por_pagar WHERE id = %s", (fila_id,))
