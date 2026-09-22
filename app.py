@@ -133,6 +133,9 @@ def init_db():
     # solo se le agrega esta columna (aditivo, no rompe su propio código) para
     # el nuevo permiso de Autorizador de Minutas (CRM → Tareas).
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_autorizar_minutas boolean not null default false;")
+    # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
+    # correos de cobranza), antes exclusivo de es_admin.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
     # "Solo ver su información" (Catálogos → Visualización de Plazas): ata
     # el login a UN vendedor del catálogo y, si está marcado, restringe a
     # ese usuario a los datos de ese vendedor únicamente (además de sus
@@ -2147,6 +2150,16 @@ def usuario_puede_autorizar_minutas():
     return bool(session.get("puede_autorizar_minutas"))
 
 
+def usuario_puede_ver_administracion():
+    """True = puede ver la pestaña Administración (antigüedad de saldos y
+    envío de correos de cobranza). Permiso individual
+    (app_user_permissions.puede_ver_administracion, otorgado desde
+    Catálogos → Permisos de Usuario); los administradores siempre pueden."""
+    if session.get("es_admin"):
+        return True
+    return bool(session.get("puede_ver_administracion"))
+
+
 def plazas_con_crm_habilitado():
     """Plazas a las que Catálogos → CRM por Plaza les dio acceso a CRM
     completo (todo usuario asignado a esa plaza en Visibilidad de Plazas
@@ -2217,6 +2230,7 @@ def inject_permisos():
         "puede_pricing": usuario_puede_pricing(),
         "puede_transporte_terrestre": usuario_puede_transporte_terrestre(),
         "puede_autorizar_minutas": usuario_puede_autorizar_minutas(),
+        "puede_ver_administracion": usuario_puede_ver_administracion(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
 
@@ -2249,6 +2263,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_operativos, false) AS puede_operativos,
             coalesce(p.es_master, false) AS es_master,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
             p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
             p.cotizaciones_creador_extra,
             p.desarrollador_asociado, coalesce(p.solo_su_informacion_desarrollador, false) AS solo_su_informacion_desarrollador,
@@ -2322,6 +2337,7 @@ def login():
             session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
+            session["puede_ver_administracion"] = bool(fila["puede_ver_administracion"])
             session["vendedor_asociado"] = fila["vendedor_asociado"]
             session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
             session["cotizaciones_creador_extra"] = fila["cotizaciones_creador_extra"]
@@ -2398,6 +2414,7 @@ def sso():
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
             p.vendedor_asociado, coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
             p.cotizaciones_creador_extra,
             p.desarrollador_asociado, coalesce(p.solo_su_informacion_desarrollador, false) AS solo_su_informacion_desarrollador,
@@ -2430,6 +2447,7 @@ def sso():
     session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
     session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
+    session["puede_ver_administracion"] = bool(fila["puede_ver_administracion"])
     session["vendedor_asociado"] = fila["vendedor_asociado"]
     session["solo_su_informacion"] = bool(fila["solo_su_informacion"])
     session["cotizaciones_creador_extra"] = fila["cotizaciones_creador_extra"]
@@ -3455,7 +3473,7 @@ def comisiones_acotadas():
 @app.route("/administracion/antiguedad-saldos")
 @login_required
 def administracion_antiguedad_saldos():
-    if not session.get("es_admin"):
+    if not usuario_puede_ver_administracion():
         flash("No tienes permiso para ver Administración.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -3508,7 +3526,7 @@ def administracion_antiguedad_saldos():
 @app.route("/administracion/antiguedad-saldos/envio-semanal/guardar", methods=["POST"])
 @login_required
 def administracion_antiguedad_saldos_guardar_envio():
-    if not session.get("es_admin"):
+    if not usuario_puede_ver_administracion():
         flash("No tienes permiso para ver Administración.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -3547,7 +3565,7 @@ def administracion_antiguedad_saldos_guardar_envio():
 @app.route("/administracion/antiguedad-saldos/enviar-ahora", methods=["POST"])
 @login_required
 def administracion_antiguedad_saldos_enviar_ahora():
-    if not session.get("es_admin"):
+    if not usuario_puede_ver_administracion():
         flash("No tienes permiso para ver Administración.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -3639,7 +3657,7 @@ def administracion_antiguedad_saldos_enviar_ahora():
 @app.route("/administracion/antiguedad-saldos/exportar")
 @login_required
 def administracion_antiguedad_saldos_exportar():
-    if not session.get("es_admin"):
+    if not usuario_puede_ver_administracion():
         flash("No tienes permiso para ver Administración.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -3718,7 +3736,7 @@ def administracion_antiguedad_saldos_exportar():
 @app.route("/administracion/antiguedad-saldos/cliente/exportar")
 @login_required
 def administracion_antiguedad_saldos_cliente_exportar():
-    if not session.get("es_admin"):
+    if not usuario_puede_ver_administracion():
         flash("No tienes permiso para ver Administración.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -8698,6 +8716,7 @@ PERMISOS_LISTA = [
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
+    ("puede_ver_administracion", "Administración"),
 ]
 PERMISOS_TOGGLEABLES = {campo for campo, _ in PERMISOS_LISTA}
 
@@ -8718,7 +8737,8 @@ def permisos_actualizar():
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
-            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas
+            coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
