@@ -3527,6 +3527,8 @@ def administracion_antiguedad_saldos():
     buckets = [(b, ANTIGUEDAD_BUCKET_LABELS[b]) for b in reporte["buckets"]] if reporte else []
 
     clientes_unicos = []
+    clientes_agrupados = []
+    monedas_disponibles = []
     envio_activo = set()
     if reporte:
         vistos = set()
@@ -3535,6 +3537,25 @@ def administracion_antiguedad_saldos():
                 vistos.add(f["id_cliente"])
                 clientes_unicos.append({"id_cliente": f["id_cliente"], "cliente": f["cliente"]})
         clientes_unicos.sort(key=lambda c: c["cliente"])
+
+        # Vista "Agrupada por cliente": un cliente puede tener saldo en varias
+        # monedas (reporte.filas trae un renglón por cliente+moneda); aquí se
+        # agrupan esos renglones bajo su cliente para que, al expandirlo, se
+        # vea el desglose por moneda (cada moneda sigue siendo su propio
+        # renglón — nunca se suman montos de monedas distintas entre sí).
+        por_cliente = {}
+        orden_clientes = []
+        for f in reporte["filas"]:
+            clave = f["id_cliente"] or f["cliente"]
+            if clave not in por_cliente:
+                por_cliente[clave] = {"id_cliente": f["id_cliente"], "cliente": f["cliente"], "filas": []}
+                orden_clientes.append(clave)
+            por_cliente[clave]["filas"].append(f)
+        for clave in orden_clientes:
+            clientes_agrupados.append(por_cliente[clave])
+        clientes_agrupados.sort(key=lambda g: g["cliente"])
+
+        monedas_disponibles = sorted(reporte["totales_moneda"].keys())
 
         db = get_db()
         envio_activo = {
@@ -3553,6 +3574,8 @@ def administracion_antiguedad_saldos():
         buckets=buckets,
         facturas_vencidas=facturas_vencidas,
         clientes_unicos=clientes_unicos,
+        clientes_agrupados=clientes_agrupados,
+        monedas_disponibles=monedas_disponibles,
         envio_activo=envio_activo,
         contactos_por_id=contactos_por_id,
     )

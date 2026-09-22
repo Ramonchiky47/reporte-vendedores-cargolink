@@ -50,6 +50,31 @@
   .adm-modal-titulo { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: 0 0 1.25rem; }
 
   .adm-envio-contador { font-size: .8rem; color: var(--ink-3); }
+
+  .adm-controles-vista { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .adm-segmentado { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+  .adm-segmentado button {
+    border: none; background: #fff; padding: .5rem .9rem; font-size: .8rem; font-weight: 600;
+    color: var(--ink-3); cursor: pointer;
+  }
+  .adm-segmentado button + button { border-left: 1px solid var(--border-strong); }
+  .adm-segmentado button.activo { background: var(--accent); color: #fff; }
+  .adm-monedas { display: inline-flex; gap: .4rem; flex-wrap: wrap; }
+  .adm-moneda-pill {
+    border: 1px solid var(--border-strong); background: #fff; border-radius: 999px; padding: .35rem .8rem;
+    font-size: .78rem; font-weight: 600; color: var(--ink-3); cursor: pointer;
+  }
+  .adm-moneda-pill.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .adm-moneda-badge {
+    display: inline-block; margin: 0 .2rem .2rem 0; padding: .1rem .5rem; border-radius: 999px;
+    font-size: .68rem; font-weight: 700; background: #eef2ff; color: #4338ca;
+  }
+  .adm-grupo-header { cursor: pointer; }
+  .adm-grupo-header .adm-flecha { display: inline-block; width: 1rem; color: var(--ink-3); }
+  .adm-grupo-detalle td { padding: 0 !important; background: #f8fafc; }
+  .adm-resumen-anidada { margin: 0; }
+  .adm-resumen-anidada th, .adm-resumen-anidada td { padding: .45rem .7rem; }
+  #vista-agrupada[hidden], #vista-detallada[hidden] { display: none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -87,12 +112,27 @@
       <p class="hint" style="margin-top:-.5rem;">
         Marca "Enviar semanal" para que ese cliente reciba, cada semana, el detalle de su propia antigüedad de saldos por correo (al correo capturado en <a href="{{ url_for('catalogo_clientes_por_pagar') }}" target="_blank" rel="noopener">Catálogos → Clientes por Pagar</a>).
       </p>
-      <div class="adm-buscador">
-        <input type="text" id="cliente-buscador" placeholder="Buscar cliente..." autocomplete="off">
+      <div class="adm-controles-vista">
+        <div class="adm-buscador" style="margin-bottom:0;">
+          <input type="text" id="cliente-buscador" placeholder="Buscar cliente..." autocomplete="off">
+        </div>
+        <div class="adm-segmentado" id="selector-vista">
+          <button type="button" class="activo" data-vista="detallada">Detallada</button>
+          <button type="button" data-vista="agrupada">Agrupada por cliente</button>
+        </div>
+        {% if monedas_disponibles|length > 1 %}
+        <div class="adm-monedas" id="selector-moneda">
+          <button type="button" class="adm-moneda-pill activo" data-moneda="">Todas</button>
+          {% for m in monedas_disponibles %}
+          <button type="button" class="adm-moneda-pill" data-moneda="{{ m }}">{{ m }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
       <form method="post" action="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="tabla-scroll" style="overflow-x:auto;">
+
+        <div class="tabla-scroll" style="overflow-x:auto;" id="vista-detallada">
           <table class="adm-resumen">
             <thead>
               <tr>
@@ -131,6 +171,65 @@
             </tbody>
           </table>
         </div>
+
+        <div class="tabla-scroll" style="overflow-x:auto;" id="vista-agrupada" hidden>
+          <table class="adm-resumen">
+            <thead>
+              <tr><th>Enviar semanal</th><th>Cliente</th><th>Correo</th><th>Moneda(s)</th><th></th></tr>
+            </thead>
+            <tbody>
+              {% for g in clientes_agrupados %}
+              {% set contacto = contactos_por_id.get(g.id_cliente) %}
+              <tr class="adm-grupo-header" data-cliente="{{ g.cliente|lower }}" data-grupo="grupo-{{ loop.index }}"
+                  data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}">
+                <td class="adm-check-col">
+                  {% if g.id_cliente %}
+                  <input type="checkbox" name="cliente_envio" value="{{ g.id_cliente }}" {{ 'checked' if g.id_cliente in envio_activo else '' }}>
+                  {% endif %}
+                </td>
+                <td><span class="adm-flecha">▸</span>{{ g.cliente }}</td>
+                <td>
+                  {% if contacto %}
+                  {{ contacto[1] }}
+                  {% else %}
+                  <span class="adm-badge">falta capturar</span>
+                  {% endif %}
+                </td>
+                <td>{% for f in g.filas %}<span class="adm-moneda-badge">{{ f.moneda }}</span>{% endfor %}</td>
+                <td></td>
+              </tr>
+              <tr class="adm-grupo-detalle" data-grupo-padre="grupo-{{ loop.index }}" hidden>
+                <td colspan="5">
+                  <table class="adm-resumen adm-resumen-anidada">
+                    <thead>
+                      <tr>
+                        <th>Moneda</th>
+                        {% for _, label in buckets %}
+                        <th>{{ label }}</th>
+                        {% endfor %}
+                        <th>Total vencido</th><th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for f in g.filas %}
+                      <tr data-cliente-real="{{ g.cliente }}" data-moneda="{{ f.moneda }}">
+                        <td>{{ f.moneda }}</td>
+                        {% for key, _ in buckets %}
+                        <td class="{{ 'vencido' if key != 'porvencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
+                        {% endfor %}
+                        <td class="vencido">${{ "{:,.2f}".format(f.total_vencido) }}</td>
+                        <td>${{ "{:,.2f}".format(f.total) }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
         <div style="margin-top:1rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
           <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">Guardar selección</button>
           <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_enviar_ahora') }}" class="btn secondary" onclick="return confirm('¿Enviar ahora el correo de antigüedad de saldos a los clientes marcados?');">Enviar ahora</button>
@@ -158,34 +257,120 @@
 <script id="datos-facturas" type="application/json">{{ facturas_json | safe }}</script>
 <script>
 (function () {
+  const vistaDetallada = document.getElementById("vista-detallada");
+  const vistaAgrupada = document.getElementById("vista-agrupada");
   const buscador = document.getElementById("cliente-buscador");
-  if (buscador) {
-    buscador.addEventListener("input", () => {
-      const q = buscador.value.trim().toLowerCase();
-      document.querySelectorAll(".adm-resumen tbody tr").forEach((tr) => {
-        tr.hidden = q.length > 0 && !tr.dataset.cliente.includes(q);
+  let monedaFiltro = "";
+
+  function aplicarFiltros() {
+    const q = buscador ? buscador.value.trim().toLowerCase() : "";
+
+    if (vistaDetallada) {
+      vistaDetallada.querySelectorAll("tbody > tr[data-cliente]").forEach((tr) => {
+        const coincideTexto = !q || tr.dataset.cliente.includes(q);
+        const coincideMoneda = !monedaFiltro || tr.dataset.moneda === monedaFiltro;
+        tr.hidden = !(coincideTexto && coincideMoneda);
+      });
+    }
+
+    if (vistaAgrupada) {
+      vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
+        const monedas = (header.dataset.monedas || "").split(",");
+        const coincideTexto = !q || header.dataset.cliente.includes(q);
+        const coincideMoneda = !monedaFiltro || monedas.includes(monedaFiltro);
+        const visible = coincideTexto && coincideMoneda;
+        header.hidden = !visible;
+        const detalle = vistaAgrupada.querySelector('.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
+        if (detalle) {
+          if (!visible) detalle.hidden = true;
+          detalle.querySelectorAll("tr[data-moneda]").forEach((fila) => {
+            fila.hidden = !!monedaFiltro && fila.dataset.moneda !== monedaFiltro;
+          });
+        }
+      });
+    }
+  }
+
+  if (buscador) buscador.addEventListener("input", aplicarFiltros);
+
+  const selectorMoneda = document.getElementById("selector-moneda");
+  if (selectorMoneda) {
+    selectorMoneda.querySelectorAll(".adm-moneda-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        selectorMoneda.querySelectorAll(".adm-moneda-pill").forEach((p) => p.classList.remove("activo"));
+        pill.classList.add("activo");
+        monedaFiltro = pill.dataset.moneda || "";
+        aplicarFiltros();
+      });
+    });
+  }
+
+  const selectorVista = document.getElementById("selector-vista");
+  if (selectorVista) {
+    selectorVista.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectorVista.querySelectorAll("button").forEach((b) => b.classList.remove("activo"));
+        btn.classList.add("activo");
+        const agrupada = btn.dataset.vista === "agrupada";
+        if (vistaDetallada) vistaDetallada.hidden = agrupada;
+        if (vistaAgrupada) vistaAgrupada.hidden = !agrupada;
+      });
+    });
+  }
+
+  if (vistaAgrupada) {
+    vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
+      header.addEventListener("click", () => {
+        const detalle = vistaAgrupada.querySelector('.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
+        if (!detalle) return;
+        detalle.hidden = !detalle.hidden;
+        const flecha = header.querySelector(".adm-flecha");
+        if (flecha) flecha.textContent = detalle.hidden ? "▸" : "▾";
       });
     });
   }
 
   const envioContador = document.getElementById("envio-contador");
   function actualizarContador() {
-    if (envioContador) envioContador.textContent = document.querySelectorAll('input[name="cliente_envio"]:checked').length;
+    if (!envioContador) return;
+    const valores = new Set();
+    document.querySelectorAll('input[name="cliente_envio"]:checked').forEach((cb) => valores.add(cb.value));
+    envioContador.textContent = valores.size;
   }
+  // Un mismo cliente puede tener un checkbox en la vista detallada (uno por
+  // moneda) y otro en la agrupada (uno solo) — todos con el mismo value
+  // (id_cliente). Al cambiar cualquiera, se sincronizan los demás para que
+  // no se vea "desmarcado" al cambiar de vista.
   document.querySelectorAll('input[name="cliente_envio"]').forEach((cb) => {
-    cb.addEventListener("change", actualizarContador);
+    cb.addEventListener("change", () => {
+      document.querySelectorAll('input[name="cliente_envio"][value="' + CSS.escape(cb.value) + '"]').forEach((otro) => {
+        otro.checked = cb.checked;
+      });
+      actualizarContador();
+    });
     cb.addEventListener("click", (e) => e.stopPropagation());
   });
+
+  function sincronizarTodosPorOR() {
+    const estados = {};
+    document.querySelectorAll('input[name="cliente_envio"]').forEach((cb) => {
+      estados[cb.value] = estados[cb.value] || cb.checked;
+    });
+    document.querySelectorAll('input[name="cliente_envio"]').forEach((cb) => {
+      cb.checked = !!estados[cb.value];
+    });
+    actualizarContador();
+  }
 
   const btnSeleccionarSaldo = document.getElementById("btn-seleccionar-saldo");
   if (btnSeleccionarSaldo) {
     btnSeleccionarSaldo.addEventListener("click", () => {
-      document.querySelectorAll(".adm-resumen tbody tr[data-total]").forEach((tr) => {
+      document.querySelectorAll("#vista-detallada tbody > tr[data-total]").forEach((tr) => {
         const cb = tr.querySelector('input[name="cliente_envio"]');
         if (!cb) return;
         cb.checked = parseFloat(tr.dataset.total) > 0;
       });
-      actualizarContador();
+      sincronizarTodosPorOR();
     });
   }
 
