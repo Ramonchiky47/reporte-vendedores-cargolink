@@ -4837,10 +4837,22 @@ def construir_cotizaciones_crm(
                     continue
                 if desarrollador_forzado_norm is not None and normalizar(identidad_creador) != desarrollador_forzado_norm:
                     continue
-            plaza_desarrollador = plaza_por_desarrollador.get(normalizar(identidad_creador))
-            if plaza_desarrollador:
-                vendedor_texto = identidad_creador
-                plaza = plaza_desarrollador
+            # `identidad_creador` casi siempre es un VENDEDOR (el caso común:
+            # cuenta de un vendedor asociada vía vendedor_asociado), pero el
+            # código solo revisaba plaza_por_desarrollador — si no calzaba
+            # ahí, vendedor_texto/plaza se quedaban en blanco por completo,
+            # aunque la cuenta sí tuviera un vendedor_asociado válido (bug
+            # real: fausto.mariscal@av2logistics.com con
+            # vendedor_asociado="Omar Mariscal" no mostraba NINGÚN vendedor
+            # en sus cotizaciones de prospecto, porque "Omar Mariscal" es un
+            # vendedor, no un desarrollador). Ahora se revisan ambos
+            # catálogos, igual que ya se hace para clientes reales.
+            vendedor_texto = identidad_creador or "#N/D"
+            plaza = (
+                plaza_por_vendedor.get(normalizar(identidad_creador))
+                or plaza_por_desarrollador.get(normalizar(identidad_creador))
+                or "#N/D"
+            )
 
         contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
 
