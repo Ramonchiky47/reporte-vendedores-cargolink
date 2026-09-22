@@ -2239,8 +2239,16 @@ def primera_pagina_permitida():
         return "reportes_graficas"
     if usuario_puede_comisiones():
         return "comisiones"
+    if usuario_puede_ver_administracion():
+        return "administracion_antiguedad_saldos"
     if usuario_puede_ver_crm():
         return "crm"
+    if usuario_puede_pricing():
+        return "pricing"
+    if usuario_puede_transporte_terrestre():
+        return "transporte_terrestre"
+    if usuario_puede_ver_catalogos():
+        return "catalogos"
     return "login"
 
 
