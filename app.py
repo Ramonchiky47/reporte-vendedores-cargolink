@@ -6045,6 +6045,22 @@ def construir_inicio_crm(
         if not f["ejecutivo"]:
             continue
         key = normalizar(f["ejecutivo"])
+        # Si ese nombre está catalogado como vendedor (Catálogos → Vendedores)
+        # y NO como desarrollador, su actividad va a "Actividad por usuario",
+        # no a "Actividad por desarrollador" — evita filas fantasma cuando el
+        # campo "ejecutivo" de un booking trae por error el nombre de un
+        # vendedor (caso real: MERCEDES PICON, vendedora, aparecía como
+        # desarrolladora por 149 bookings con ese dato).
+        if key not in plaza_por_desarrollador and key in plaza_por_vendedor:
+            fila = resumen_vendedor.setdefault(key, {
+                "nombre": f["ejecutivo"], "plaza": plaza_por_vendedor.get(key, "#N/D"), "bookings": 0, "venta": 0.0,
+                "profit": 0.0, "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
+                "customer_facing_visit": 0, "virtual_meeting": 0,
+            })
+            fila["bookings"] += 1
+            fila["venta"] += f["venta"]
+            fila["profit"] += f["profit"]
+            continue
         fila = resumen_desarrollador.setdefault(key, {"nombre": f["ejecutivo"], "plaza": f["plaza_desarrollador"], "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0})
         fila["bookings"] += 1
         fila["venta"] += f["venta"]
