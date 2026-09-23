@@ -46,6 +46,22 @@
   .btn-agregar { padding: 0.5rem 1rem; background: #1565c0; color: #fff; border: none; border-radius: 6px; text-decoration: none; font-size: 0.85rem; font-weight: 600; }
   tbody tr { cursor: pointer; }
   tbody tr:hover td { background: #f5f5f5; }
+  .modal-cotizacion-overlay {
+    position: fixed; inset: 0; background: rgba(20,16,10,0.55); z-index: 1000;
+    display: flex; align-items: center; justify-content: center; padding: 1.5rem;
+  }
+  .modal-cotizacion-overlay[hidden] { display: none; }
+  .modal-cotizacion-caja {
+    position: relative; background: #fff; border-radius: 10px; width: 100%; max-width: 1200px;
+    height: 92vh; box-shadow: 0 10px 40px rgba(0,0,0,0.3); overflow: hidden;
+  }
+  .modal-cotizacion-cerrar {
+    position: absolute; top: 0.6rem; right: 0.6rem; z-index: 2; width: 34px; height: 34px;
+    border-radius: 50%; border: none; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.25);
+    font-size: 1.4rem; line-height: 1; cursor: pointer; color: #333;
+  }
+  .modal-cotizacion-cerrar:hover { background: #f5f5f5; }
+  .modal-cotizacion-iframe { width: 100%; height: 100%; border: none; display: block; }
 {% endblock %}
 {% block crm_content %}
   <h2>Cotizaciones</h2>
@@ -103,7 +119,7 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" onclick="window.location.href='{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}'">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" onclick="abrirModalCotizacion('{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}')">
           <td>
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
@@ -161,9 +177,45 @@
   {% else %}
     <p class="aviso-vacio">Todavía no hay cotizaciones. Usa "+ Agregar cotización" para crear la primera.</p>
   {% endif %}
+
+  <div class="modal-cotizacion-overlay" id="modal-cotizacion-overlay" hidden>
+    <div class="modal-cotizacion-caja">
+      <button type="button" class="modal-cotizacion-cerrar" id="modal-cotizacion-cerrar" aria-label="Cerrar">&times;</button>
+      <iframe class="modal-cotizacion-iframe" id="modal-cotizacion-iframe" title="Detalle de cotización"></iframe>
+    </div>
+  </div>
 {% endblock %}
 {% block extra_script %}
   <script>
+    // Al seleccionar una cotización de la lista, se abre en un modal (iframe
+    // al mismo detalle de siempre) en vez de navegar a otra pantalla — así
+    // no se pierde el filtro/scroll de la lista. Global (no dentro de un
+    // IIFE) porque las filas la llaman desde onclick inline.
+    function abrirModalCotizacion(url) {
+      const overlay = document.getElementById('modal-cotizacion-overlay');
+      const iframe = document.getElementById('modal-cotizacion-iframe');
+      iframe.src = url;
+      overlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+    }
+    function cerrarModalCotizacion() {
+      const overlay = document.getElementById('modal-cotizacion-overlay');
+      const iframe = document.getElementById('modal-cotizacion-iframe');
+      overlay.hidden = true;
+      iframe.src = 'about:blank';
+      document.body.style.overflow = '';
+    }
+    (function () {
+      const overlay = document.getElementById('modal-cotizacion-overlay');
+      document.getElementById('modal-cotizacion-cerrar').addEventListener('click', cerrarModalCotizacion);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) cerrarModalCotizacion(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) cerrarModalCotizacion(); });
+      // El detalle, corriendo dentro del iframe, llama a esto (vía
+      // window.parent) cuando le dan a "← Cotizaciones" para cerrar el
+      // modal en vez de navegar la pestaña embebida a la lista completa.
+      window.cerrarModalCotizacion = cerrarModalCotizacion;
+    })();
+
     (function () {
       const input = document.getElementById('buscador-cotizaciones');
       const filas = Array.from(document.querySelectorAll('#tabla-cotizaciones-cuerpo tr'));

@@ -15,3 +15,6 @@ __pycache__/
 
 # sistema
 .DS_Store
+
+# entorno virtual local (si se crea sin querer)
+.venv/

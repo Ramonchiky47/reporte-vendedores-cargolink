@@ -99,7 +99,7 @@
   .tarjeta-moneda .fila-total { border-top: 1px solid var(--borde); margin-top: 0.3rem; padding-top: 0.35rem; color: #1565c0; font-weight: 700; }
 {% endblock %}
 {% block crm_content %}
-  <a class="btn-atras" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
+  <a class="btn-atras" id="btn-atras-cotizacion" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
 
   <div class="acciones-detalle">
     {% if doc.estatus not in ('ganada', 'perdida') %}
@@ -320,6 +320,23 @@
 {% endblock %}
 {% block extra_script %}
   <script>
+    (function () {
+      // Si esta página está dentro del modal de la lista de Cotizaciones
+      // (mismo origen), "← Cotizaciones" cierra el modal en vez de navegar
+      // el iframe a la lista completa embebida dentro de una ventanita.
+      if (window.self !== window.top) {
+        const backLink = document.getElementById('btn-atras-cotizacion');
+        if (backLink) {
+          backLink.addEventListener('click', (e) => {
+            if (window.parent && typeof window.parent.cerrarModalCotizacion === 'function') {
+              e.preventDefault();
+              window.parent.cerrarModalCotizacion();
+            }
+          });
+        }
+      }
+    })();
+
     (function () {
       const checksBooking = document.querySelectorAll('input[name="booking_referencia"]');
       const btnBooking = document.getElementById('btn-aplicar-booking');
