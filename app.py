@@ -1319,7 +1319,7 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
             smtp.send_message(msg)
 
 
-def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None):
+def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
     db = get_db()
     meta = db.execute(
         "SELECT fecha_inicio, fecha_fin, generado_en FROM reporte_generaciones ORDER BY generado_en DESC LIMIT 1"
@@ -1360,6 +1360,7 @@ def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None):
     agregados_desarrollador = {}
     detalle = []
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     for r in bookings:
         vkey = normalizar(r["vendedor"])
         cat = catalogo_vendedor.get(vkey)
@@ -1367,6 +1368,7 @@ def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None):
         vendedor_permitido = (
             (plazas_permitidas is None or plaza_vendedor in plazas_permitidas)
             and (vendedor_forzado_norm is None or vkey == vendedor_forzado_norm)
+            and (vendedores_permitidos_norm is None or vkey in vendedores_permitidos_norm)
         )
 
         dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
@@ -1475,7 +1477,7 @@ def construir_datos_dashboard(plazas_permitidas=None, vendedor_forzado=None):
     }
 
 
-def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None):
+def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
     """Igual que construir_datos_dashboard, pero agrupado por día calendario
     en vez de por mes. El catálogo de Presupuesto solo captura montos
     mensuales (no existe un presupuesto diario capturado), así que el Ppto
@@ -1525,6 +1527,7 @@ def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None):
     agregados_desarrollador = {}
     detalle = []
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     for r in bookings:
         if r["fecha"] is None:
             continue
@@ -1535,6 +1538,7 @@ def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None):
         vendedor_permitido = (
             (plazas_permitidas is None or plaza_vendedor in plazas_permitidas)
             and (vendedor_forzado_norm is None or vkey == vendedor_forzado_norm)
+            and (vendedores_permitidos_norm is None or vkey in vendedores_permitidos_norm)
         )
 
         dkey = normalizar(r["ejecutivo"]) if r["ejecutivo"] else None
@@ -2804,7 +2808,7 @@ def dashboard_plazas_vendedores():
         flash("No tienes permiso para ver Información de Ventas.")
         return redirect(url_for(primera_pagina_permitida()))
 
-    datos = construir_datos_dashboard(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    datos = construir_datos_dashboard(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -2822,7 +2826,7 @@ def venta_diaria():
         flash("No tienes permiso para ver Información de Ventas.")
         return redirect(url_for(primera_pagina_permitida()))
 
-    datos = construir_datos_venta_diaria(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    datos = construir_datos_venta_diaria(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     if datos is None:
         if session.get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
@@ -2833,7 +2837,7 @@ def venta_diaria():
     return render_template("venta_diaria.html", datos_json=datos_json, datos=datos)
 
 
-def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None):
+def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
     """Un registro liviano por booking (usado por /reportes y
     /reportes/por-vendedor) para que todo el filtrado y las sumas se hagan
     en el navegador, igual que en /dashboard."""
@@ -2849,6 +2853,7 @@ def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None):
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     filas = []
     for r in bookings:
         fecha = r["fecha"]
@@ -2859,6 +2864,8 @@ def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None):
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         filas.append({
             "fecha": fecha.astimezone(TZ_LOCAL).strftime("%Y-%m-%d"),
@@ -2875,7 +2882,7 @@ def construir_filas_reportes(plazas_permitidas=None, vendedor_forzado=None):
     return filas
 
 
-def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None):
+def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
     """Suma de presupuesto por mes (mismo criterio que la tabla Venta por
     Plaza del Dashboard: presupuesto por vendedor, filtrado por plaza),
     para comparar Venta vs Presupuesto en /reportes."""
@@ -2885,6 +2892,7 @@ def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None)
         plaza_por_vendedor[normalizar(r["vendedor"])] = r["plaza"]
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     totales = {}
     for r in db.execute("SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL"):
         vkey = normalizar(r["vendedor"])
@@ -2893,12 +2901,14 @@ def construir_presupuesto_mensual(plazas_permitidas=None, vendedor_forzado=None)
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         totales[r["mes"]] = totales.get(r["mes"], 0.0) + float(r["presupuesto"])
     db.close()
     return [{"mes": mes, "ppto": round(v, 2)} for mes, v in sorted(totales.items())]
 
 
-def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None):
+def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
     """Bookings de tipo AE (Aéreo Exportación) o AI (Aéreo Importación) —
     identificados por el tercer segmento de la referencia, igual que
     extraer_tipo_servicio — para Reportes → Reportes Aéreos. Mismo filtro de
@@ -2914,6 +2924,7 @@ def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None):
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     filas = []
     for r in bookings:
         tipo = extraer_tipo_servicio(r["referencia"])
@@ -2927,6 +2938,8 @@ def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None):
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         venta = round(float(r["venta"]), 2)
         profit = round(float(r["profit"]), 2)
@@ -2952,8 +2965,9 @@ def construir_operaciones_aereas(plazas_permitidas=None, vendedor_forzado=None):
 def reportes_graficas():
     plazas_permitidas = plazas_permitidas_usuario()
     vendedor_forzado = vendedor_forzado_usuario()
-    filas = construir_filas_reportes(plazas_permitidas, vendedor_forzado)
-    presupuesto_mensual = construir_presupuesto_mensual(plazas_permitidas, vendedor_forzado)
+    vendedores_permitidos = vendedores_permitidos_usuario()
+    filas = construir_filas_reportes(plazas_permitidas, vendedor_forzado, vendedores_permitidos)
+    presupuesto_mensual = construir_presupuesto_mensual(plazas_permitidas, vendedor_forzado, vendedores_permitidos)
     datos_json = json.dumps(filas).replace("</", "<\\/")
     presupuesto_json = json.dumps(presupuesto_mensual).replace("</", "<\\/")
     return render_template(
@@ -2966,7 +2980,7 @@ def reportes_graficas():
 def reportes_aereo():
     plazas_permitidas = plazas_permitidas_usuario()
     vendedor_forzado = vendedor_forzado_usuario()
-    filas = construir_operaciones_aereas(plazas_permitidas, vendedor_forzado)
+    filas = construir_operaciones_aereas(plazas_permitidas, vendedor_forzado, vendedores_permitidos_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_aereo.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -4030,7 +4044,7 @@ def administracion_antiguedad_saldos_cliente_exportar():
 @app.route("/reportes/por-vendedor")
 @reportes_required
 def reportes_por_vendedor():
-    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_por_vendedor.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -4038,7 +4052,7 @@ def reportes_por_vendedor():
 @app.route("/reportes/por-cliente")
 @reportes_required
 def reportes_por_cliente():
-    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario())
+    filas = construir_filas_reportes(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     datos_json = json.dumps(filas).replace("</", "<\\/")
     return render_template("reportes_por_cliente.html", datos_json=datos_json, hay_datos=len(filas) > 0)
 
@@ -4078,6 +4092,8 @@ def reportes_clientes_mensual():
     plazas_permitidas = plazas_permitidas_usuario()
     vendedor_forzado = vendedor_forzado_usuario()
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos = vendedores_permitidos_usuario()
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
@@ -4086,6 +4102,8 @@ def reportes_clientes_mensual():
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         mensual = {}
         for mes, acc in mensual_por_cliente.get(ckey, {}).items():
@@ -4151,7 +4169,8 @@ def crm_catalogo_admin_required(view):
     return wrapped
 
 
-def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300, vendedor_forzado=None):
+def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=None, limite=300, vendedor_forzado=None,
+                           vendedores_permitidos=None):
     """Detalle a nivel booking para la pantalla CRM → Booking: mismos datos
     (tabla reporte_bookings) y mismo filtro de plazas que Reporte de Ventas,
     pero mostrados fila por fila en vez de agregados. `limite` acota la
@@ -4182,6 +4201,7 @@ def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=N
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     filas = []
     for r in bookings:
         fecha = r["fecha"]
@@ -4192,6 +4212,8 @@ def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=N
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         filas.append({
             "referencia": r["referencia"] or "#N/D",
@@ -4259,6 +4281,8 @@ def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarr
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
@@ -4519,6 +4543,8 @@ def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrol
             continue
         if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, m["desarrollador"]):
             continue
         if desarrolladores_permitidos is not None and not any(
@@ -4583,6 +4609,8 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
@@ -5854,6 +5882,7 @@ def rango_periodo_crm(periodo, hoy, fecha_inicio_custom=None, fecha_fin_custom=N
 def construir_inicio_crm(
     periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, db=None,
     creador_extra_cotizaciones=None, desarrollador_filtro=None,
+    vendedores_permitidos=None, desarrolladores_permitidos=None,
 ):
     """Dashboard de CRM → Inicio: actividad de cotización (crm_cotizaciones)
     y de cierre (reporte_bookings) del periodo elegido, comparada contra el
@@ -5990,6 +6019,8 @@ def construir_inicio_crm(
     plaza_filtro = plaza_filtro or ""
     vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
     desarrollador_filtro_norm = normalizar(desarrollador_filtro) if desarrollador_filtro else ""
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
+    desarrolladores_permitidos_norm = {normalizar(d) for d in desarrolladores_permitidos} if desarrolladores_permitidos is not None else None
 
     filas_booking = []
     for r in bookings:
@@ -6008,7 +6039,11 @@ def construir_inicio_crm(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
+        if vendedores_permitidos_norm is not None and normalizar(vendedor) not in vendedores_permitidos_norm:
+            continue
         if desarrollador_filtro_norm and ejecutivo != desarrollador_filtro_norm:
+            continue
+        if desarrolladores_permitidos_norm is not None and ejecutivo not in desarrolladores_permitidos_norm:
             continue
         filas_booking.append({
             "d": d, "vendedor": vendedor, "plaza": plaza,
@@ -6586,7 +6621,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
                ct.telefono AS contacto_telefono, ct.correo AS contacto_correo,
                i.nombre AS incoterm, m.nombre AS modalidad,
                f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo,
-               cu.email AS creador_correo, mp.nombre AS motivo_perdida_nombre
+               cu.email AS creador_correo, mp.nombre AS motivo_perdida_nombre,
+               crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
@@ -6595,6 +6631,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
         LEFT JOIN crm_motivos_perdida mp ON mp.id = co.motivo_perdida_id
+        LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
         WHERE co.id = %s
     """, (cotizacion_id,)).fetchone()
     if fila is None:
@@ -6703,11 +6740,20 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     ]
 
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
-    # al cliente: usa la firma capturada si existe, si no deriva un nombre
-    # legible del correo de login (p.ej. "marielbis.camacaro@..." →
-    # "Marielbis Camacaro"). Solo cae al vendedor del cliente en cotizaciones
-    # viejas, de antes de que existiera creado_por_user_id.
-    nombre_creador = fila["nombre_firma"] or nombre_desde_correo(fila["creador_correo"])
+    # al cliente — mismo orden de prioridad que el resto del CRM (Inicio,
+    # Resultados, Cotizaciones): primero el vendedor/desarrollador asociado
+    # a su cuenta (Catálogos → Visualización de Plazas), después la firma
+    # capturada, y solo si no hay nada de eso, un nombre derivado del correo
+    # de login (p.ej. "marielbis.camacaro@..." → "Marielbis Camacaro"). Antes
+    # se saltaba directo de la firma al correo, así que a alguien con
+    # vendedor_asociado configurado (p.ej. ventas4@... → "Ivan Durand") le
+    # salía el nombre del correo/login en la cotización en vez del suyo. Solo
+    # cae al vendedor del cliente en cotizaciones viejas, de antes de que
+    # existiera creado_por_user_id.
+    nombre_creador = (
+        fila["creador_vendedor_asociado"] or fila["creador_desarrollador_asociado"]
+        or quitar_titulo(fila["nombre_firma"]) or nombre_desde_correo(fila["creador_correo"])
+    )
 
     if fila["cliente_folio"] is not None:
         cliente_nombre = fila["cliente_nombre"] or "#N/D"
@@ -6917,6 +6963,8 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
         if plazas_permitidas is not None and plaza not in plazas_permitidas:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
+            continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
         if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
             continue
@@ -7389,7 +7437,8 @@ def crm_seccion(slug):
         fecha_inicio = fecha_valida_o_vacia(request.args.get("fecha_inicio", "")) or fecha_inicio_default
         fecha_fin = fecha_valida_o_vacia(request.args.get("fecha_fin", "")) or fecha_fin_default
         bookings, total_bookings = construir_booking_crm(
-            plazas_permitidas_usuario(), fecha_inicio, fecha_fin, vendedor_forzado=vendedor_forzado_usuario()
+            plazas_permitidas_usuario(), fecha_inicio, fecha_fin, vendedor_forzado=vendedor_forzado_usuario(),
+            vendedores_permitidos=vendedores_permitidos_usuario(),
         )
         return render_template(
             "crm_booking.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
@@ -8926,12 +8975,14 @@ def construir_documento_minuta(tarea_id):
         SELECT t.*, a.nombre AS actividad, ac.razon_social AS cliente_nombre,
                f.nombre_firma, f.puesto AS firma_puesto, f.telefono AS firma_telefono, f.correo AS firma_correo,
                cu.email AS creador_correo,
+               crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado,
                af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo
         FROM crm_tareas t
         JOIN crm_actividades a ON a.id = t.actividad_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = t.cliente_folio
         LEFT JOIN crm_firmas f ON f.user_id = t.creado_por_user_id
         LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
+        LEFT JOIN app_user_permissions crp ON crp.user_id = t.creado_por_user_id
         LEFT JOIN crm_firmas af ON af.user_id = t.autorizado_por_user_id
         LEFT JOIN auth.users au ON au.id = t.autorizado_por_user_id
         WHERE t.id = %s
@@ -8954,7 +9005,10 @@ def construir_documento_minuta(tarea_id):
         if (plaza["plaza"] if plaza else None) not in plazas_permitidas:
             return None
 
-    nombre_creador = fila["nombre_firma"] or nombre_desde_correo(fila["creador_correo"]) or fila["vendedor"]
+    nombre_creador = (
+        fila["creador_vendedor_asociado"] or fila["creador_desarrollador_asociado"]
+        or quitar_titulo(fila["nombre_firma"]) or nombre_desde_correo(fila["creador_correo"]) or fila["vendedor"]
+    )
     contacto_nombre = fila["cliente_nombre"] if fila["tipo_contacto"] == "cliente" else fila["prospecto_nombre"]
     nombre_autorizador = (
         (fila["autorizador_firma"] or nombre_desde_correo(fila["autorizador_correo"])) if fila["autorizada"] else None
