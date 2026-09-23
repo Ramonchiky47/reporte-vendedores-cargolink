@@ -5068,6 +5068,14 @@ def construir_cotizaciones_crm(
         es_creador_extra = bool(
             creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
         )
+        # Lo que YO mismo creé siempre se ve, sin importar plaza/vendedor/
+        # desarrollador — igual que ya pasaba con creador_extra (una
+        # excepción configurada a mano para OTRA persona), pero automático
+        # para cualquier usuario restringido: de otro modo alguien con
+        # "solo ver sus cuentas"/"solo ver su información" podía crear una
+        # cotización y luego no verla ni él mismo, si el cliente no calzaba
+        # (todavía) con su plaza/vendedor/desarrollador asignado.
+        es_creacion_propia = bool(usuario_id_actual and str(r["creado_por_user_id"] or "") == str(usuario_id_actual))
         es_prospecto = r["cliente_folio"] is None
         # "Solo ver las que crea": restricción aparte de plaza/vendedor/
         # desarrollador, comparando directamente el user_id del creador — se
@@ -5080,7 +5088,7 @@ def construir_cotizaciones_crm(
         if not es_prospecto:
             vkey = normalizar(r["cliente_vendedor"])
             plaza = plaza_por_vendedor.get(vkey, "#N/D")
-            if not es_creador_extra:
+            if not (es_creador_extra or es_creacion_propia):
                 if plazas_permitidas is not None and plaza not in plazas_permitidas:
                     continue
                 if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
@@ -5118,7 +5126,7 @@ def construir_cotizaciones_crm(
             # prospectos de la empresa sin importar su restricción (bug real:
             # el prospecto de un vendedor le aparecía a otro vendedor
             # restringido, ya que antes solo se filtraba por desarrollador).
-            if not es_creador_extra:
+            if not (es_creador_extra or es_creacion_propia):
                 if vendedor_forzado_norm is not None and normalizar(identidad_creador) != vendedor_forzado_norm:
                     continue
                 if vendedores_permitidos_norm is not None and normalizar(identidad_creador) not in vendedores_permitidos_norm:
