@@ -31,7 +31,7 @@ import psycopg
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
 from flask_wtf import CSRFProtect
 from markupsafe import Markup, escape
 from psycopg.rows import dict_row
@@ -1655,11 +1655,12 @@ csrf = CSRFProtect(app)
 
 @app.after_request
 def agregar_cabeceras_seguridad(resp):
-    # El PDF de Pricing se embebe en un <iframe> propio (pricing_pdf_ver.html,
-    # mismo origen) para poder mostrar un botón de "Descargar" aparte del
-    # visor; frame-ancestors 'none' bloqueaba ese iframe igual que uno
-    # externo, dejando el visor en blanco.
-    if request.endpoint == "pricing_pdf":
+    # El PDF de Pricing y el detalle/edición de cotización (modal de la
+    # lista de Cotizaciones, y "Editar" navegando dentro de ese mismo
+    # iframe) se embeben en un <iframe> propio, mismo origen;
+    # frame-ancestors 'none' bloqueaba esos iframes igual que uno externo,
+    # dejando el visor/modal en blanco.
+    if request.endpoint in ("pricing_pdf", "crm_cotizacion_detalle", "crm_cotizacion_editar"):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     else:
@@ -1791,7 +1792,7 @@ def admin_required(view):
         if not sesion_activa():
             return redirect(url_for("login"))
         registrar_ingreso()
-        if not session.get("es_admin"):
+        if not permisos_frescos_usuario().get("es_admin"):
             flash("Esa sección es solo para administradores.")
             return redirect(url_for("dashboard_plazas_vendedores"))
         return view(*args, **kwargs)
@@ -1887,13 +1888,62 @@ def transporte_terrestre_required(view):
     return wrapped
 
 
+def permisos_frescos_usuario():
+    """app_user_permissions del usuario en sesión, leído en vivo de la base
+    en cada request (cacheado con flask.g para no repetir la consulta
+    dentro de la misma request) — no lo que se copió a la sesión al hacer
+    login/SSO. Antes, si un admin cambiaba el permiso de alguien (quitarle
+    "solo ver su información", darle de baja como admin, etc.), quien ya
+    tenía la sesión abierta seguía operando con los permisos viejos hasta
+    volver a loguearse — pasó de verdad con una cuenta restringida a
+    "solo ver sus cuentas" (desarrollador) que, tras quitarle esa
+    restricción, seguía viendo 0 cotizaciones porque su sesión no se había
+    enterado del cambio. Regresa {} si no hay sesión o no hay fila de
+    permisos (equivalente a "todo en False/None", igual que antes)."""
+    if hasattr(g, "_permisos_frescos"):
+        return g._permisos_frescos
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        g._permisos_frescos = {}
+        return g._permisos_frescos
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            coalesce(es_admin, false) AS es_admin,
+            coalesce(es_master, false) AS es_master,
+            coalesce(puede_exportar, false) AS puede_exportar,
+            coalesce(puede_actualizar, false) AS puede_actualizar,
+            coalesce(puede_borrar, false) AS puede_borrar,
+            coalesce(puede_comisiones, false) AS puede_comisiones,
+            coalesce(puede_ver_ventas, true) AS puede_ver_ventas,
+            coalesce(puede_ver_reportes, true) AS puede_ver_reportes,
+            coalesce(puede_ver_catalogos, false) AS puede_ver_catalogos,
+            coalesce(puede_ver_crm, false) AS puede_ver_crm,
+            coalesce(puede_pricing, false) AS puede_pricing,
+            coalesce(puede_operativos, false) AS puede_operativos,
+            coalesce(puede_transporte_terrestre, false) AS puede_transporte_terrestre,
+            coalesce(todas_las_plazas, false) AS todas_las_plazas,
+            coalesce(puede_autorizar_minutas, false) AS puede_autorizar_minutas,
+            coalesce(puede_ver_administracion, false) AS puede_ver_administracion,
+            vendedor_asociado, coalesce(solo_su_informacion, false) AS solo_su_informacion,
+            cotizaciones_creador_extra,
+            desarrollador_asociado, coalesce(solo_su_informacion_desarrollador, false) AS solo_su_informacion_desarrollador,
+            coalesce(cotizaciones_solo_propias, false) AS cotizaciones_solo_propias
+        FROM app_user_permissions WHERE user_id = %s
+    """, (usuario_id,)).fetchone()
+    db.close()
+    g._permisos_frescos = dict(fila) if fila else {}
+    return g._permisos_frescos
+
+
 def plazas_permitidas_usuario():
     """None = el usuario en sesión ve todas las plazas (sin restricción).
     Si no es None, es el set de plazas que puede ver. Los administradores
     siempre ven todo, igual que quien tenga marcado "Todas las plazas" en
     Catálogos → Visibilidad de Plazas. El resto ve solo las plazas que se le
     hayan asignado ahí (ninguna hasta que un admin le asigne alguna)."""
-    if session.get("es_admin") or session.get("todas_las_plazas"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin") or p.get("todas_las_plazas"):
         return None
     usuario_id = session.get("usuario_id")
     if not usuario_id:
@@ -1912,11 +1962,12 @@ def vendedor_forzado_usuario():
     Se activa desde Catálogos → Visualización de Plazas marcando "Solo ver
     su información" y asociando un vendedor del catálogo; los
     administradores nunca quedan restringidos así."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return None
-    if not session.get("solo_su_informacion"):
+    if not p.get("solo_su_informacion"):
         return None
-    return session.get("vendedor_asociado") or None
+    return p.get("vendedor_asociado") or None
 
 
 def desarrollador_forzado_usuario():
@@ -1931,11 +1982,12 @@ def desarrollador_forzado_usuario():
     solo a CRM → Clientes/Contactos/Grupos/Cotizaciones — no a Dashboard,
     Venta diaria, Reportes ni Booking, que son vistas de desempeño de
     vendedor, no de cuentas."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return None
-    if not session.get("solo_su_informacion_desarrollador"):
+    if not p.get("solo_su_informacion_desarrollador"):
         return None
-    return session.get("desarrollador_asociado") or None
+    return p.get("desarrollador_asociado") or None
 
 
 def vendedores_permitidos_usuario():
@@ -1950,7 +2002,7 @@ def vendedores_permitidos_usuario():
     significa que este mecanismo no aplica para ese usuario (se sigue
     rigiendo por plaza/vendedor_asociado como antes), no que no vea nada.
     Los administradores nunca quedan restringidos así."""
-    if session.get("es_admin"):
+    if permisos_frescos_usuario().get("es_admin"):
         return None
     usuario_id = session.get("usuario_id")
     if not usuario_id:
@@ -1973,7 +2025,7 @@ def desarrolladores_permitidos_usuario():
     Clientes/Contactos/Grupos/Cotizaciones, igual que
     desarrollador_forzado_usuario(). Cero filas = este mecanismo no
     aplica (no "ve nada")."""
-    if session.get("es_admin"):
+    if permisos_frescos_usuario().get("es_admin"):
         return None
     usuario_id = session.get("usuario_id")
     if not usuario_id:
@@ -1997,9 +2049,10 @@ def cotizaciones_solo_propias_usuario():
     contra el user_id de la sesión. Se activa desde Catálogos →
     Visualización de Plazas marcando "Solo ver las que crea"; los
     administradores nunca quedan restringidos así."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return False
-    return bool(session.get("cotizaciones_solo_propias"))
+    return bool(p.get("cotizaciones_solo_propias"))
 
 
 def creador_extra_cotizaciones_usuario():
@@ -2013,7 +2066,7 @@ def creador_extra_cotizaciones_usuario():
     todo)."""
     if not vendedor_forzado_usuario():
         return None
-    return session.get("cotizaciones_creador_extra") or None
+    return permisos_frescos_usuario().get("cotizaciones_creador_extra") or None
 
 
 def creador_extra_para_vendedor(vendedor):
@@ -2220,9 +2273,10 @@ def usuario_puede_exportar():
     """True = el usuario en sesión puede usar los botones "Exportar". Los
     administradores siempre pueden; para el resto se usa el permiso
     guardado en sesión al hacer login (app_user_permissions.puede_exportar)."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_exportar"))
+    return bool(p.get("puede_exportar"))
 
 
 def usuario_puede_actualizar():
@@ -2232,9 +2286,10 @@ def usuario_puede_actualizar():
     el permiso guardado en sesión al hacer login
     (app_user_permissions.puede_actualizar), otorgado desde Catálogos →
     Permiso de Actualizar."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_actualizar"))
+    return bool(p.get("puede_actualizar"))
 
 
 def usuario_puede_comisiones():
@@ -2243,9 +2298,10 @@ def usuario_puede_comisiones():
     el permiso guardado en sesión al hacer login
     (app_user_permissions.puede_comisiones), otorgado desde Catálogos →
     Permiso de Comisiones."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_comisiones"))
+    return bool(p.get("puede_comisiones"))
 
 
 def usuario_puede_pricing():
@@ -2254,18 +2310,20 @@ def usuario_puede_pricing():
     Los administradores siempre pueden; para el resto se usa el permiso
     guardado en sesión al hacer login (app_user_permissions.puede_pricing),
     otorgado desde Catálogos → Permisos de Usuario."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_pricing"))
+    return bool(p.get("puede_pricing"))
 
 
 def usuario_puede_transporte_terrestre():
     """Igual que usuario_puede_pricing(), pero para la bandeja de solicitudes
     de Transporte Terrestre Internacional (otro departamento, mismo patrón:
     app_user_permissions.puede_transporte_terrestre)."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_transporte_terrestre"))
+    return bool(p.get("puede_transporte_terrestre"))
 
 
 def usuario_puede_ver_ventas():
@@ -2274,9 +2332,10 @@ def usuario_puede_ver_ventas():
     permiso guardado en sesión al hacer login
     (app_user_permissions.puede_ver_ventas), otorgado desde Catálogos →
     Permisos de Usuario."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_ver_ventas"))
+    return bool(p.get("puede_ver_ventas"))
 
 
 def usuario_puede_ver_reportes():
@@ -2285,9 +2344,10 @@ def usuario_puede_ver_reportes():
     administradores siempre pueden; para el resto se usa el permiso
     guardado en sesión al hacer login (app_user_permissions.puede_ver_reportes),
     otorgado desde Catálogos → Permisos de Usuario."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_ver_reportes"))
+    return bool(p.get("puede_ver_reportes"))
 
 
 def usuario_puede_ver_catalogos():
@@ -2298,9 +2358,10 @@ def usuario_puede_ver_catalogos():
     Permisos de Usuario. Las herramientas individuales dentro de Catálogos
     (vendedores, presupuesto, permisos de usuario, etc.) siguen siendo
     exclusivas de administradores."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_ver_catalogos"))
+    return bool(p.get("puede_ver_catalogos"))
 
 
 def usuario_puede_autorizar_minutas():
@@ -2308,9 +2369,10 @@ def usuario_puede_autorizar_minutas():
     para que cuente en el Scorecard de Resultados. Permiso individual
     (app_user_permissions.puede_autorizar_minutas, otorgado desde
     Catálogos → Permisos de Usuario); los administradores siempre pueden."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_autorizar_minutas"))
+    return bool(p.get("puede_autorizar_minutas"))
 
 
 def usuario_puede_ver_administracion():
@@ -2318,9 +2380,10 @@ def usuario_puede_ver_administracion():
     envío de correos de cobranza). Permiso individual
     (app_user_permissions.puede_ver_administracion, otorgado desde
     Catálogos → Permisos de Usuario); los administradores siempre pueden."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    return bool(session.get("puede_ver_administracion"))
+    return bool(p.get("puede_ver_administracion"))
 
 
 def plazas_con_crm_habilitado():
@@ -2354,9 +2417,10 @@ def usuario_puede_ver_crm():
     Catálogos → Permisos de Usuario), o que alguna de sus plazas asignadas
     (Catálogos → Visibilidad de Plazas) tenga CRM habilitado por plaza
     (Catálogos → CRM por Plaza)."""
-    if session.get("es_admin"):
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
         return True
-    if session.get("puede_ver_crm"):
+    if p.get("puede_ver_crm"):
         return True
     plazas_habilitadas = plazas_con_crm_habilitado()
     if not plazas_habilitadas:
@@ -2367,7 +2431,7 @@ def usuario_puede_ver_crm():
 def primera_pagina_permitida():
     """Nombre de la ruta a la que mandar al usuario en sesión: la primera
     sección para la que sí tiene permiso de ver, en el mismo orden del menú."""
-    if session.get("es_admin"):
+    if permisos_frescos_usuario().get("es_admin"):
         return "dashboard"
     if usuario_puede_ver_ventas():
         return "dashboard_plazas_vendedores"
@@ -2717,7 +2781,7 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
 @app.route("/generar", methods=["POST"])
 @login_required
 def generar():
-    es_admin = bool(session.get("es_admin"))
+    es_admin = bool(permisos_frescos_usuario().get("es_admin"))
     if not es_admin and not usuario_puede_actualizar():
         flash("No tienes permiso para actualizar el reporte.")
         return redirect(url_for("dashboard_plazas_vendedores"))
@@ -2810,7 +2874,7 @@ def dashboard_plazas_vendedores():
 
     datos = construir_datos_dashboard(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     if datos is None:
-        if session.get("es_admin"):
+        if permisos_frescos_usuario().get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
             return redirect(url_for("dashboard"))
         flash("Todavía no hay ningún reporte generado. Pídele a un administrador que genere uno.")
@@ -2828,7 +2892,7 @@ def venta_diaria():
 
     datos = construir_datos_venta_diaria(plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario())
     if datos is None:
-        if session.get("es_admin"):
+        if permisos_frescos_usuario().get("es_admin"):
             flash("Todavía no hay ningún reporte descargado. Genera uno primero en 'Reporte'.")
             return redirect(url_for("dashboard"))
         flash("Todavía no hay ningún reporte generado. Pídele a un administrador que genere uno.")
@@ -3099,7 +3163,7 @@ def comisiones():
     ]).replace("</", "<\\/")
 
     folios_cargolink = []
-    if session.get("es_admin"):
+    if permisos_frescos_usuario().get("es_admin"):
         try:
             folios_cargolink = listar_folios_liquidacion_cargolink()
         except RuntimeError as e:
@@ -3523,7 +3587,7 @@ def calcular_comisiones_por_cliente(filas, cobros_por_booking, cliente_por_booki
 @app.route("/comisiones-acotadas")
 @login_required
 def comisiones_acotadas():
-    if not session.get("es_admin"):
+    if not permisos_frescos_usuario().get("es_admin"):
         flash("No tienes permiso para ver Comisiones Acotadas.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
@@ -4161,7 +4225,7 @@ def crm_catalogo_admin_required(view):
     criterio inline, para los catálogos que no tienen ruta propia."""
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("es_admin"):
+        if not permisos_frescos_usuario().get("es_admin"):
             flash("Ese catálogo es solo para administradores.")
             return redirect(url_for("crm_seccion", slug="inicio"))
         return view(*args, **kwargs)
@@ -6418,6 +6482,30 @@ def construir_inicio_crm(
     por_vencer.sort(key=lambda f: f["fecha_vencimiento"])
     vencidas.sort(key=lambda f: f["fecha_vencimiento"])
 
+    # Cotizaciones del periodo agrupadas por identidad (vendedor o
+    # desarrollador que la creó) — para el popup que abre el chip
+    # "Cotizaciones" de las tablas de Actividad, sin tener que ir a dar
+    # clic en Cotizaciones y armar el filtro a mano.
+    cotizaciones_por_identidad = {}
+    for f in cot_periodo:
+        if f["ganada_desde"] is not None:
+            estatus_cot = "ganada"
+        elif f["perdida_desde"] is not None:
+            estatus_cot = "perdida"
+        elif f["fecha_vencimiento"] is not None and f["fecha_vencimiento"] < hoy:
+            estatus_cot = "vencido"
+        else:
+            estatus_cot = "vigente"
+        cotizaciones_por_identidad.setdefault(f["identidad"] or "#N/D", []).append({
+            "id": f["id"], "id_cotizacion": f["id_cotizacion"], "cliente": f["cliente"],
+            "nombre_cotizacion": f["nombre_cotizacion"],
+            "fecha_creacion": f["d"].isoformat() if f["d"] else "",
+            "fecha_vencimiento": f["fecha_vencimiento"].isoformat() if f["fecha_vencimiento"] else "",
+            "estatus": estatus_cot,
+        })
+    for lista in cotizaciones_por_identidad.values():
+        lista.sort(key=lambda c: c["fecha_creacion"], reverse=True)
+
     todas_las_plazas = {p for p in plaza_por_vendedor.values() if p}
     plazas_opciones = sorted(todas_las_plazas if plazas_permitidas is None else todas_las_plazas & plazas_permitidas)
     vendedores_opciones = sorted({
@@ -7289,7 +7377,7 @@ def agrupar_nav_crm(slug_activo):
     marcando como activo el item que corresponde a la sección actual. Los
     catálogos de CRM_CATALOGOS_SOLO_ADMIN ni siquiera se listan para quien
     no sea administrador (Contactos es la excepción, sigue visible)."""
-    es_admin = bool(session.get("es_admin"))
+    es_admin = bool(permisos_frescos_usuario().get("es_admin"))
     grupos_orden = [None, "Catálogos", "Administración"]
     grupos = []
     for nombre_grupo in grupos_orden:
@@ -7315,7 +7403,7 @@ def crm_seccion(slug):
     item = next((i for i in CRM_NAV if i["slug"] == slug), None)
     if item is None:
         return redirect(url_for("crm_seccion", slug="tareas"))
-    if slug in CRM_CATALOGOS_SOLO_ADMIN and not session.get("es_admin"):
+    if slug in CRM_CATALOGOS_SOLO_ADMIN and not permisos_frescos_usuario().get("es_admin"):
         flash("Ese catálogo es solo para administradores.")
         return redirect(url_for("crm_seccion", slug="inicio"))
 
