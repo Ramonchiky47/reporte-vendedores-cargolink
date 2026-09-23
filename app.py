@@ -5245,6 +5245,7 @@ def construir_scorecard_grupo(resumenes):
 
 def construir_tendencia_resultado(
     plaza_filtro, vendedor_filtro, mes_referencia, meses_atras, plazas_permitidas, creador_extra_cotizaciones=None,
+    vendedores_permitidos=None, desarrolladores_permitidos=None,
 ):
     """Resultado del Scorecard (vendedor, grupo o compañía, según el mismo
     alcance que se esté viendo en Resultados) de los `meses_atras` meses
@@ -5265,6 +5266,7 @@ def construir_tendencia_resultado(
         datos_mes = construir_inicio_crm(
             "mes", fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db,
             creador_extra_cotizaciones=creador_extra_cotizaciones,
+            vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         if vendedor_filtro:
             resumen = datos_mes["resumen_vendedor"].get(normalizar(vendedor_filtro))
@@ -5290,7 +5292,7 @@ def construir_tendencia_resultado(
 
 def construir_resultados_acumulado(
     meses_lista, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
-    desarrollador_filtro=None,
+    desarrollador_filtro=None, vendedores_permitidos=None, desarrolladores_permitidos=None,
 ):
     """Igual que construir_inicio_crm + construir_detalle_resultados_mes,
     pero sumando un conjunto arbitrario de meses (no necesariamente
@@ -5325,6 +5327,7 @@ def construir_resultados_acumulado(
         datos_mes = construir_inicio_crm(
             "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas, db=db,
             creador_extra_cotizaciones=creador_extra_cotizaciones, desarrollador_filtro=desarrollador_filtro,
+            vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         k = datos_mes["kpis"]
         for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos"):
@@ -5353,6 +5356,7 @@ def construir_resultados_acumulado(
         detalle_mes = construir_detalle_resultados_mes(
             fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
             creador_extra_cotizaciones=creador_extra_cotizaciones, desarrollador_filtro=desarrollador_filtro,
+            vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         clientes_nuevos_detalle.extend(detalle_mes["clientes_nuevos_detalle"])
         cotizaciones_por_estatus["vigente"].extend(detalle_mes["cotizaciones_vigentes"])
@@ -5618,7 +5622,7 @@ def construir_eventos_cliente_nuevo(bookings_todos, meses_ventana=13, meses_cobe
 
 def construir_detalle_resultados_mes(
     fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas=None, creador_extra_cotizaciones=None,
-    desarrollador_filtro=None,
+    desarrollador_filtro=None, vendedores_permitidos=None, desarrolladores_permitidos=None,
 ):
     """Detalle a nivel cliente/cotización para CRM → Resultados, acotado al
     mes elegido: roster de clientes asociados con su venta del mes (mismo
@@ -5709,6 +5713,7 @@ def construir_detalle_resultados_mes(
 
     plaza_filtro = plaza_filtro or ""
     vendedor_filtro_norm = normalizar(vendedor_filtro) if vendedor_filtro else ""
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     desarrollador_por_cliente = {normalizar(r["razon_social"]): r["desarrollador"] for r in filas_asignacion}
 
     # ---- Tabla: roster de clientes asociados con su venta del mes ----
@@ -5722,7 +5727,13 @@ def construir_detalle_resultados_mes(
             continue
         if vendedor_filtro_norm and vkey != vendedor_filtro_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_filtro and not coincide_desarrollador(desarrollador_filtro, r["desarrollador"]):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, r["desarrollador"]) for d in desarrolladores_permitidos
+        ):
             continue
         ckey = normalizar(r["razon_social"])
         agg = booking_por_cliente_mes.get(ckey, {"cant": 0, "profit": 0.0})
@@ -5775,8 +5786,15 @@ def construir_detalle_resultados_mes(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
+        if vendedores_permitidos_norm is not None and normalizar(vendedor) not in vendedores_permitidos_norm:
+            continue
         if desarrollador_filtro and not coincide_desarrollador(
             desarrollador_filtro, desarrollador_por_cliente.get(normalizar(r["cliente_servicio"]))
+        ):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, desarrollador_por_cliente.get(normalizar(r["cliente_servicio"])))
+            for d in desarrolladores_permitidos
         ):
             continue
         agg = booking_por_cliente_mes.get(normalizar(r["cliente_servicio"]), {"cant": 0, "profit": 0.0})
@@ -5822,6 +5840,17 @@ def construir_detalle_resultados_mes(
             continue
         elif desarrollador_filtro and normalizar(identidad_mostrar) != normalizar(desarrollador_filtro):
             continue
+        elif vendedores_permitidos_norm is not None or desarrolladores_permitidos is not None:
+            identidad_norm = normalizar(identidad_mostrar)
+            desarrolladores_permitidos_norm_local = (
+                {normalizar(d) for d in desarrolladores_permitidos} if desarrolladores_permitidos is not None else None
+            )
+            permitido_por_lista = (
+                (vendedores_permitidos_norm is not None and identidad_norm in vendedores_permitidos_norm)
+                or (desarrolladores_permitidos_norm_local is not None and identidad_norm in desarrolladores_permitidos_norm_local)
+            )
+            if not permitido_por_lista:
+                continue
         estatus = calcular_estatus_cotizacion(r["estatus"], r["fecha_vencimiento"], r["ganada_desde"] is not None, hoy)
         cotizaciones_por_estatus[estatus].append({
             "id": r["id"],
@@ -6072,6 +6101,8 @@ def construir_inicio_crm(
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
             continue
+        if vendedores_permitidos_norm is not None and normalizar(vendedor) not in vendedores_permitidos_norm:
+            continue
         filas_cliente_nuevo.append({"d": r["fecha"], "vendedor": vendedor, "cliente": r["cliente_servicio"]})
 
     # Achieved real de las categorías "Activities" del Scorecard (Customer
@@ -6090,6 +6121,8 @@ def construir_inicio_crm(
         if plaza_filtro and plaza != plaza_filtro:
             continue
         if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
+            continue
+        if vendedores_permitidos_norm is not None and normalizar(vendedor) not in vendedores_permitidos_norm:
             continue
         filas_tarea.append({"d": d, "vendedor": vendedor, "actividad": normalizar(r["actividad"])})
 
@@ -6136,6 +6169,18 @@ def construir_inicio_crm(
             # cosas simultáneamente, lo cual es correcto (no un bug).
             if desarrollador_filtro_norm and identidad != desarrollador_filtro_norm:
                 continue
+            # Vendedores/Desarrolladores permitidos (Sales Support / Team
+            # Leader): a diferencia de arriba, aquí basta con calzar en
+            # CUALQUIERA de las dos listas, porque a esta persona sí se le
+            # puede haber dado seguimiento a un grupo de vendedores Y de
+            # desarrolladores a la vez.
+            if vendedores_permitidos_norm is not None or desarrolladores_permitidos_norm is not None:
+                permitido_por_lista = (
+                    (vendedores_permitidos_norm is not None and identidad in vendedores_permitidos_norm)
+                    or (desarrolladores_permitidos_norm is not None and identidad in desarrolladores_permitidos_norm)
+                )
+                if not permitido_por_lista:
+                    continue
         filas_cot.append({
             "d": d, "id": r["id"], "id_cotizacion": r["id_cotizacion"],
             "cliente": r["razon_social"] or r["cliente_prospecto"] or "Prospecto",
@@ -6352,6 +6397,14 @@ def construir_inicio_crm(
         ranking_desarrolladores = [r for r in ranking_desarrolladores if normalizar(r["nombre"]) == desarrollador_filtro_norm]
         if not vendedor_filtro_norm:
             ranking = []
+    # Vendedores/Desarrolladores permitidos (Sales Support / Team Leader): a
+    # diferencia del filtro de arriba (una sola persona a la vez, vacía la
+    # otra tabla), aquí se puede tener un grupo de varias personas en cada
+    # tabla al mismo tiempo — solo se recorta cada tabla a su propia lista.
+    if vendedores_permitidos_norm is not None:
+        ranking = [r for r in ranking if normalizar(r["nombre"]) in vendedores_permitidos_norm]
+    if desarrolladores_permitidos_norm is not None:
+        ranking_desarrolladores = [r for r in ranking_desarrolladores if normalizar(r["nombre"]) in desarrolladores_permitidos_norm]
 
     por_vencer, vencidas = [], []
     for f in filas_cot:
@@ -6371,11 +6424,13 @@ def construir_inicio_crm(
         r["vendedor"] for r in vendedores_catalogo
         if r["vendedor"] and (plazas_permitidas is None or r["plaza"] in plazas_permitidas)
         and (not plaza_filtro or r["plaza"] == plaza_filtro)
+        and (vendedores_permitidos_norm is None or normalizar(r["vendedor"]) in vendedores_permitidos_norm)
     })
     desarrolladores_opciones = sorted({
         r["desarrollador"] for r in desarrolladores_catalogo
         if r["desarrollador"] and (plazas_permitidas is None or r["plaza"] in plazas_permitidas)
         and (not plaza_filtro or r["plaza"] == plaza_filtro)
+        and (desarrolladores_permitidos_norm is None or normalizar(r["desarrollador"]) in desarrolladores_permitidos_norm)
     })
 
     return {
@@ -7293,6 +7348,7 @@ def crm_seccion(slug):
             periodo, fecha_inicio, fecha_fin, plaza_filtro, vendedor_filtro, plazas_permitidas_usuario(),
             creador_extra_cotizaciones=creador_extra_para_vendedor(vendedor_filtro),
             desarrollador_filtro=desarrollador_filtro,
+            vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
         )
         if vendedor_forzado:
             datos["vendedores_opciones"] = [vendedor_forzado]
@@ -7345,6 +7401,7 @@ def crm_seccion(slug):
             resultado = construir_resultados_acumulado(
                 meses_seleccionados, plaza_filtro, vendedor_filtro, plazas_permitidas,
                 creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+                vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
             )
             datos = resultado
             kpis = dict(resultado["kpis"])
@@ -7370,11 +7427,13 @@ def crm_seccion(slug):
             datos = construir_inicio_crm(
                 "mes", fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
                 creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+                vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
             )
             kpis = datos["kpis"]
             detalle = construir_detalle_resultados_mes(
                 fecha_inicio_mes, fecha_fin_mes, plaza_filtro, vendedor_filtro, plazas_permitidas,
                 creador_extra_cotizaciones=creador_extra, desarrollador_filtro=desarrollador_filtro,
+                vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
             )
             plazas_opciones_resultados = plazas_con_presupuesto(mes_seleccionado, plazas_permitidas)
 
@@ -7413,6 +7472,7 @@ def crm_seccion(slug):
             puntos_tendencia = construir_tendencia_resultado(
                 plaza_filtro, vendedor_filtro, mes_seleccionado, mes_num_sel, plazas_permitidas,
                 creador_extra_cotizaciones=creador_extra,
+                vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
             )
             tendencia_svg = construir_svg_tendencia(puntos_tendencia)
 
