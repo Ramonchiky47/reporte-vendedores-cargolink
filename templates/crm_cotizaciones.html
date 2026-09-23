@@ -209,6 +209,17 @@
       }
       poblarVendedores('');
 
+      // Al llegar desde el chip de "Cotizaciones" de CRM → Inicio
+      // (?persona=NOMBRE), preselecciona a esa persona en el filtro de
+      // vendedor — funciona igual para alguien identificado como
+      // desarrollador, porque data-vendedor ya trae la identidad del
+      // creador en cotizaciones de prospecto (mismo criterio que usa el
+      // ranking de Inicio).
+      const personaUrl = new URLSearchParams(window.location.search).get('persona');
+      if (personaUrl && Array.from(selectVendedor.options).some((o) => o.value === personaUrl)) {
+        selectVendedor.value = personaUrl;
+      }
+
       function aplicarFiltros() {
         const termino = input.value.trim().toLowerCase();
         const estatusActivos = new Set(checksEstatus.filter((c) => c.checked).map((c) => c.value));

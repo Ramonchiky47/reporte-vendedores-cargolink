@@ -63,8 +63,10 @@
   .persona__plaza { font-size: 0.72rem; color: #888; }
   .barra-mini { height: 5px; border-radius: 3px; background: var(--fondo-suave); margin-top: 0.3rem; overflow: hidden; width: 100%; }
   .barra-mini i { display: block; height: 100%; background: var(--s-blue); border-radius: 3px; }
-  .chip-cot { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; padding: 0.1rem 0.4rem; border-radius: 20px; font-size: 0.74rem; font-weight: 700; }
+  .chip-cot { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; padding: 0.1rem 0.4rem; border-radius: 20px; font-size: 0.74rem; font-weight: 700; text-decoration: none; }
   .chip-cot.con-datos { background: #fbe3e2; color: var(--peligro); }
+  a.chip-cot.con-datos { cursor: pointer; }
+  a.chip-cot.con-datos:hover { background: var(--peligro); color: #fff; }
   .chip-cot.sin-datos { color: #aaa; font-weight: 500; }
 
   .lista-plazas { display: flex; flex-direction: column; gap: 0.55rem; }
@@ -244,7 +246,13 @@
             </div></td>
             <td class="num">{{ r.bookings }}</td>
             <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max * 100) if profit_max else 0 }}%"></i></div></td>
-            <td class="num"><span class="chip-cot {{ 'con-datos' if r.cotizaciones > 0 else 'sin-datos' }}">{{ r.cotizaciones if r.cotizaciones > 0 else '—' }}</span></td>
+            <td class="num">
+              {% if r.cotizaciones > 0 %}
+              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              {% else %}
+              <span class="chip-cot sin-datos">—</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -274,7 +282,13 @@
             </div></td>
             <td class="num">{{ r.bookings }}</td>
             <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max_d * 100) if profit_max_d else 0 }}%"></i></div></td>
-            <td class="num"><span class="chip-cot {{ 'con-datos' if r.cotizaciones > 0 else 'sin-datos' }}">{{ r.cotizaciones if r.cotizaciones > 0 else '—' }}</span></td>
+            <td class="num">
+              {% if r.cotizaciones > 0 %}
+              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              {% else %}
+              <span class="chip-cot sin-datos">—</span>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
