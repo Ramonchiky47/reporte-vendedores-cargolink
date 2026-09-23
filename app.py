@@ -166,6 +166,35 @@ def init_db():
     # la sesión (crm_cotizaciones.creado_por_user_id). Se puede combinar con
     # vendedor_asociado y/o desarrollador_asociado (todas aplican a la vez).
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS cotizaciones_solo_propias boolean not null default false;")
+    # "Tipo de usuario" (Catálogos → Visibilidad de Plazas): solo para
+    # mostrar/precargar el tipo elegido en el formulario — la restricción
+    # real la siguen dando los campos de arriba (solo_su_informacion,
+    # vendedor_asociado, etc.) y las dos tablas de abajo, nunca esta
+    # columna directamente.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS tipo_usuario text;")
+    # Listas de vendedores/desarrolladores permitidos (plural, a diferencia
+    # de vendedor_asociado/desarrollador_asociado que son UNO solo): para
+    # roles como "Team Leader de Desarrolladores" (ve sus cuentas + las de
+    # un grupo puntual de otros desarrolladores, sin importar su plaza) o
+    # "Sales Support" (ve las cuentas de varios vendedores/desarrolladores
+    # concretos). A diferencia de plazas_permitidas (obligatoria para
+    # todos), estas dos son opt-in: cero filas = sin restricción por este
+    # mecanismo (no "ve nada"), para no afectar a nadie que ya existía
+    # antes de este cambio.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS app_user_vendedores_permitidos (
+            user_id uuid not null,
+            vendedor text not null,
+            primary key (user_id, vendedor)
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS app_user_desarrolladores_permitidos (
+            user_id uuid not null,
+            desarrollador text not null,
+            primary key (user_id, desarrollador)
+        );
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_vendedores (
             id bigint generated always as identity primary key,
@@ -1905,6 +1934,56 @@ def desarrollador_forzado_usuario():
     return session.get("desarrollador_asociado") or None
 
 
+def vendedores_permitidos_usuario():
+    """None = sin restricción por este mecanismo (comportamiento normal).
+    Si no es None, es el CONJUNTO de vendedores (tal cual están en
+    catalogo_vendedores) cuya información puede ver — a diferencia de
+    vendedor_forzado_usuario() (uno solo), esto es una lista, para roles
+    como "Sales Support" que dan seguimiento a varios vendedores puntuales
+    sin ser dueños de ninguno y sin necesitar toda una plaza. Se configura
+    en Catálogos → Visualización de Plazas. A propósito NO usa
+    "cero filas = restringido a nada": como es opt-in y nuevo, cero filas
+    significa que este mecanismo no aplica para ese usuario (se sigue
+    rigiendo por plaza/vendedor_asociado como antes), no que no vea nada.
+    Los administradores nunca quedan restringidos así."""
+    if session.get("es_admin"):
+        return None
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return None
+    db = get_db()
+    filas = db.execute(
+        "SELECT vendedor FROM app_user_vendedores_permitidos WHERE user_id = %s", (usuario_id,)
+    ).fetchall()
+    db.close()
+    if not filas:
+        return None
+    return {f["vendedor"] for f in filas}
+
+
+def desarrolladores_permitidos_usuario():
+    """Análogo a vendedores_permitidos_usuario() pero para un conjunto de
+    desarrolladores — para roles como "Team Leader de Desarrolladores"
+    (ve sus propias cuentas más las de un grupo puntual de otros
+    desarrolladores, sin importar su plaza). Aplica solo a CRM →
+    Clientes/Contactos/Grupos/Cotizaciones, igual que
+    desarrollador_forzado_usuario(). Cero filas = este mecanismo no
+    aplica (no "ve nada")."""
+    if session.get("es_admin"):
+        return None
+    usuario_id = session.get("usuario_id")
+    if not usuario_id:
+        return None
+    db = get_db()
+    filas = db.execute(
+        "SELECT desarrollador FROM app_user_desarrolladores_permitidos WHERE user_id = %s", (usuario_id,)
+    ).fetchall()
+    db.close()
+    if not filas:
+        return None
+    return {f["desarrollador"] for f in filas}
+
+
 def cotizaciones_solo_propias_usuario():
     """True si el usuario en sesión está restringido, en CRM →
     Cotizaciones, a ver únicamente las que él mismo creó
@@ -2004,6 +2083,8 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
     vendedor_forzado = vendedor_forzado_usuario()
     plazas_permitidas = plazas_permitidas_usuario()
     desarrollador_forzado = desarrollador_forzado_usuario()
+    vendedores_permitidos = vendedores_permitidos_usuario()
+    desarrolladores_permitidos = desarrolladores_permitidos_usuario()
     if cliente_folio is None:
         # Un prospecto no tiene plaza/vendedor que restringir vía cliente,
         # pero si el usuario está limitado a "solo ver su información"
@@ -2013,7 +2094,10 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
         # comprobaba desarrollador_forzado, así que el prospecto de un
         # vendedor restringido se le seguía viendo a otro vendedor
         # restringido).
-        if (vendedor_forzado is None and desarrollador_forzado is None) or cotizacion_id is None:
+        if (
+            vendedor_forzado is None and desarrollador_forzado is None
+            and vendedores_permitidos is None and desarrolladores_permitidos is None
+        ) or cotizacion_id is None:
             return True
         fila_creador = db.execute("""
             SELECT f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
@@ -2031,10 +2115,17 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
         )
         if vendedor_forzado is not None and identidad_creador != normalizar(vendedor_forzado):
             return False
+        if vendedores_permitidos is not None and identidad_creador not in {normalizar(v) for v in vendedores_permitidos}:
+            return False
         if desarrollador_forzado is not None and identidad_creador != normalizar(desarrollador_forzado):
             return False
+        if desarrolladores_permitidos is not None and identidad_creador not in {normalizar(d) for d in desarrolladores_permitidos}:
+            return False
         return True
-    if plazas_permitidas is None and not vendedor_forzado and not desarrollador_forzado:
+    if (
+        plazas_permitidas is None and not vendedor_forzado and not desarrollador_forzado
+        and vendedores_permitidos is None and desarrolladores_permitidos is None
+    ):
         return True
     fila = db.execute("""
         SELECT ac.vendedor, ac.desarrollador, cv.plaza
@@ -2044,7 +2135,15 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
     """, (cliente_folio,)).fetchone()
     if vendedor_forzado and normalizar(fila["vendedor"] if fila else None) != normalizar(vendedor_forzado):
         return False
+    if vendedores_permitidos is not None and normalizar(fila["vendedor"] if fila else None) not in {
+        normalizar(v) for v in vendedores_permitidos
+    }:
+        return False
     if desarrollador_forzado and not coincide_desarrollador(desarrollador_forzado, fila["desarrollador"] if fila else None):
+        return False
+    if desarrolladores_permitidos is not None and not any(
+        coincide_desarrollador(d, fila["desarrollador"] if fila else None) for d in desarrolladores_permitidos
+    ):
         return False
     if plazas_permitidas is None:
         return True
@@ -2073,7 +2172,12 @@ def usuario_puede_ver_contacto(db, contacto_id):
     plazas_permitidas = plazas_permitidas_usuario()
     vendedor_forzado = vendedor_forzado_usuario()
     desarrollador_forzado = desarrollador_forzado_usuario()
-    if plazas_permitidas is None and not vendedor_forzado and not desarrollador_forzado:
+    vendedores_permitidos = vendedores_permitidos_usuario()
+    desarrolladores_permitidos = desarrolladores_permitidos_usuario()
+    if (
+        plazas_permitidas is None and not vendedor_forzado and not desarrollador_forzado
+        and vendedores_permitidos is None and desarrolladores_permitidos is None
+    ):
         return True
     filas = db.execute("""
         SELECT DISTINCT ac.vendedor, ac.desarrollador, cv.plaza
@@ -2088,9 +2192,19 @@ def usuario_puede_ver_contacto(db, contacto_id):
         vendedores_contacto = {normalizar(f["vendedor"]) for f in filas}
         if normalizar(vendedor_forzado) not in vendedores_contacto:
             return False
+    if vendedores_permitidos is not None:
+        vendedores_contacto = {normalizar(f["vendedor"]) for f in filas}
+        if not (vendedores_contacto & {normalizar(v) for v in vendedores_permitidos}):
+            return False
     if desarrollador_forzado:
         desarrolladores_contacto = [f["desarrollador"] for f in filas if f["desarrollador"]]
         if not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
+            return False
+    if desarrolladores_permitidos is not None:
+        desarrolladores_contacto = [f["desarrollador"] for f in filas if f["desarrollador"]]
+        if not any(
+            coincide_desarrollador(d, dc) for d in desarrolladores_permitidos for dc in desarrolladores_contacto
+        ):
             return False
     if plazas_permitidas is None:
         return True
@@ -4095,7 +4209,8 @@ def construir_booking_crm(plazas_permitidas=None, fecha_inicio=None, fecha_fin=N
     return filas[:limite], total
 
 
-def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                            vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Cliente + vendedor + desarrollador asignado para CRM → Clientes:
     misma fuente (asignacion_de_clientes) y filtro de plazas que Reportes →
     Clientes Asignados, pero solo con las columnas que pidió mostrar aquí.
@@ -4136,6 +4251,7 @@ def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarr
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     filas = []
     for r in filas_clientes:
         vkey = normalizar(r["vendedor"])
@@ -4144,7 +4260,13 @@ def construir_clientes_crm(plazas_permitidas=None, vendedor_forzado=None, desarr
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["desarrollador"]):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, r["desarrollador"]) for d in desarrolladores_permitidos
+        ):
             continue
         filas.append({
             "folio": r["folio"],
@@ -4202,7 +4324,8 @@ def construir_cotizaciones_resumen_crm(cliente_folio=None, contacto_id=None):
     return resultado
 
 
-def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                   vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Info de un cliente (asignacion_de_clientes) + sus bookings reales
     (reporte_bookings, casados por nombre de cliente) para la página de
     detalle de CRM → Clientes. Regresa None si el folio no existe o si el
@@ -4228,7 +4351,15 @@ def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzad
     if vendedor_forzado and normalizar(cliente["vendedor"]) != normalizar(vendedor_forzado):
         db.close()
         return None
+    if vendedores_permitidos is not None and normalizar(cliente["vendedor"]) not in {normalizar(v) for v in vendedores_permitidos}:
+        db.close()
+        return None
     if desarrollador_forzado and normalizar(cliente["desarrollador"]) != normalizar(desarrollador_forzado):
+        db.close()
+        return None
+    if desarrolladores_permitidos is not None and not any(
+        coincide_desarrollador(d, cliente["desarrollador"]) for d in desarrolladores_permitidos
+    ):
         db.close()
         return None
 
@@ -4259,7 +4390,8 @@ def construir_cliente_detalle_crm(folio, plazas_permitidas=None, vendedor_forzad
     }
 
 
-def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                             vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Contactos del CRM con sus clientes y grupos asociados (muchos-a-muchos).
     Un contacto solo es visible si al menos uno de sus clientes asociados cae
     en una plaza permitida para el usuario; uno sin ningún cliente asociado
@@ -4308,9 +4440,17 @@ def construir_contactos_crm(plazas_permitidas=None, vendedor_forzado=None, desar
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
+        if vendedores_permitidos is not None and not (vendedores_contacto & {normalizar(v) for v in vendedores_permitidos}):
+            continue
         if desarrollador_forzado is not None:
             desarrolladores_contacto = r["desarrolladores"]
             if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
+                continue
+        if desarrolladores_permitidos is not None:
+            desarrolladores_contacto = r["desarrolladores"]
+            if desarrolladores_contacto and not any(
+                coincide_desarrollador(d, dc) for d in desarrolladores_permitidos for dc in desarrolladores_contacto
+            ):
                 continue
         tiene_booking = any(normalizar(cl) in clientes_con_booking for cl in r["clientes"])
         resultado.append({
@@ -4344,7 +4484,8 @@ def sincronizar_contactos_grupo(db, grupo_id):
     """, (grupo_id, grupo_id))
 
 
-def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                          vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Grupos de clientes (crm_grupos) con cuántos clientes y contactos
     tiene cada uno. Un grupo es visible si al menos uno de sus clientes cae
     en una plaza permitida (mismo criterio que Clientes/Contactos)."""
@@ -4367,6 +4508,7 @@ def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrol
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     clientes_visibles_por_grupo = {}
     for m in miembros:
         vkey = normalizar(m["vendedor"])
@@ -4375,14 +4517,23 @@ def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrol
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, m["desarrollador"]):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, m["desarrollador"]) for d in desarrolladores_permitidos
+        ):
             continue
         clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
 
     resultado = []
     for g in grupos:
         n_clientes = clientes_visibles_por_grupo.get(g["id"], 0)
-        sin_restriccion = plazas_permitidas is None and vendedor_forzado_norm is None and desarrollador_forzado_norm is None
+        sin_restriccion = (
+            plazas_permitidas is None and vendedor_forzado_norm is None and desarrollador_forzado_norm is None
+            and vendedores_permitidos is None and desarrolladores_permitidos is None
+        )
         if not sin_restriccion and n_clientes == 0:
             continue
         resultado.append({
@@ -4392,7 +4543,8 @@ def construir_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrol
     return resultado
 
 
-def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                 vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Un grupo con sus clientes miembro y los contactos que se le asociaron
     automáticamente (vía sincronizar_contactos_grupo)."""
     db = get_db()
@@ -4423,6 +4575,7 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     miembros = []
     for m in miembros_raw:
         vkey = normalizar(m["vendedor"])
@@ -4431,7 +4584,13 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, m["desarrollador"]):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, m["desarrollador"]) for d in desarrolladores_permitidos
+        ):
             continue
         miembros.append({"folio": m["folio"], "cliente": m["razon_social"], "vendedor": m["vendedor"] or "#N/D"})
 
@@ -4450,7 +4609,8 @@ def construir_grupo_detalle_crm(grupo_id, plazas_permitidas=None, vendedor_forza
     }
 
 
-def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                    vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Info de un contacto + sus clientes/grupos asociados + los bookings
     reales de esos clientes (reporte_bookings, casados por nombre), para la
     página de detalle de CRM → Contactos."""
@@ -4480,9 +4640,19 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
     if vendedor_forzado and normalizar(vendedor_forzado) not in vendedores_contacto:
         db.close()
         return None
+    if vendedores_permitidos is not None and not (vendedores_contacto & {normalizar(v) for v in vendedores_permitidos}):
+        db.close()
+        return None
     if desarrollador_forzado:
         desarrolladores_contacto = [c["desarrollador"] for c in clientes if c["desarrollador"]]
         if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
+            db.close()
+            return None
+    if desarrolladores_permitidos is not None:
+        desarrolladores_contacto = [c["desarrollador"] for c in clientes if c["desarrollador"]]
+        if desarrolladores_contacto and not any(
+            coincide_desarrollador(d, dc) for d in desarrolladores_permitidos for dc in desarrolladores_contacto
+        ):
             db.close()
             return None
 
@@ -4522,7 +4692,8 @@ def construir_contacto_detalle_crm(contacto_id, plazas_permitidas=None, vendedor
     }
 
 
-def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                  vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Clientes y grupos que puede asociar el usuario en sesión a un
     contacto (crm_contacto_form.html): mismo criterio de plaza y "solo su
     información" que construir_clientes_crm/construir_grupos_crm — antes
@@ -4545,6 +4716,7 @@ def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, 
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
 
     def permitido(vendedor, desarrollador=None):
         vkey = normalizar(vendedor)
@@ -4553,7 +4725,13 @@ def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, 
             return False
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             return False
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            return False
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, desarrollador):
+            return False
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, desarrollador) for d in desarrolladores_permitidos
+        ):
             return False
         return True
 
@@ -4564,7 +4742,10 @@ def opciones_clientes_grupos_crm(plazas_permitidas=None, vendedor_forzado=None, 
         if not permitido(m["vendedor"], m["desarrollador"]):
             continue
         clientes_visibles_por_grupo[m["grupo_id"]] = clientes_visibles_por_grupo.get(m["grupo_id"], 0) + 1
-    sin_restriccion = plazas_permitidas is None and vendedor_forzado_norm is None and desarrollador_forzado_norm is None
+    sin_restriccion = (
+        plazas_permitidas is None and vendedor_forzado_norm is None and desarrollador_forzado_norm is None
+        and vendedores_permitidos is None and desarrolladores_permitidos is None
+    )
     grupos = [g for g in grupos_raw if sin_restriccion or clientes_visibles_por_grupo.get(g["id"], 0) > 0]
 
     return clientes, grupos
@@ -4619,9 +4800,15 @@ def guardar_contacto_crm(contacto_id):
         plazas_permitidas = plazas_permitidas_usuario()
         vendedor_forzado = vendedor_forzado_usuario()
         desarrollador_forzado = desarrollador_forzado_usuario()
-        if plazas_permitidas is not None or vendedor_forzado or desarrollador_forzado:
+        vendedores_permitidos = vendedores_permitidos_usuario()
+        desarrolladores_permitidos = desarrolladores_permitidos_usuario()
+        if (
+            plazas_permitidas is not None or vendedor_forzado or desarrollador_forzado
+            or vendedores_permitidos is not None or desarrolladores_permitidos is not None
+        ):
             clientes_visibles, grupos_visibles = opciones_clientes_grupos_crm(
-                plazas_permitidas, vendedor_forzado, desarrollador_forzado
+                plazas_permitidas, vendedor_forzado, desarrollador_forzado,
+                vendedores_permitidos, desarrolladores_permitidos,
             )
             folios_visibles = {c["folio"] for c in clientes_visibles}
             grupos_visibles_ids = {g["id"] for g in grupos_visibles}
@@ -4696,7 +4883,7 @@ def generar_referencia_solicitud_transporte_terrestre(db):
 
 def construir_cotizaciones_crm(
     plazas_permitidas=None, vendedor_forzado=None, creador_extra=None, desarrollador_forzado=None,
-    solo_propias=False, usuario_id_actual=None,
+    solo_propias=False, usuario_id_actual=None, vendedores_permitidos=None, desarrolladores_permitidos=None,
 ):
     """Cotizaciones con su cliente (o prospecto) resuelto. Una cotización con
     cliente real hereda su restricción de plaza (igual que Clientes/Contactos);
@@ -4782,6 +4969,7 @@ def construir_cotizaciones_crm(
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
     desarrollador_forzado_norm = normalizar(desarrollador_forzado) if desarrollador_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     creador_extra_lower = creador_extra.lower() if creador_extra else None
     resultado = []
     for r in filas:
@@ -4805,7 +4993,13 @@ def construir_cotizaciones_crm(
                     continue
                 if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
                     continue
+                if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+                    continue
                 if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["cliente_desarrollador"]):
+                    continue
+                if desarrolladores_permitidos is not None and not any(
+                    coincide_desarrollador(d, r["cliente_desarrollador"]) for d in desarrolladores_permitidos
+                ):
                     continue
             cliente_texto = r["cliente_nombre"] or "#N/D"
             vendedor_texto = r["cliente_vendedor"] or "#N/D"
@@ -4835,7 +5029,13 @@ def construir_cotizaciones_crm(
             if not es_creador_extra:
                 if vendedor_forzado_norm is not None and normalizar(identidad_creador) != vendedor_forzado_norm:
                     continue
+                if vendedores_permitidos_norm is not None and normalizar(identidad_creador) not in vendedores_permitidos_norm:
+                    continue
                 if desarrollador_forzado_norm is not None and normalizar(identidad_creador) != desarrollador_forzado_norm:
+                    continue
+                if desarrolladores_permitidos is not None and normalizar(identidad_creador) not in {
+                    normalizar(d) for d in desarrolladores_permitidos
+                }:
                     continue
             # `identidad_creador` casi siempre es un VENDEDOR (el caso común:
             # cuenta de un vendedor asociada vía vendedor_asociado), pero el
@@ -6677,7 +6877,8 @@ def opciones_tipo_producto_crm():
     return tipos
 
 
-def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                      vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Clientes que puede elegir el usuario en sesión al crear/editar una
     cotización (select "Cliente"): mismo criterio de plaza y "solo su
     información" que el resto del CRM (construir_clientes_crm) — antes no
@@ -6692,6 +6893,7 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
     db.close()
 
     vendedor_forzado_norm = normalizar(vendedor_forzado) if vendedor_forzado else None
+    vendedores_permitidos_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
     clientes = []
     for r in clientes_raw:
         vkey = normalizar(r["vendedor"])
@@ -6700,13 +6902,20 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
+        if vendedores_permitidos_norm is not None and vkey not in vendedores_permitidos_norm:
+            continue
         if desarrollador_forzado is not None and not coincide_desarrollador(desarrollador_forzado, r["desarrollador"]):
+            continue
+        if desarrolladores_permitidos is not None and not any(
+            coincide_desarrollador(d, r["desarrollador"]) for d in desarrolladores_permitidos
+        ):
             continue
         clientes.append(r)
     return clientes
 
 
-def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None):
+def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=None, desarrollador_forzado=None,
+                                       vendedores_permitidos=None, desarrolladores_permitidos=None):
     """Contactos que puede elegir el usuario en sesión al crear/editar una
     cotización (select "Contacto"): mismo criterio que
     construir_contactos_crm — un contacto solo aparece si al menos uno de
@@ -6738,9 +6947,17 @@ def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=N
             continue
         if vendedor_forzado_norm is not None and vendedor_forzado_norm not in vendedores_contacto:
             continue
+        if vendedores_permitidos is not None and not (vendedores_contacto & {normalizar(v) for v in vendedores_permitidos}):
+            continue
         if desarrollador_forzado is not None:
             desarrolladores_contacto = r["desarrolladores"]
             if desarrolladores_contacto and not any(coincide_desarrollador(desarrollador_forzado, d) for d in desarrolladores_contacto):
+                continue
+        if desarrolladores_permitidos is not None:
+            desarrolladores_contacto = r["desarrolladores"]
+            if desarrolladores_contacto and not any(
+                coincide_desarrollador(d, dc) for d in desarrolladores_permitidos for dc in desarrolladores_contacto
+            ):
                 continue
         contactos.append(r)
     return contactos
@@ -7167,13 +7384,15 @@ def crm_seccion(slug):
 
     if slug == "clientes":
         clientes = construir_clientes_crm(
-            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+            vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
         )
         return render_template("crm_clientes.html", nav_groups=nav_groups, titulo_pagina=item["texto"], clientes=clientes)
 
     if slug == "contactos":
         contactos = construir_contactos_crm(
-            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+            vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
         )
         return render_template("crm_contactos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], contactos=contactos)
 
@@ -7182,12 +7401,14 @@ def crm_seccion(slug):
             plazas_permitidas_usuario(), vendedor_forzado_usuario(), creador_extra_cotizaciones_usuario(),
             desarrollador_forzado_usuario(),
             solo_propias=cotizaciones_solo_propias_usuario(), usuario_id_actual=session.get("usuario_id"),
+            vendedores_permitidos=vendedores_permitidos_usuario(), desarrolladores_permitidos=desarrolladores_permitidos_usuario(),
         )
         return render_template("crm_cotizaciones.html", nav_groups=nav_groups, titulo_pagina=item["texto"], cotizaciones=cotizaciones)
 
     if slug == "grupo":
         grupos = construir_grupos_crm(
-            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+            plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+            vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
         )
         return render_template("crm_grupos.html", nav_groups=nav_groups, titulo_pagina=item["texto"], grupos=grupos)
 
@@ -7262,7 +7483,8 @@ def crm_grupo_nuevo():
 @crm_catalogo_admin_required
 def crm_grupo_detalle(grupo_id):
     grupo = construir_grupo_detalle_crm(
-        grupo_id, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        grupo_id, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     if grupo is None:
         flash("Grupo no encontrado.")
@@ -7339,7 +7561,8 @@ def crm_grupo_eliminar(grupo_id):
 @crm_required
 def crm_cliente_detalle(folio):
     cliente = construir_cliente_detalle_crm(
-        folio, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        folio, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     if cliente is None:
         flash("Cliente no encontrado o sin permiso para verlo.")
@@ -7364,7 +7587,8 @@ def crm_contacto_nuevo():
             return redirect(url_for("crm_seccion", slug="contactos"))
 
     clientes, grupos = opciones_clientes_grupos_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     nav_groups = agrupar_nav_crm("contactos")
     return render_template(
@@ -7378,7 +7602,8 @@ def crm_contacto_nuevo():
 @crm_required
 def crm_contacto_detalle(contacto_id):
     contacto = construir_contacto_detalle_crm(
-        contacto_id, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        contacto_id, plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     if contacto is None:
         flash("Contacto no encontrado o sin permiso para verlo.")
@@ -7427,7 +7652,8 @@ def crm_contacto_editar(contacto_id):
     db.close()
 
     clientes, grupos = opciones_clientes_grupos_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     nav_groups = agrupar_nav_crm("contactos")
     return render_template(
@@ -7464,10 +7690,12 @@ def crm_cotizacion_nueva():
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
     clientes = opciones_clientes_cotizacion_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     contactos = opciones_contactos_cotizacion_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     nav_groups = agrupar_nav_crm("cotizaciones")
     return render_template(
@@ -7510,10 +7738,12 @@ def crm_cotizacion_editar(cotizacion_id):
     incoterms, modalidades = opciones_incoterm_modalidad_crm()
     tipos_ingreso_egreso = opciones_tipo_producto_crm()
     clientes = opciones_clientes_cotizacion_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     contactos = opciones_contactos_cotizacion_crm(
-        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario()
+        plazas_permitidas_usuario(), vendedor_forzado_usuario(), desarrollador_forzado_usuario(),
+        vendedores_permitidos_usuario(), desarrolladores_permitidos_usuario(),
     )
     lineas = obtener_lineas_cotizacion_crm(cotizacion_id)
     nav_groups = agrupar_nav_crm("cotizaciones")
@@ -8950,6 +9180,7 @@ def visibilidad_plazas():
         """
         SELECT u.id, u.email,
             coalesce(p.es_admin, false) AS es_admin,
+            p.tipo_usuario,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.solo_su_informacion, false) AS solo_su_informacion,
             p.vendedor_asociado, p.cotizaciones_creador_extra,
@@ -8964,6 +9195,12 @@ def visibilidad_plazas():
     plazas_por_usuario = {}
     for r in db.execute("SELECT user_id, plaza FROM app_user_plazas ORDER BY plaza"):
         plazas_por_usuario.setdefault(str(r["user_id"]), []).append(r["plaza"])
+    vendedores_permitidos_por_usuario = {}
+    for r in db.execute("SELECT user_id, vendedor FROM app_user_vendedores_permitidos ORDER BY vendedor"):
+        vendedores_permitidos_por_usuario.setdefault(str(r["user_id"]), []).append(r["vendedor"])
+    desarrolladores_permitidos_por_usuario = {}
+    for r in db.execute("SELECT user_id, desarrollador FROM app_user_desarrolladores_permitidos ORDER BY desarrollador"):
+        desarrolladores_permitidos_por_usuario.setdefault(str(r["user_id"]), []).append(r["desarrollador"])
     db.close()
 
     filas = []
@@ -8972,6 +9209,7 @@ def visibilidad_plazas():
             "id": u["id"],
             "email": u["email"],
             "es_admin": u["es_admin"],
+            "tipo_usuario": u["tipo_usuario"],
             "todas_las_plazas": u["todas_las_plazas"],
             "solo_su_informacion": u["solo_su_informacion"],
             "vendedor_asociado": u["vendedor_asociado"],
@@ -8980,6 +9218,8 @@ def visibilidad_plazas():
             "desarrollador_asociado": u["desarrollador_asociado"],
             "cotizaciones_solo_propias": u["cotizaciones_solo_propias"],
             "plazas": plazas_por_usuario.get(str(u["id"]), []),
+            "vendedores_permitidos": vendedores_permitidos_por_usuario.get(str(u["id"]), []),
+            "desarrolladores_permitidos": desarrolladores_permitidos_por_usuario.get(str(u["id"]), []),
         })
     return render_template("visibilidad_plazas.html", filas=filas)
 
@@ -8994,6 +9234,7 @@ def visibilidad_plazas_editar(user_id):
         return "No encontrado", 404
 
     if request.method == "POST":
+        tipo_usuario = request.form.get("tipo_usuario", "").strip()
         todas_las_plazas = request.form.get("todas_las_plazas") == "on"
         plazas_seleccionadas = request.form.getlist("plazas")
         solo_su_informacion = request.form.get("solo_su_informacion") == "on"
@@ -9002,6 +9243,8 @@ def visibilidad_plazas_editar(user_id):
         solo_su_informacion_desarrollador = request.form.get("solo_su_informacion_desarrollador") == "on"
         desarrollador_asociado = request.form.get("desarrollador_asociado", "").strip()
         cotizaciones_solo_propias = request.form.get("cotizaciones_solo_propias") == "on"
+        vendedores_permitidos_sel = request.form.getlist("vendedores_permitidos")
+        desarrolladores_permitidos_sel = request.form.getlist("desarrolladores_permitidos")
         vendedores_validos = {v["vendedor"] for v in db.execute("SELECT vendedor FROM catalogo_vendedores")}
         desarrolladores_validos = {d["desarrollador"] for d in db.execute("SELECT desarrollador FROM catalogo_desarrolladores")}
         correos_validos = {u["email"].lower() for u in db.execute("SELECT email FROM auth.users")}
@@ -9013,15 +9256,20 @@ def visibilidad_plazas_editar(user_id):
             flash("La persona extra de Cotizaciones debe ser un usuario con acceso a la app.")
         elif solo_su_informacion_desarrollador and desarrollador_asociado not in desarrolladores_validos:
             flash('Para marcar "Solo ver sus cuentas", elige un desarrollador del catálogo.')
+        elif not set(vendedores_permitidos_sel) <= vendedores_validos:
+            flash("Uno de los vendedores permitidos no existe en el catálogo.")
+        elif not set(desarrolladores_permitidos_sel) <= desarrolladores_validos:
+            flash("Uno de los desarrolladores permitidos no existe en el catálogo.")
         else:
             db.execute(
                 """
                 INSERT INTO app_user_permissions (
-                    user_id, todas_las_plazas, solo_su_informacion, vendedor_asociado, cotizaciones_creador_extra,
+                    user_id, tipo_usuario, todas_las_plazas, solo_su_informacion, vendedor_asociado, cotizaciones_creador_extra,
                     solo_su_informacion_desarrollador, desarrollador_asociado, cotizaciones_solo_propias
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id) DO UPDATE SET
+                    tipo_usuario = EXCLUDED.tipo_usuario,
                     todas_las_plazas = EXCLUDED.todas_las_plazas,
                     solo_su_informacion = EXCLUDED.solo_su_informacion,
                     vendedor_asociado = EXCLUDED.vendedor_asociado,
@@ -9031,7 +9279,7 @@ def visibilidad_plazas_editar(user_id):
                     cotizaciones_solo_propias = EXCLUDED.cotizaciones_solo_propias,
                     updated_at = now()
                 """,
-                (str(user_id), todas_las_plazas, solo_su_informacion, vendedor_asociado or None,
+                (str(user_id), tipo_usuario or None, todas_las_plazas, solo_su_informacion, vendedor_asociado or None,
                  cotizaciones_creador_extra or None, solo_su_informacion_desarrollador, desarrollador_asociado or None,
                  cotizaciones_solo_propias),
             )
@@ -9042,13 +9290,35 @@ def visibilidad_plazas_editar(user_id):
                         "INSERT INTO app_user_plazas (user_id, plaza) VALUES (%s, %s)",
                         (str(user_id), plaza),
                     )
+            db.execute("DELETE FROM app_user_vendedores_permitidos WHERE user_id = %s", (str(user_id),))
+            for vendedor in vendedores_permitidos_sel:
+                db.execute(
+                    "INSERT INTO app_user_vendedores_permitidos (user_id, vendedor) VALUES (%s, %s)",
+                    (str(user_id), vendedor),
+                )
+            db.execute("DELETE FROM app_user_desarrolladores_permitidos WHERE user_id = %s", (str(user_id),))
+            for desarrollador in desarrolladores_permitidos_sel:
+                db.execute(
+                    "INSERT INTO app_user_desarrolladores_permitidos (user_id, desarrollador) VALUES (%s, %s)",
+                    (str(user_id), desarrollador),
+                )
             db.commit()
             db.close()
             return redirect(url_for("visibilidad_plazas"))
 
     plazas_actuales = {r["plaza"] for r in db.execute("SELECT plaza FROM app_user_plazas WHERE user_id = %s", (str(user_id),))}
+    vendedores_permitidos_actuales = {
+        r["vendedor"] for r in db.execute(
+            "SELECT vendedor FROM app_user_vendedores_permitidos WHERE user_id = %s", (str(user_id),)
+        )
+    }
+    desarrolladores_permitidos_actuales = {
+        r["desarrollador"] for r in db.execute(
+            "SELECT desarrollador FROM app_user_desarrolladores_permitidos WHERE user_id = %s", (str(user_id),)
+        )
+    }
     permisos_actuales = db.execute(
-        "SELECT coalesce(todas_las_plazas, false) AS todas_las_plazas, "
+        "SELECT tipo_usuario, coalesce(todas_las_plazas, false) AS todas_las_plazas, "
         "coalesce(solo_su_informacion, false) AS solo_su_informacion, vendedor_asociado, cotizaciones_creador_extra, "
         "coalesce(solo_su_informacion_desarrollador, false) AS solo_su_informacion_desarrollador, desarrollador_asociado, "
         "coalesce(cotizaciones_solo_propias, false) AS cotizaciones_solo_propias "
@@ -9063,6 +9333,7 @@ def visibilidad_plazas_editar(user_id):
         usuario=usuario,
         plazas_catalogo=get_plazas_catalogo(),
         plazas_actuales=plazas_actuales,
+        tipo_usuario_actual=(permisos_actuales["tipo_usuario"] if permisos_actuales else None) or "",
         sin_restriccion=bool(permisos_actuales and permisos_actuales["todas_las_plazas"]),
         solo_su_informacion_actual=bool(permisos_actuales and permisos_actuales["solo_su_informacion"]),
         vendedor_asociado_actual=(permisos_actuales["vendedor_asociado"] if permisos_actuales else None),
@@ -9073,6 +9344,8 @@ def visibilidad_plazas_editar(user_id):
         vendedores_catalogo=vendedores_catalogo,
         desarrolladores_catalogo=desarrolladores_catalogo,
         usuarios_catalogo=usuarios_catalogo,
+        vendedores_permitidos_actuales=vendedores_permitidos_actuales,
+        desarrolladores_permitidos_actuales=desarrolladores_permitidos_actuales,
     )
 
 
