@@ -10,6 +10,10 @@
   .vp-plazas.deshabilitado { opacity: .45; pointer-events: none; }
   .vp-solo-info { margin: 1.25rem 0; padding-top: 1rem; border-top: 1px solid #e2e8f0; }
   .vp-solo-info select { margin-top: .5rem; max-width: 320px; }
+  .vp-tipo { margin-bottom: 1.5rem; }
+  .vp-tipo select { max-width: 380px; font-size: .95rem; padding: .5rem; }
+  .vp-tipo .hint { margin-top: .4rem; }
+  .vp-seccion[hidden] { display: none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -19,6 +23,21 @@
 
       <form method="post" action="{{ url_for('visibilidad_plazas_editar', user_id=usuario.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="vp-tipo">
+          <label for="vp-tipo-usuario" style="font-weight:600;display:block;margin-bottom:.4rem;">Tipo de usuario</label>
+          <select name="tipo_usuario" id="vp-tipo-usuario">
+            <option value="" {% if not tipo_usuario_actual %}selected{% endif %}>— Sin definir / personalizado —</option>
+            <option value="vendedor" {% if tipo_usuario_actual == "vendedor" %}selected{% endif %}>Vendedor</option>
+            <option value="team_leader_comercial" {% if tipo_usuario_actual == "team_leader_comercial" %}selected{% endif %}>Team Leader Comercial</option>
+            <option value="desarrollador" {% if tipo_usuario_actual == "desarrollador" %}selected{% endif %}>Desarrollador</option>
+            <option value="team_leader_desarrolladores" {% if tipo_usuario_actual == "team_leader_desarrolladores" %}selected{% endif %}>Team Leader de Desarrolladores</option>
+            <option value="sales_support" {% if tipo_usuario_actual == "sales_support" %}selected{% endif %}>Sales Support</option>
+            <option value="subdirector" {% if tipo_usuario_actual == "subdirector" %}selected{% endif %}>Subdirector</option>
+          </select>
+          <p class="hint" id="vp-tipo-explicacion"></p>
+        </div>
+
         <div class="field checkbox">
           <label><input type="checkbox" id="vp-todas" name="todas_las_plazas" {% if sin_restriccion %}checked{% endif %}> Todas las plazas</label>
         </div>
@@ -32,7 +51,7 @@
           {% endfor %}
         </div>
 
-        <div class="vp-solo-info" id="vp-solo-info">
+        <div class="vp-solo-info vp-seccion" id="vp-solo-info">
           <div class="field checkbox">
             <label><input type="checkbox" id="vp-solo-su-info" name="solo_su_informacion" {% if solo_su_informacion_actual %}checked{% endif %}> Solo ver su información</label>
           </div>
@@ -53,7 +72,7 @@
           </select>
         </div>
 
-        <div class="vp-solo-info" id="vp-solo-cuentas">
+        <div class="vp-solo-info vp-seccion" id="vp-solo-cuentas">
           <div class="field checkbox">
             <label><input type="checkbox" id="vp-solo-su-cuentas" name="solo_su_informacion_desarrollador" {% if solo_su_informacion_desarrollador_actual %}checked{% endif %}> Solo ver sus cuentas</label>
           </div>
@@ -66,7 +85,33 @@
           </select>
         </div>
 
-        <div class="vp-solo-info" id="vp-solo-mias">
+        <div class="vp-solo-info vp-seccion" id="vp-vendedores-permitidos">
+          <p style="font-weight:600;margin-bottom:.3rem;">Vendedores permitidos</p>
+          <p class="hint">Este usuario verá las cuentas (Clientes, Contactos, Grupos y Cotizaciones) de TODOS los vendedores que marques aquí — para "Sales Support" que da seguimiento a varios vendedores puntuales, sin importar su plaza.</p>
+          <div class="vp-plazas" id="vp-lista-vendedores-permitidos">
+            {% for v in vendedores_catalogo %}
+            <label>
+              <input type="checkbox" name="vendedores_permitidos" value="{{ v }}" {% if v in vendedores_permitidos_actuales %}checked{% endif %}>
+              {{ v }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="vp-solo-info vp-seccion" id="vp-desarrolladores-permitidos">
+          <p style="font-weight:600;margin-bottom:.3rem;">Desarrolladores permitidos</p>
+          <p class="hint">Este usuario verá las cuentas de TODOS los desarrolladores que marques aquí — para un "Team Leader de Desarrolladores" (incluye ahí a la propia persona si también debe ver sus cuentas) o para "Sales Support".</p>
+          <div class="vp-plazas" id="vp-lista-desarrolladores-permitidos">
+            {% for d in desarrolladores_catalogo %}
+            <label>
+              <input type="checkbox" name="desarrolladores_permitidos" value="{{ d }}" {% if d in desarrolladores_permitidos_actuales %}checked{% endif %}>
+              {{ d }}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="vp-solo-info vp-seccion" id="vp-solo-mias">
           <div class="field checkbox">
             <label><input type="checkbox" id="vp-cotizaciones-solo-propias" name="cotizaciones_solo_propias" {% if cotizaciones_solo_propias_actual %}checked{% endif %}> Solo ver las que crea</label>
           </div>
@@ -85,6 +130,77 @@
   checkTodas.addEventListener("change", () => {
     listaPlazas.classList.toggle("deshabilitado", checkTodas.checked);
   });
+
+  // "Tipo de usuario" es solo una capa de conveniencia: al elegir uno,
+  // muestra nada más las secciones relevantes y precarga valores
+  // razonables (todas_las_plazas, solo_su_informacion, etc.) — pero todo
+  // sigue siendo editable a mano después, y "— Sin definir / personalizado —"
+  // muestra todo tal como funcionaba antes de que existiera este selector.
+  const selectorTipo = document.getElementById("vp-tipo-usuario");
+  const checkSoloInfo = document.getElementById("vp-solo-su-info");
+  const checkSoloCuentas = document.getElementById("vp-solo-su-cuentas");
+  const secciones = {
+    plazas: document.getElementById("vp-lista-plazas").closest("div"),
+    soloInfo: document.getElementById("vp-solo-info"),
+    soloCuentas: document.getElementById("vp-solo-cuentas"),
+    vendedoresPermitidos: document.getElementById("vp-vendedores-permitidos"),
+    desarrolladoresPermitidos: document.getElementById("vp-desarrolladores-permitidos"),
+    soloMias: document.getElementById("vp-solo-mias"),
+  };
+  const explicacion = document.getElementById("vp-tipo-explicacion");
+
+  const CONFIG_TIPO = {
+    "": { mostrar: Object.keys(secciones), texto: "" },
+    vendedor: {
+      mostrar: ["plazas", "soloInfo", "soloMias"],
+      texto: 'Ve solo su propia venta y cotizaciones. Marca "Solo ver su información" y elige su vendedor.',
+      todasLasPlazas: false, soloInfo: true, soloCuentas: false,
+    },
+    team_leader_comercial: {
+      mostrar: ["plazas", "soloMias"],
+      texto: "Ve todos los vendedores/clientes de las plazas que le asignes abajo — deja sin marcar \"Solo ver su información\".",
+      todasLasPlazas: false, soloInfo: false, soloCuentas: false,
+    },
+    desarrollador: {
+      mostrar: ["plazas", "soloCuentas", "soloMias"],
+      texto: 'Ve solo sus propias cuentas. Marca "Solo ver sus cuentas" y elige su desarrollador.',
+      todasLasPlazas: false, soloInfo: false, soloCuentas: true,
+    },
+    team_leader_desarrolladores: {
+      mostrar: ["soloCuentas", "desarrolladoresPermitidos", "soloMias"],
+      texto: "Ve sus propias cuentas + las de un grupo puntual de otros desarrolladores. Elige su desarrollador arriba y agrégalo también (junto con los demás) en \"Desarrolladores permitidos\" abajo.",
+      todasLasPlazas: true, soloInfo: false, soloCuentas: true,
+    },
+    sales_support: {
+      mostrar: ["vendedoresPermitidos", "desarrolladoresPermitidos", "soloMias"],
+      texto: "Ve las cuentas de los vendedores y/o desarrolladores puntuales que marques abajo, sin importar su plaza.",
+      todasLasPlazas: true, soloInfo: false, soloCuentas: false,
+    },
+    subdirector: {
+      mostrar: [],
+      texto: "Ve todo el área comercial, sin restricción.",
+      todasLasPlazas: true, soloInfo: false, soloCuentas: false,
+    },
+  };
+
+  function aplicarTipo(valor, forzarValores) {
+    const cfg = CONFIG_TIPO[valor] || CONFIG_TIPO[""];
+    Object.keys(secciones).forEach((clave) => {
+      secciones[clave].hidden = !cfg.mostrar.includes(clave);
+    });
+    explicacion.textContent = cfg.texto;
+    if (forzarValores && valor !== "") {
+      if (typeof cfg.todasLasPlazas === "boolean") {
+        checkTodas.checked = cfg.todasLasPlazas;
+        listaPlazas.classList.toggle("deshabilitado", checkTodas.checked);
+      }
+      if (typeof cfg.soloInfo === "boolean") checkSoloInfo.checked = cfg.soloInfo;
+      if (typeof cfg.soloCuentas === "boolean") checkSoloCuentas.checked = cfg.soloCuentas;
+    }
+  }
+
+  selectorTipo.addEventListener("change", () => aplicarTipo(selectorTipo.value, true));
+  aplicarTipo(selectorTipo.value, false);
 })();
 </script>
 {% endblock %}
