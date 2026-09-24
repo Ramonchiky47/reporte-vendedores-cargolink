@@ -94,6 +94,41 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Copia (CC)</h2>
+      <p class="hint" style="margin-top:-.5rem;">Estos correos reciben copia de todos los correos de Antigüedad de Saldos que se envíen a clientes (semanal o "Enviar ahora").</p>
+      <form method="post" action="{{ url_for('administracion_antiguedad_saldos_copia_agregar') }}" class="row" style="align-items:flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="copia-correo">Agregar correo en copia</label>
+          <input type="email" id="copia-correo" name="correo" placeholder="nombre@empresa.com" required>
+        </div>
+        <div>
+          <button type="submit" class="btn">+ Agregar</button>
+        </div>
+      </form>
+      {% if copia_correos %}
+      <table>
+        <thead><tr><th>Correo</th><th></th></tr></thead>
+        <tbody>
+          {% for c in copia_correos %}
+          <tr>
+            <td>{{ c.correo }}</td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('administracion_antiguedad_saldos_copia_eliminar', copia_id=c.id) }}" onsubmit="return confirm('¿Quitar este correo de la copia?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn small danger">Quitar</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+        <p class="empty">Todavía no hay correos en copia.</p>
+      {% endif %}
+    </div>
+
     {% if error %}
     <div class="card"><p class="empty">No se pudo obtener el reporte: {{ error }}</p></div>
     {% elif not reporte or not reporte.filas %}

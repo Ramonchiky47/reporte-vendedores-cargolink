@@ -234,6 +234,13 @@ def init_db():
         );
     """)
     db.execute("""
+        CREATE TABLE IF NOT EXISTS antiguedad_saldos_copia_correos (
+            id bigint generated always as identity primary key,
+            correo text not null unique,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS catalogo_clientes_por_pagar (
             id bigint generated always as identity primary key,
             id_cliente text not null unique,
@@ -1221,14 +1228,16 @@ def obtener_contactos_por_cliente():
     return {f["id_cliente"]: (f["nombre"], f["correo"].strip()) for f in filas}
 
 
-def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
+def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None):
     """Envía un correo HTML. Si existe RESEND_API_KEY se usa Resend (API
     HTTPS, sin necesidad de verificar dominio propio — funciona de
     inmediato con su remitente de pruebas onboarding@resend.dev);
     si no, se usa SMTP con las credenciales en variables de entorno
     (SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_PASSWORD, y opcionalmente
     SMTP_FROM si el remitente es distinto del usuario).
-    adjuntos: lista opcional de (nombre_archivo, bytes_pdf) a adjuntar."""
+    adjuntos: lista opcional de (nombre_archivo, bytes_pdf) a adjuntar.
+    cc: lista opcional de correos en copia (mismo mensaje para todos)."""
+    cc = [c for c in (cc or []) if c]
     resend_api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
     if resend_api_key:
         remitente_resend = (os.environ.get("RESEND_FROM") or "onboarding@resend.dev").strip()
@@ -1238,6 +1247,8 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
             "subject": asunto,
             "html": cuerpo_html,
         }
+        if cc:
+            payload["cc"] = cc
         if adjuntos:
             payload["attachments"] = [
                 {"filename": nombre_archivo, "content": base64.b64encode(contenido).decode("ascii")}
@@ -1268,8 +1279,11 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
         # intermitente con errores de socket (p. ej. "Device or resource busy")
         # por las restricciones del entorno serverless. SendGrid ofrece una API
         # HTTPS equivalente que evita abrir sockets TCP directos.
+        personalizacion = {"to": [{"email": destinatario}]}
+        if cc:
+            personalizacion["cc"] = [{"email": c} for c in cc]
         payload = {
-            "personalizations": [{"to": [{"email": destinatario}]}],
+            "personalizations": [personalizacion],
             "from": {"email": remitente},
             "subject": asunto,
             "content": [
@@ -1301,6 +1315,8 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None):
     msg["Subject"] = asunto
     msg["From"] = remitente
     msg["To"] = destinatario
+    if cc:
+        msg["Cc"] = ", ".join(cc)
     msg.set_content("Este correo requiere un cliente de correo compatible con HTML.")
     msg.add_alternative(cuerpo_html, subtype="html")
     for nombre_archivo, contenido in (adjuntos or []):
@@ -3776,6 +3792,10 @@ def administracion_antiguedad_saldos():
 
     contactos_por_id = obtener_contactos_por_cliente()
 
+    db = get_db()
+    copia_correos = db.execute("SELECT id, correo FROM antiguedad_saldos_copia_correos ORDER BY creado_en").fetchall()
+    db.close()
+
     return render_template(
         "administracion_antiguedad_saldos.html",
         reporte=reporte,
@@ -3788,6 +3808,7 @@ def administracion_antiguedad_saldos():
         monedas_disponibles=monedas_disponibles,
         envio_activo=envio_activo,
         contactos_por_id=contactos_por_id,
+        copia_correos=copia_correos,
     )
 
 
@@ -3830,6 +3851,52 @@ def administracion_antiguedad_saldos_guardar_envio():
     return redirect(url_for("administracion_antiguedad_saldos"))
 
 
+def obtener_copia_correos_antiguedad_saldos():
+    db = get_db()
+    filas = db.execute("SELECT correo FROM antiguedad_saldos_copia_correos").fetchall()
+    db.close()
+    return [f["correo"] for f in filas]
+
+
+@app.route("/administracion/antiguedad-saldos/copia/agregar", methods=["POST"])
+@login_required
+def administracion_antiguedad_saldos_copia_agregar():
+    if not usuario_puede_ver_administracion():
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    correo = request.form.get("correo", "").strip().lower()
+    if not correo or "@" not in correo or " " in correo:
+        flash("Captura un correo válido para agregarlo en copia.")
+        return redirect(url_for("administracion_antiguedad_saldos"))
+
+    db = get_db()
+    try:
+        db.execute("INSERT INTO antiguedad_saldos_copia_correos (correo) VALUES (%s)", (correo,))
+        db.commit()
+        flash(f"{correo} se agregó en copia a los correos de Antigüedad de Saldos.")
+    except psycopg.errors.UniqueViolation:
+        db.rollback()
+        flash(f"{correo} ya estaba en la lista de copia.")
+    db.close()
+    return redirect(url_for("administracion_antiguedad_saldos"))
+
+
+@app.route("/administracion/antiguedad-saldos/copia/<int:copia_id>/eliminar", methods=["POST"])
+@login_required
+def administracion_antiguedad_saldos_copia_eliminar(copia_id):
+    if not usuario_puede_ver_administracion():
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    db = get_db()
+    db.execute("DELETE FROM antiguedad_saldos_copia_correos WHERE id = %s", (copia_id,))
+    db.commit()
+    db.close()
+    flash("Correo quitado de la copia.")
+    return redirect(url_for("administracion_antiguedad_saldos"))
+
+
 @app.route("/administracion/antiguedad-saldos/enviar-ahora", methods=["POST"])
 @login_required
 def administracion_antiguedad_saldos_enviar_ahora():
@@ -3857,6 +3924,7 @@ def administracion_antiguedad_saldos_enviar_ahora():
     except RuntimeError as e:
         flash(f"No se pudo preparar el envío: {e}")
         return redirect(url_for("administracion_antiguedad_saldos"))
+    copia_correos = obtener_copia_correos_antiguedad_saldos()
     contactos_por_id = obtener_contactos_por_cliente()
 
     nombre_por_id = {f["id_cliente"]: f["cliente"] for f in reporte["filas"] if f["id_cliente"]}
@@ -3909,7 +3977,7 @@ def administracion_antiguedad_saldos_enviar_ahora():
                 bloques_moneda=bloques_moneda,
             )
             try:
-                enviar_correo_smtp(correo, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos)
+                enviar_correo_smtp(correo, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos, cc=copia_correos)
                 enviados += 1
             except RuntimeError as e:
                 flash(f"No se pudo enviar: {e}")
