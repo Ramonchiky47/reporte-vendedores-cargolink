@@ -1208,7 +1208,7 @@ def extraer_datos_recibo_ia(nombre_archivo, contenido, tipo_mime):
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "claude-sonnet-5",
+        "model": "claude-haiku-4-5-20251001",
         "max_tokens": 500,
         "messages": [{"role": "user", "content": [bloque_archivo, {"type": "text", "text": prompt}]}],
     }
