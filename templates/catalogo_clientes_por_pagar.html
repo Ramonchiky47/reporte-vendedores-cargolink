@@ -19,7 +19,8 @@
         Elige el cliente tal como lo trae CargoLink en Antigüedad de Saldos — así el correo semanal se manda al
         correo correcto sin depender de que los nombres coincidan exactamente. Si el cliente ya tiene un correo
         capturado en el CRM, se muestra junto al nombre y se rellena solo — los que no traen nada son los que
-        todavía necesitas capturar.
+        todavía necesitas capturar. Puedes escribir más de un correo separándolos con coma (se le manda una copia
+        del correo semanal a cada uno).
       </p>
       {% if error_clientes %}
       <p class="empty">No se pudo traer la lista de clientes de CargoLink: {{ error_clientes }}</p>
@@ -42,7 +43,7 @@
         </div>
         <div class="field correo">
           <label for="correo">Correo</label>
-          <input type="email" id="correo" name="correo">
+          <input type="email" id="correo" name="correo" multiple placeholder="correo@cliente.com, otro@cliente.com">
         </div>
         <div class="field telefono">
           <label for="telefono">Teléfono</label>

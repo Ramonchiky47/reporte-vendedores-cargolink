@@ -200,7 +200,7 @@
                 <td>{{ f.cliente }}</td>
                 <td>
                   {% if contacto %}
-                  {{ contacto[1] }}
+                  {{ contacto[1] | join(', ') }}
                   {% else %}
                   <span class="adm-badge">falta capturar</span>
                   {% endif %}
@@ -236,7 +236,7 @@
                 <td><span class="adm-flecha">🔍</span>{{ g.cliente }}</td>
                 <td>
                   {% if contacto %}
-                  {{ contacto[1] }}
+                  {{ contacto[1] | join(', ') }}
                   {% else %}
                   <span class="adm-badge">falta capturar</span>
                   {% endif %}

@@ -1214,18 +1214,31 @@ def descargar_antiguedad_saldos_cargolink():
     return {"filas": filas, "facturas": facturas, "totales_moneda": totales_moneda, "buckets": buckets}
 
 
+def normalizar_lista_correos(texto):
+    """'a@x.com; b@y.com ,, c@z.com' -> ['a@x.com', 'b@y.com', 'c@z.com'] —
+    permite capturar varios correos para un mismo cliente separándolos con
+    coma o punto y coma."""
+    return [c.strip() for c in re.split(r"[,;]", texto or "") if c.strip()]
+
+
 def obtener_contactos_por_cliente():
-    """{id_cliente: (nombre, correo)} desde el catálogo propio Clientes por
+    """{id_cliente: (nombre, [correos])} desde el catálogo propio Clientes por
     Pagar (Catálogos → Clientes por Pagar) — NO desde el CRM ni desde
     CargoLink. El id_cliente es el mismo identificador que usa CargoLink
     en Antigüedad de Saldos, así que el cruce es exacto (nada de emparejar
-    nombres truncados)."""
+    nombres truncados). El campo correo admite varias direcciones separadas
+    por coma o punto y coma (p.ej. cobranza + un contacto adicional)."""
     db = get_db()
     filas = db.execute(
         "SELECT id_cliente, nombre, correo FROM catalogo_clientes_por_pagar WHERE correo IS NOT NULL AND correo <> ''"
     ).fetchall()
     db.close()
-    return {f["id_cliente"]: (f["nombre"], f["correo"].strip()) for f in filas}
+    resultado = {}
+    for f in filas:
+        correos = normalizar_lista_correos(f["correo"])
+        if correos:
+            resultado[f["id_cliente"]] = (f["nombre"], correos)
+    return resultado
 
 
 def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None):
@@ -3955,7 +3968,8 @@ def administracion_antiguedad_saldos_enviar_ahora():
         if not entrada:
             fallidos.append(f"{cliente} (sin correo en el catálogo de Clientes por Pagar)")
             continue
-        contactos = [entrada]
+        nombre_contacto_cliente, correos_cliente = entrada
+        contactos = [(nombre_contacto_cliente, correo) for correo in correos_cliente]
 
         facturas_cliente = [f for f in reporte["facturas"] if f["cliente"] == cliente]
         if not facturas_cliente:
@@ -9942,7 +9956,7 @@ def catalogo_clientes_por_pagar():
     if request.method == "POST":
         id_cliente = request.form.get("id_cliente", "").strip()
         nombre = request.form.get("nombre", "").strip()
-        correo = request.form.get("correo", "").strip()
+        correo = ", ".join(normalizar_lista_correos(request.form.get("correo", "")))
         telefono = request.form.get("telefono", "").strip()
         if not id_cliente or not nombre:
             flash("Debes elegir un cliente de la lista.")
@@ -9975,7 +9989,7 @@ def catalogo_clientes_por_pagar():
 def catalogo_clientes_por_pagar_editar(fila_id):
     db = get_db()
     if request.method == "POST":
-        correo = request.form.get("correo", "").strip()
+        correo = ", ".join(normalizar_lista_correos(request.form.get("correo", "")))
         telefono = request.form.get("telefono", "").strip()
         db.execute(
             "UPDATE catalogo_clientes_por_pagar SET correo = %s, telefono = %s WHERE id = %s",

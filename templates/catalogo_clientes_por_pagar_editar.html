@@ -4,13 +4,13 @@
 {% block content %}
     <div class="card">
       <h2>Editar cliente</h2>
-      <p class="hint">Cliente asociado: <b>{{ fila.nombre }}</b> (para cambiar el cliente, elimina este registro y agrégalo de nuevo).</p>
+      <p class="hint">Cliente asociado: <b>{{ fila.nombre }}</b> (para cambiar el cliente, elimina este registro y agrégalo de nuevo). Puedes escribir más de un correo separándolos con coma.</p>
       <form method="post" action="{{ url_for('catalogo_clientes_por_pagar_editar', fila_id=fila.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="row">
           <div class="field">
             <label for="correo">Correo</label>
-            <input type="email" id="correo" name="correo" value="{{ fila.correo or '' }}">
+            <input type="email" id="correo" name="correo" multiple value="{{ fila.correo or '' }}" placeholder="correo@cliente.com, otro@cliente.com">
           </div>
           <div class="field">
             <label for="telefono">Teléfono</label>
