@@ -199,10 +199,12 @@
                 </td>
                 <td>{{ f.cliente }}</td>
                 <td>
-                  {% if contacto %}
-                  {{ contacto[1] | join(', ') }}
-                  {% else %}
+                  {% if not contacto %}
                   <span class="adm-badge">falta capturar</span>
+                  {% elif contacto[1]|length > 2 %}
+                  <button type="button" class="btn small secondary adm-correos-trigger" data-cliente="{{ f.cliente }}" data-correos="{{ contacto[1]|join(',') }}">{{ contacto[1]|length }} correos</button>
+                  {% else %}
+                  {{ contacto[1] | join(', ') }}
                   {% endif %}
                 </td>
                 <td>{{ f.moneda }}</td>
@@ -235,10 +237,12 @@
                 </td>
                 <td><span class="adm-flecha">🔍</span>{{ g.cliente }}</td>
                 <td>
-                  {% if contacto %}
-                  {{ contacto[1] | join(', ') }}
-                  {% else %}
+                  {% if not contacto %}
                   <span class="adm-badge">falta capturar</span>
+                  {% elif contacto[1]|length > 2 %}
+                  <button type="button" class="btn small secondary adm-correos-trigger" data-cliente="{{ g.cliente }}" data-correos="{{ contacto[1]|join(',') }}">{{ contacto[1]|length }} correos</button>
+                  {% else %}
+                  {{ contacto[1] | join(', ') }}
                   {% endif %}
                 </td>
                 <td>{% for f in g.filas %}<span class="adm-moneda-badge">{{ f.moneda }}</span>{% endfor %}</td>
@@ -526,6 +530,24 @@
     if (!fila) return;
     mostrarExportarModal();
     abrirCliente(fila.dataset.clienteReal, fila.dataset.moneda);
+  });
+
+  // Botón "N correos" (cuando un cliente tiene más de dos capturados en
+  // Catálogos → Clientes por Pagar): se abre el mismo popup, sin los
+  // enlaces de exportar, listando los correos completos. stopPropagation
+  // evita que el clic también dispare abrirCliente()/el desglose de la fila.
+  document.querySelectorAll(".adm-correos-trigger").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const correos = btn.dataset.correos.split(",");
+      const filasHtml = correos.map((c) => `<li>${c}</li>`).join("");
+      ocultarExportarModal();
+      contenido.innerHTML = `
+        <p class="adm-modal-titulo">${btn.dataset.cliente} — correos asociados</p>
+        <ul style="margin:0; padding-left:1.25rem; line-height:1.8;">${filasHtml}</ul>
+      `;
+      modal.classList.add("abierto");
+    });
   });
 
   function cerrarModal() { modal.classList.remove("abierto"); mostrarExportarModal(); }
