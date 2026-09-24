@@ -1164,7 +1164,10 @@ def adjuntar_comprobante_pago_cargolink(id_mov_banco, nombre_archivo, contenido,
     bancario (Pago) ya existente en CargoLink — el mismo endpoint que usa
     el botón 'Subir Comprobante Pago' en Egresos → Pagos."""
     sesion, headers, token = _conectar_pagos_cargolink()
-    archivos = {"files": (nombre_archivo, contenido, tipo_mime)}
+    # El backend de CargoLink espera el campo como arreglo ("files[]"): con
+    # el nombre "files" a secas guarda el PDF en su servidor pero NO lo
+    # vincula al movimiento bancario (confirmado en pruebas reales).
+    archivos = {"files[]": (nombre_archivo, contenido, tipo_mime)}
     r = sesion.post(
         f"https://fwd.cargolink.mx/ws/uploadEvidenciasMovBanco.php?token={token}&id_movBanco={id_mov_banco}",
         files=archivos, headers=headers, timeout=90,
