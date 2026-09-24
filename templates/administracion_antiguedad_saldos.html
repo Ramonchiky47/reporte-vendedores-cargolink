@@ -163,6 +163,15 @@
           {% endfor %}
         </div>
         {% endif %}
+        <div class="adm-monedas" id="selector-bucket">
+          <button type="button" class="adm-moneda-pill activo" data-bucket="">Todas las columnas</button>
+          {% for key, label in buckets %}
+          <button type="button" class="adm-moneda-pill" data-bucket="{{ key }}">{{ label }}</button>
+          {% if key == 'porvencer' %}
+          <button type="button" class="adm-moneda-pill" data-bucket="vencido">Vencido</button>
+          {% endif %}
+          {% endfor %}
+        </div>
       </div>
       <form method="post" action="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -181,7 +190,8 @@
             <tbody>
               {% for f in reporte.filas %}
               {% set contacto = contactos_por_id.get(f.id_cliente) %}
-              <tr data-cliente="{{ f.cliente|lower }}" data-cliente-real="{{ f.cliente }}" data-moneda="{{ f.moneda }}" data-total="{{ f.total }}">
+              <tr data-cliente="{{ f.cliente|lower }}" data-cliente-real="{{ f.cliente }}" data-moneda="{{ f.moneda }}" data-total="{{ f.total }}"
+                  data-buckets="{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.total_vencido %}vencido{% endif %}">
                 <td class="adm-check-col">
                   {% if f.id_cliente %}
                   <input type="checkbox" name="cliente_envio" value="{{ f.id_cliente }}" {{ 'checked' if f.id_cliente in envio_activo else '' }}>
@@ -216,7 +226,8 @@
               {% for g in clientes_agrupados %}
               {% set contacto = contactos_por_id.get(g.id_cliente) %}
               <tr class="adm-grupo-header" data-cliente="{{ g.cliente|lower }}" data-grupo="grupo-{{ loop.index }}"
-                  data-cliente-grupo="{{ g.cliente }}" data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}">
+                  data-cliente-grupo="{{ g.cliente }}" data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}"
+                  data-buckets="{% for f in g.filas %}{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.total_vencido %}vencido {% endif %}{% endfor %}">
                 <td class="adm-check-col">
                   {% if g.id_cliente %}
                   <input type="checkbox" name="cliente_envio" value="{{ g.id_cliente }}" {{ 'checked' if g.id_cliente in envio_activo else '' }}>
@@ -247,7 +258,8 @@
                     </thead>
                     <tbody>
                       {% for f in g.filas %}
-                      <tr data-cliente-real="{{ g.cliente }}" data-moneda="{{ f.moneda }}">
+                      <tr data-cliente-real="{{ g.cliente }}" data-moneda="{{ f.moneda }}"
+                          data-buckets="{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.total_vencido %}vencido{% endif %}">
                         <td>{{ f.moneda }}</td>
                         {% for key, _ in buckets %}
                         <td class="{{ 'vencido' if key != 'porvencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
@@ -296,30 +308,38 @@
   const vistaAgrupada = document.getElementById("vista-agrupada");
   const buscador = document.getElementById("cliente-buscador");
   let monedaFiltro = "";
+  let bucketFiltro = "";
 
   function aplicarFiltros() {
     const q = buscador ? buscador.value.trim().toLowerCase() : "";
 
     if (vistaDetallada) {
       vistaDetallada.querySelectorAll("tbody > tr[data-cliente]").forEach((tr) => {
+        const buckets = (tr.dataset.buckets || "").trim().split(/\s+/).filter(Boolean);
         const coincideTexto = !q || tr.dataset.cliente.includes(q);
         const coincideMoneda = !monedaFiltro || tr.dataset.moneda === monedaFiltro;
-        tr.hidden = !(coincideTexto && coincideMoneda);
+        const coincideBucket = !bucketFiltro || buckets.includes(bucketFiltro);
+        tr.hidden = !(coincideTexto && coincideMoneda && coincideBucket);
       });
     }
 
     if (vistaAgrupada) {
       vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
         const monedas = (header.dataset.monedas || "").split(",");
+        const buckets = (header.dataset.buckets || "").trim().split(/\s+/).filter(Boolean);
         const coincideTexto = !q || header.dataset.cliente.includes(q);
         const coincideMoneda = !monedaFiltro || monedas.includes(monedaFiltro);
-        const visible = coincideTexto && coincideMoneda;
+        const coincideBucket = !bucketFiltro || buckets.includes(bucketFiltro);
+        const visible = coincideTexto && coincideMoneda && coincideBucket;
         header.hidden = !visible;
         const detalle = vistaAgrupada.querySelector('.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
         if (detalle) {
           if (!visible) detalle.hidden = true;
           detalle.querySelectorAll("tr[data-moneda]").forEach((fila) => {
-            fila.hidden = !!monedaFiltro && fila.dataset.moneda !== monedaFiltro;
+            const filaBuckets = (fila.dataset.buckets || "").trim().split(/\s+/).filter(Boolean);
+            const filaCoincideMoneda = !monedaFiltro || fila.dataset.moneda === monedaFiltro;
+            const filaCoincideBucket = !bucketFiltro || filaBuckets.includes(bucketFiltro);
+            fila.hidden = !(filaCoincideMoneda && filaCoincideBucket);
           });
         }
       });
@@ -335,6 +355,18 @@
         selectorMoneda.querySelectorAll(".adm-moneda-pill").forEach((p) => p.classList.remove("activo"));
         pill.classList.add("activo");
         monedaFiltro = pill.dataset.moneda || "";
+        aplicarFiltros();
+      });
+    });
+  }
+
+  const selectorBucket = document.getElementById("selector-bucket");
+  if (selectorBucket) {
+    selectorBucket.querySelectorAll(".adm-moneda-pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        selectorBucket.querySelectorAll(".adm-moneda-pill").forEach((p) => p.classList.remove("activo"));
+        pill.classList.add("activo");
+        bucketFiltro = pill.dataset.bucket || "";
         aplicarFiltros();
       });
     });
