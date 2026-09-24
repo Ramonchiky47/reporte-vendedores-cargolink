@@ -116,6 +116,10 @@
             <button type="submit" class="btn small danger">Descartar</button>
           </form>
           {% endif %}
+          <form method="post" action="{{ url_for('administracion_recibos_pago_eliminar', recibo_id=r.id) }}" onsubmit="return confirm('¿Eliminar esta fila del historial? Esto no borra nada de CargoLink, solo la quita de esta lista.');" style="margin-top:.3rem;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn small danger">Eliminar</button>
+          </form>
         </td>
       </tr>
       {% endfor %}

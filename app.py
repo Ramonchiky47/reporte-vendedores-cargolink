@@ -4564,6 +4564,16 @@ def administracion_recibos_pago_descartar(recibo_id):
     return redirect(url_for("administracion_recibos_pago"))
 
 
+@app.route("/administracion/recibos-pago/<int:recibo_id>/eliminar", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_eliminar(recibo_id):
+    db = get_db()
+    db.execute("DELETE FROM recibos_pago_procesados WHERE id = %s", (recibo_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
 @app.route("/reportes/por-vendedor")
 @reportes_required
 def reportes_por_vendedor():
