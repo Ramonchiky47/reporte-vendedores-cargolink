@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Recibos de Pago{% endblock %}
+{% set active = "administracion_recibos_pago" %}
+{% block extra_head %}
+<style>
+  main { max-width: 1300px; }
+  .rp-tabla { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .rp-tabla th, .rp-tabla td { text-align: left; padding: .6rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .rp-tabla select { width: 100%; max-width: 320px; padding: .35rem; font-size: .8rem; }
+  .rp-badge { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
+  .rp-badge.pendiente { background: #fef3c7; color: #92400e; }
+  .rp-badge.adjuntado { background: #dcfce7; color: #166534; }
+  .rp-badge.descartado { background: #e5e7eb; color: #374151; }
+  .rp-badge.error { background: #fee2e2; color: #991b1b; }
+  .rp-mensaje { color: var(--danger-dark); font-size: .75rem; margin-top: .3rem; }
+  .rp-accion-form { display: flex; flex-direction: column; gap: .4rem; margin-top: .3rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Recibos de Pago</h2>
+  <p class="hint">
+    Sube uno o varios recibos/comprobantes de pago (PDF, PNG o JPG). Cada uno se lee con IA (monto, moneda,
+    proveedor y fecha), se coteja contra el catálogo de proveedores y los movimientos bancarios de
+    <b>Egresos → Pagos</b> en CargoLink, y se te pide confirmar antes de adjuntar nada allá — nunca se sube
+    automáticamente sin tu revisión.
+  </p>
+  <form method="post" action="{{ url_for('administracion_recibos_pago') }}" enctype="multipart/form-data" class="row" style="align-items:flex-end;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <label for="recibos">Recibos</label>
+      <input type="file" id="recibos" name="recibos" accept="application/pdf,image/png,image/jpeg" multiple required>
+    </div>
+    <div><button type="submit" class="btn">Subir y leer</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Procesados</h2>
+  {% if not recibos %}
+  <p class="empty">Todavía no has subido ningún recibo.</p>
+  {% else %}
+  <table class="rp-tabla">
+    <thead>
+      <tr>
+        <th>Archivo</th><th>Leído</th><th>Proveedor (CargoLink)</th><th>Pago (CargoLink)</th><th>Estatus</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in recibos %}
+      <tr>
+        <td>{{ r.nombre_archivo }}<br><small class="hint">{{ r.creado_en.strftime("%d/%m/%Y %H:%M") }}</small></td>
+        <td>
+          {% if r.monto_extraido is not none %}
+          {{ r.moneda_extraida }} ${{ "{:,.2f}".format(r.monto_extraido) }}<br>
+          <small>{{ r.proveedor_extraido or "—" }}</small><br>
+          <small>{{ r.fecha_extraida.strftime("%d/%m/%Y") if r.fecha_extraida else "sin fecha" }}</small>
+          {% else %}
+          <span class="hint">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.estatus == 'pendiente' %}
+          <form class="rp-accion-form" method="post" action="{{ url_for('administracion_recibos_pago_reasignar_proveedor', recibo_id=r.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="id_proveedor" onchange="this.form.submit()">
+              <option value="">Selecciona...</option>
+              {% for c in (r.candidatos_proveedor or []) %}
+              <option value="{{ c.id_proveedor }}" {{ 'selected' if c.id_proveedor == r.id_proveedor_elegido else '' }}>
+                {{ c.razonsocial }} ({{ (c.score * 100) | round | int }}%)
+              </option>
+              {% endfor %}
+            </select>
+            <noscript><button type="submit" class="btn small secondary">Actualizar</button></noscript>
+          </form>
+          {% else %}
+          {% set elegido = (r.candidatos_proveedor or []) | selectattr('id_proveedor', 'equalto', r.id_proveedor_elegido) | list %}
+          {{ elegido[0].razonsocial if elegido else (r.id_proveedor_elegido or "—") }}
+          {% endif %}
+        </td>
+        <td>
+          {% if r.estatus == 'pendiente' %}
+            {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
+            {% if not r.id_proveedor_elegido %}
+            <span class="hint">Elige primero el proveedor.</span>
+            {% elif not pagos_disponibles %}
+            <span class="hint">No encontré movimientos sin comprobante en esa ventana de fechas — verifica manualmente en CargoLink.</span>
+            {% else %}
+            <form class="rp-accion-form" method="post" action="{{ url_for('administracion_recibos_pago_confirmar', recibo_id=r.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="id_pago" required>
+                <option value="">Selecciona...</option>
+                {% for p in pagos_disponibles %}
+                <option value="{{ p.Id }}" {{ 'selected' if p.Id == r.id_pago_elegido else '' }}>
+                  {{ p.Fecha }} · {{ p.moneda_mov }} ${{ p.Total }} · {{ p.Nombre }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn small" onclick="return confirm('¿Adjuntar este recibo al pago seleccionado en CargoLink? Esta acción modifica un registro real.');">Confirmar y adjuntar</button>
+            </form>
+            {% endif %}
+          {% elif r.id_pago_elegido %}
+          Pago {{ r.id_pago_elegido }}
+          {% else %}
+          <span class="hint">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="rp-badge {{ r.estatus }}">{{ r.estatus }}</span>
+          {% if r.mensaje %}<p class="rp-mensaje">{{ r.mensaje }}</p>{% endif %}
+        </td>
+        <td>
+          {% if r.estatus in ('pendiente', 'error') %}
+          <form method="post" action="{{ url_for('administracion_recibos_pago_descartar', recibo_id=r.id) }}" onsubmit="return confirm('¿Descartar este recibo?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn small danger">Descartar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

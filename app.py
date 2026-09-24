@@ -10,6 +10,7 @@ resultados se guardan directo en la base de datos.
 import base64
 import calendar
 import csv
+import difflib
 import hashlib
 import hmac
 import io
@@ -67,6 +68,8 @@ ANTIGUEDAD_BUCKET_LABELS = {
 }
 CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 CARGOLINK_LIQ_VENDEDOR_URL = "https://fwd.cargolink.mx/templates/egresos_liq_vendedor/"
+CARGOLINK_PAGOS_URL = "https://fwd.cargolink.mx/templates/reportePagos/"
+RECIBO_PAGO_VENTANA_DIAS = 6  # +/- días alrededor de la fecha leída del recibo, para buscar el movimiento bancario en CargoLink
 
 
 def get_secret_key():
@@ -247,6 +250,27 @@ def init_db():
             nombre text not null,
             correo text,
             telefono text
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS recibos_pago_procesados (
+            id bigint generated always as identity primary key,
+            nombre_archivo text not null,
+            contenido_archivo bytea not null,
+            tipo_mime text not null,
+            monto_extraido numeric,
+            moneda_extraida text,
+            proveedor_extraido text,
+            fecha_extraida date,
+            candidatos_proveedor jsonb,
+            candidatos_pago jsonb,
+            id_proveedor_elegido text,
+            id_pago_elegido text,
+            estatus text not null default 'pendiente',
+            mensaje text,
+            creado_por_user_id uuid,
+            creado_en timestamptz not null default now(),
+            procesado_en timestamptz
         );
     """)
     db.execute("""
@@ -1040,6 +1064,174 @@ def descargar_liquidacion_vendedor_cargolink(folio):
         })
 
     return {"folio": int(folio), "descripcion": descripcion, "detalle": detalle}
+
+
+def _conectar_pagos_cargolink():
+    """Login a CargoLink + token de sesión del módulo Egresos → Pagos
+    (m=49). Compartido por las funciones de proveedores/pagos/adjuntar
+    comprobante del módulo de Recibos de Pago."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(f"{CARGOLINK_PAGOS_URL}?m=49", headers=headers, timeout=60)
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión de Egresos → Pagos.")
+    return sesion, headers, match_token.group(1)
+
+
+def obtener_proveedores_cargolink():
+    """Catálogo completo de proveedores dado de alta en CargoLink (Egresos
+    → Pagos → filtro Proveedor), para cotejar contra lo que se lee de un
+    recibo."""
+    sesion, headers, token = _conectar_pagos_cargolink()
+    r = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api&fn=consultaProveedor",
+        json={}, headers={"Content-Type": "application/json"}, timeout=60,
+    )
+    if r.status_code != 200:
+        raise RuntimeError("Error al consultar el catálogo de proveedores en CargoLink.")
+    return r.json().get("valores", [])
+
+
+def _normalizar_texto_proveedor(texto):
+    texto = (texto or "").upper()
+    texto = re.sub(r"[^A-Z0-9 ]", " ", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def emparejar_proveedores_cargolink(nombre_extraido, nombre_archivo, proveedores, top=5):
+    """Ordena el catálogo de proveedores de CargoLink por similitud contra
+    el proveedor que leyó la IA del recibo y, como respaldo, contra el
+    nombre del archivo (a veces uno de los dos viene incompleto) — se toma
+    el mejor de los dos puntajes por proveedor."""
+    objetivo_1 = _normalizar_texto_proveedor(nombre_extraido)
+    objetivo_2 = _normalizar_texto_proveedor(os.path.splitext(nombre_archivo)[0])
+
+    candidatos = []
+    for p in proveedores:
+        razon = _normalizar_texto_proveedor(p.get("razonsocial"))
+        if not razon:
+            continue
+        score = max(
+            difflib.SequenceMatcher(None, objetivo_1, razon).ratio() if objetivo_1 else 0,
+            difflib.SequenceMatcher(None, objetivo_2, razon).ratio() if objetivo_2 else 0,
+        )
+        if score <= 0:
+            continue
+        candidatos.append({"id_proveedor": p["id_proveedor"], "razonsocial": p["razonsocial"], "score": round(score, 3)})
+    candidatos.sort(key=lambda c: c["score"], reverse=True)
+    return candidatos[:top]
+
+
+def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PAGO_VENTANA_DIAS):
+    """Movimientos bancarios (Pagos) de un proveedor en CargoLink dentro de
+    una ventana de días alrededor de la fecha leída del recibo — para poder
+    cotejar por monto/moneda y elegir a cuál adjuntar el comprobante."""
+    sesion, headers, token = _conectar_pagos_cargolink()
+    fecha_ini = fecha_fin = ""
+    if fecha:
+        try:
+            fecha_dt = datetime.strptime(fecha, "%Y-%m-%d").date()
+            fecha_ini = (fecha_dt - timedelta(days=dias_ventana)).isoformat()
+            fecha_fin = (fecha_dt + timedelta(days=dias_ventana)).isoformat()
+        except ValueError:
+            pass
+    body = {
+        "filtros": {},
+        "filtros2": {"fechaini": fecha_ini, "fechafin": fecha_fin},
+        "filtros3": {"id_proveedor": str(id_proveedor)},
+    }
+    r = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit=0",
+        json=body, headers={"Content-Type": "application/json"}, timeout=60,
+    )
+    if r.status_code != 200:
+        raise RuntimeError("Error al consultar los pagos del proveedor en CargoLink.")
+    return r.json().get("valores", [])
+
+
+def adjuntar_comprobante_pago_cargolink(id_mov_banco, nombre_archivo, contenido, tipo_mime):
+    """Sube el PDF/imagen del recibo como evidencia de un movimiento
+    bancario (Pago) ya existente en CargoLink — el mismo endpoint que usa
+    el botón 'Subir Comprobante Pago' en Egresos → Pagos."""
+    sesion, headers, token = _conectar_pagos_cargolink()
+    archivos = {"files": (nombre_archivo, contenido, tipo_mime)}
+    r = sesion.post(
+        f"https://fwd.cargolink.mx/ws/uploadEvidenciasMovBanco.php?token={token}&id_movBanco={id_mov_banco}",
+        files=archivos, headers=headers, timeout=90,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"CargoLink respondió {r.status_code} al subir el comprobante.")
+    return r
+
+
+def extraer_datos_recibo_ia(nombre_archivo, contenido, tipo_mime):
+    """Manda el recibo (PDF o imagen) a la API de Claude para leer monto,
+    moneda, proveedor (beneficiario del pago, no AV2) y fecha de la
+    operación. Regresa {"monto": float, "moneda": str, "proveedor": str,
+    "fecha": "YYYY-MM-DD" | None}."""
+    api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("Falta la variable de entorno ANTHROPIC_API_KEY para poder leer recibos con IA.")
+
+    es_pdf = tipo_mime == "application/pdf"
+    bloque_archivo = {
+        "type": "document" if es_pdf else "image",
+        "source": {"type": "base64", "media_type": tipo_mime, "data": base64.b64encode(contenido).decode("ascii")},
+    }
+    prompt = (
+        "Este archivo es un recibo o comprobante de pago (transferencia bancaria, recibo de nómina a un "
+        "tercero, factura pagada, etc). Quien paga es AV2 LOGISTICS SA DE CV (o simplemente 'AV2') — AV2 "
+        "NUNCA es el proveedor, sin importar qué tan prominente aparezca su nombre. "
+        "Extrae exactamente estos 4 datos:\n"
+        "- monto: el importe total de la operación (numérico, sin comas ni símbolo de moneda).\n"
+        "- moneda: código de 3 letras (MXN, USD, etc). Si el documento dice MXP, repórtalo como MXN.\n"
+        "- proveedor: el nombre de quien RECIBE el pago (el titular/beneficiario de la cuenta de depósito o "
+        "destino — nunca la cuenta de retiro/origen, y nunca AV2).\n"
+        "- fecha: la fecha de aplicación u operación del pago, en formato YYYY-MM-DD.\n\n"
+        "Responde ÚNICAMENTE con un JSON, sin texto adicional ni bloque de código, con este formato exacto: "
+        '{"monto": 1234.56, "moneda": "MXN", "proveedor": "NOMBRE DEL PROVEEDOR", "fecha": "2026-01-31"}'
+    )
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "pdfs-2024-09-25",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "claude-sonnet-5",
+        "max_tokens": 500,
+        "messages": [{"role": "user", "content": [bloque_archivo, {"type": "text", "text": prompt}]}],
+    }
+    resp = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload, timeout=90)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Error al leer el recibo con IA: {resp.status_code} {resp.text[:300]}")
+    data = resp.json()
+    texto = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+    texto = re.sub(r"^```(json)?|```$", "", texto, flags=re.MULTILINE).strip()
+    try:
+        extraido = json.loads(texto)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"La IA no regresó un JSON válido: {texto[:300]}")
+    try:
+        monto = float(extraido.get("monto") or 0)
+    except (TypeError, ValueError):
+        monto = 0.0
+    return {
+        "monto": monto,
+        "moneda": (extraido.get("moneda") or "").strip().upper() or "MXN",
+        "proveedor": (extraido.get("proveedor") or "").strip(),
+        "fecha": extraido.get("fecha") or None,
+    }
 
 
 def descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin):
@@ -4199,6 +4391,174 @@ def administracion_antiguedad_saldos_cliente_exportar():
         return redirect(url_for("administracion_antiguedad_saldos"))
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f"{nombre_archivo_base}.pdf", mimetype="application/pdf")
+
+
+EXTENSIONES_RECIBO_PERMITIDAS = {"pdf", "png", "jpg", "jpeg"}
+TIPOS_MIME_RECIBO = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+
+
+@app.route("/administracion/recibos-pago", methods=["GET", "POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago():
+    db = get_db()
+    if request.method == "POST":
+        archivos = [a for a in request.files.getlist("recibos") if a and a.filename]
+        if not archivos:
+            flash("Selecciona al menos un archivo.")
+            db.close()
+            return redirect(url_for("administracion_recibos_pago"))
+
+        try:
+            proveedores = obtener_proveedores_cargolink()
+        except RuntimeError as e:
+            flash(f"No se pudo consultar el catálogo de proveedores en CargoLink: {e}")
+            db.close()
+            return redirect(url_for("administracion_recibos_pago"))
+
+        procesados, con_error = 0, 0
+        for archivo in archivos:
+            nombre = archivo.filename
+            extension = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
+            if extension not in EXTENSIONES_RECIBO_PERMITIDAS:
+                flash(f"{nombre}: formato no soportado (usa PDF, PNG o JPG).")
+                con_error += 1
+                continue
+            contenido = archivo.read()
+            tipo_mime = TIPOS_MIME_RECIBO[extension]
+
+            try:
+                extraido = extraer_datos_recibo_ia(nombre, contenido, tipo_mime)
+                candidatos_proveedor = emparejar_proveedores_cargolink(extraido["proveedor"], nombre, proveedores)
+                id_proveedor_elegido = None
+                candidatos_pago = []
+                id_pago_elegido = None
+                if candidatos_proveedor and candidatos_proveedor[0]["score"] >= 0.82 and (
+                    len(candidatos_proveedor) == 1
+                    or candidatos_proveedor[0]["score"] - candidatos_proveedor[1]["score"] >= 0.12
+                ):
+                    id_proveedor_elegido = candidatos_proveedor[0]["id_proveedor"]
+                    candidatos_pago = buscar_pagos_proveedor_cargolink(id_proveedor_elegido, extraido["fecha"])
+                    coincidencias = [
+                        p for p in candidatos_pago
+                        if p.get("moneda_mov") == extraido["moneda"]
+                        and abs(float(p.get("Total") or 0) - extraido["monto"]) < 0.5
+                        and not p.get("url_pago")
+                    ]
+                    if len(coincidencias) == 1:
+                        id_pago_elegido = coincidencias[0]["Id"]
+
+                db.execute("""
+                    INSERT INTO recibos_pago_procesados
+                        (nombre_archivo, contenido_archivo, tipo_mime, monto_extraido, moneda_extraida,
+                         proveedor_extraido, fecha_extraida, candidatos_proveedor, candidatos_pago,
+                         id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pendiente', %s)
+                """, (
+                    nombre, contenido, tipo_mime, extraido["monto"], extraido["moneda"],
+                    extraido["proveedor"], extraido["fecha"], json.dumps(candidatos_proveedor),
+                    json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido,
+                    session.get("usuario_id"),
+                ))
+                db.commit()
+                procesados += 1
+            except RuntimeError as e:
+                db.execute("""
+                    INSERT INTO recibos_pago_procesados
+                        (nombre_archivo, contenido_archivo, tipo_mime, estatus, mensaje, creado_por_user_id)
+                    VALUES (%s, %s, %s, 'error', %s, %s)
+                """, (nombre, contenido, tipo_mime, str(e), session.get("usuario_id")))
+                db.commit()
+                con_error += 1
+
+        mensaje = f"{procesados} recibo(s) procesado(s)."
+        if con_error:
+            mensaje += f" {con_error} con error."
+        flash(mensaje)
+        db.close()
+        return redirect(url_for("administracion_recibos_pago"))
+
+    recibos = db.execute("""
+        SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
+               candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en
+        FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 100
+    """).fetchall()
+    db.close()
+    return render_template("administracion_recibos_pago.html", recibos=recibos)
+
+
+@app.route("/administracion/recibos-pago/<int:recibo_id>/reasignar-proveedor", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_reasignar_proveedor(recibo_id):
+    id_proveedor = request.form.get("id_proveedor", "").strip()
+    db = get_db()
+    recibo = db.execute("SELECT fecha_extraida, moneda_extraida, monto_extraido FROM recibos_pago_procesados WHERE id = %s", (recibo_id,)).fetchone()
+    if recibo is None or not id_proveedor:
+        db.close()
+        return redirect(url_for("administracion_recibos_pago"))
+
+    try:
+        fecha_txt = recibo["fecha_extraida"].isoformat() if recibo["fecha_extraida"] else None
+        candidatos_pago = buscar_pagos_proveedor_cargolink(id_proveedor, fecha_txt)
+        coincidencias = [
+            p for p in candidatos_pago
+            if p.get("moneda_mov") == recibo["moneda_extraida"]
+            and abs(float(p.get("Total") or 0) - float(recibo["monto_extraido"] or 0)) < 0.5
+            and not p.get("url_pago")
+        ]
+        id_pago_elegido = coincidencias[0]["Id"] if len(coincidencias) == 1 else None
+        db.execute("""
+            UPDATE recibos_pago_procesados
+            SET id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s
+            WHERE id = %s
+        """, (id_proveedor, json.dumps(candidatos_pago), id_pago_elegido, recibo_id))
+        db.commit()
+    except RuntimeError as e:
+        flash(f"No se pudo buscar los pagos de ese proveedor: {e}")
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
+@app.route("/administracion/recibos-pago/<int:recibo_id>/confirmar", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_confirmar(recibo_id):
+    id_pago = request.form.get("id_pago", "").strip()
+    db = get_db()
+    recibo = db.execute(
+        "SELECT nombre_archivo, contenido_archivo, tipo_mime FROM recibos_pago_procesados WHERE id = %s", (recibo_id,)
+    ).fetchone()
+    if recibo is None:
+        db.close()
+        return redirect(url_for("administracion_recibos_pago"))
+    if not id_pago:
+        flash("Elige a qué pago de CargoLink corresponde este recibo antes de confirmar.")
+        db.close()
+        return redirect(url_for("administracion_recibos_pago"))
+
+    try:
+        adjuntar_comprobante_pago_cargolink(id_pago, recibo["nombre_archivo"], bytes(recibo["contenido_archivo"]), recibo["tipo_mime"])
+        db.execute("""
+            UPDATE recibos_pago_procesados
+            SET estatus = 'adjuntado', id_pago_elegido = %s, procesado_en = now()
+            WHERE id = %s
+        """, (id_pago, recibo_id))
+        db.commit()
+        flash(f"Comprobante adjuntado en CargoLink (pago {id_pago}).")
+    except RuntimeError as e:
+        db.execute("UPDATE recibos_pago_procesados SET estatus = 'error', mensaje = %s WHERE id = %s", (str(e), recibo_id))
+        db.commit()
+        flash(f"No se pudo adjuntar el comprobante en CargoLink: {e}")
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
+@app.route("/administracion/recibos-pago/<int:recibo_id>/descartar", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_descartar(recibo_id):
+    db = get_db()
+    db.execute("UPDATE recibos_pago_procesados SET estatus = 'descartado' WHERE id = %s", (recibo_id,))
+    db.commit()
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
 
 
 @app.route("/reportes/por-vendedor")
