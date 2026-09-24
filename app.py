@@ -2147,12 +2147,26 @@ def usuario_puede_ver_cotizacion(db, cliente_folio, cotizacion_id=None):
         ).fetchone()
         if fila_creador and fila_creador["correo"] and fila_creador["correo"].lower() == creador_extra.lower():
             return True
-    if cotizaciones_solo_propias_usuario() and cotizacion_id is not None:
+    fila_dueno = None
+    if cotizacion_id is not None:
         fila_dueno = db.execute(
             "SELECT creado_por_user_id FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
         ).fetchone()
+    if cotizaciones_solo_propias_usuario():
         if not fila_dueno or str(fila_dueno["creado_por_user_id"] or "") != str(session.get("usuario_id") or ""):
             return False
+    # Lo que YO mismo creé siempre se ve, sin importar plaza/vendedor/
+    # desarrollador — mismo criterio que ya aplica construir_cotizaciones_crm
+    # en el listado (es_creacion_propia): de otro modo alguien con "solo ver
+    # su información"/"solo ver sus cuentas" veía la cotización en su lista
+    # pero le salía en blanco al abrir el detalle, porque este chequeo no
+    # tenía la misma excepción.
+    es_creacion_propia = bool(
+        fila_dueno and session.get("usuario_id")
+        and str(fila_dueno["creado_por_user_id"] or "") == str(session.get("usuario_id"))
+    )
+    if es_creacion_propia:
+        return True
     vendedor_forzado = vendedor_forzado_usuario()
     plazas_permitidas = plazas_permitidas_usuario()
     desarrollador_forzado = desarrollador_forzado_usuario()
