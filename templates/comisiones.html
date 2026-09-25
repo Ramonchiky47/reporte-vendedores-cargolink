@@ -3,6 +3,12 @@
 {% set active = "comisiones" %}
 {% block extra_head %}
 <style>
+  @media (min-width: 761px) {
+    /* Deja un carril reservado a la derecha para que la cajita flotante de
+       "Buscar booking" nunca quede encima de las tablas — en vez de un ancho
+       fijo, empuja el contenido hacia el centro dejando espacio de sobra. */
+    main { padding-right: 220px; }
+  }
   .com-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 1.25rem; }
   .com-descripcion b { color: var(--ink); }
   .com-resumen { width: auto; min-width: 100%; font-variant-numeric: tabular-nums; font-size: .73rem; }
@@ -352,7 +358,7 @@
               <select id="reporte-vendedor">
                 <option value="">Todos</option>
                 {% for v in vendedores_catalogo_reporte %}
-                <option value="{{ v }}">{{ v }}</option>
+                <option value="{{ v.vendedor }}" data-plaza="{{ v.plaza or '' }}">{{ v.vendedor }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -361,11 +367,14 @@
               <select id="reporte-desarrollador">
                 <option value="">Todos</option>
                 {% for d in desarrolladores_catalogo_reporte %}
-                <option value="{{ d }}">{{ d }}</option>
+                <option value="{{ d.desarrollador }}" data-plaza="{{ d.plaza or '' }}">{{ d.desarrollador }}</option>
                 {% endfor %}
               </select>
             </div>
-            <div><button type="submit" class="btn small">Buscar</button></div>
+            <div style="display:flex; gap:.5rem;">
+              <button type="submit" class="btn small">Buscar</button>
+              <a id="reporte-exportar" class="btn small secondary" target="_blank" rel="noopener">Exportar a Excel</a>
+            </div>
           </form>
           <div id="reporte-bookings-resultado"></div>
         </div>
@@ -384,14 +393,27 @@
         return "$" + (n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
 
-      function buscar() {
-        const params = new URLSearchParams({
+      const exportarLink = document.getElementById("reporte-exportar");
+
+      function filtrosActuales() {
+        return new URLSearchParams({
           anio: document.getElementById("reporte-anio").value,
           mes: document.getElementById("reporte-mes").value,
           oficina: document.getElementById("reporte-oficina").value,
           vendedor: document.getElementById("reporte-vendedor").value,
           desarrollador: document.getElementById("reporte-desarrollador").value,
         });
+      }
+
+      function actualizarExportar() {
+        if (exportarLink) exportarLink.href = "{{ url_for('comisiones_reporte_bookings_exportar') }}?" + filtrosActuales().toString();
+      }
+      form.addEventListener("change", actualizarExportar);
+      actualizarExportar();
+
+      function buscar() {
+        const params = filtrosActuales();
+        actualizarExportar();
         resultadoDiv.innerHTML = '<p class="hint">Buscando…</p>';
         fetch("{{ url_for('comisiones_reporte_bookings') }}?" + params.toString())
           .then((r) => r.json())
@@ -427,13 +449,45 @@
           });
       }
 
+      // Al elegir una Oficina, Vendedor y Desarrollador se acotan a los que
+      // pertenecen a esa plaza (data-plaza en cada <option>) — si el que
+      // estaba elegido ya no calza con la nueva oficina, se regresa a "Todos"
+      // en vez de dejar una combinación imposible seleccionada.
+      const selectOficina = document.getElementById("reporte-oficina");
+      const selectVendedor = document.getElementById("reporte-vendedor");
+      const selectDesarrollador = document.getElementById("reporte-desarrollador");
+      function filtrarPorOficina() {
+        const plaza = selectOficina.value;
+        [selectVendedor, selectDesarrollador].forEach((select) => {
+          let seleccionValida = false;
+          Array.from(select.options).forEach((opcion) => {
+            if (!opcion.value) return; // "Todos" siempre visible
+            const visible = !plaza || opcion.dataset.plaza === plaza;
+            opcion.hidden = !visible;
+            if (visible && opcion.selected) seleccionValida = true;
+          });
+          if (select.value && !seleccionValida) select.value = "";
+        });
+      }
+      if (selectOficina) selectOficina.addEventListener("change", filtrarPorOficina);
+
+      function cerrarModalReporte() {
+        modal.classList.remove("abierto");
+        // Al cerrar (con la X, dando clic fuera o Escape) el filtro se
+        // limpia por completo, para que la próxima vez que se abra empiece
+        // en blanco en vez de arrastrar la búsqueda anterior.
+        form.reset();
+        filtrarPorOficina();
+        actualizarExportar();
+        resultadoDiv.innerHTML = "";
+      }
+
       abrir.addEventListener("click", () => {
         modal.classList.add("abierto");
-        resultadoDiv.innerHTML = "";
       });
-      if (cerrar) cerrar.addEventListener("click", () => modal.classList.remove("abierto"));
-      modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("abierto"); });
-      document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.classList.remove("abierto"); });
+      if (cerrar) cerrar.addEventListener("click", cerrarModalReporte);
+      modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModalReporte(); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape" && modal.classList.contains("abierto")) cerrarModalReporte(); });
       form.addEventListener("submit", (e) => { e.preventDefault(); buscar(); });
     })();
     </script>

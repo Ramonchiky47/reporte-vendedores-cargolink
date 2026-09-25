@@ -3439,12 +3439,12 @@ def comisiones():
             "SELECT DISTINCT plaza FROM catalogo_vendedores WHERE plaza IS NOT NULL ORDER BY 1"
         ).fetchall()
     ]
-    vendedores_catalogo_reporte = [
-        r["vendedor"] for r in db.execute("SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor").fetchall()
-    ]
-    desarrolladores_catalogo_reporte = [
-        r["desarrollador"] for r in db.execute("SELECT desarrollador FROM catalogo_desarrolladores ORDER BY desarrollador").fetchall()
-    ]
+    vendedores_catalogo_reporte = db.execute(
+        "SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor"
+    ).fetchall()
+    desarrolladores_catalogo_reporte = db.execute(
+        "SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador"
+    ).fetchall()
     db.close()
 
     return render_template(
@@ -3534,6 +3534,88 @@ def comisiones_reporte_bookings():
             "comision_desarrollador": float(f["total_desarrollador"]),
         })
     return {"filas": resultado}
+
+
+@app.route("/comisiones/reporte-bookings/exportar")
+@login_required
+def comisiones_reporte_bookings_exportar():
+    """Exporta a Excel el mismo resultado que arma comisiones_reporte_bookings,
+    con los filtros de año/mes/oficina/vendedor/desarrollador pasados por
+    query string desde la ventana emergente."""
+    if not usuario_puede_comisiones():
+        flash("No tienes permiso para ver Comisiones.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    anio = request.args.get("anio", type=int)
+    mes = request.args.get("mes", type=int)
+    oficina_filtro = (request.args.get("oficina") or "").strip()
+    vendedor_filtro = (request.args.get("vendedor") or "").strip()
+    desarrollador_filtro = (request.args.get("desarrollador") or "").strip()
+
+    db = get_db()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    condiciones = []
+    parametros = []
+    if anio:
+        condiciones.append("extract(year from rb.fecha) = %s")
+        parametros.append(anio)
+    if mes:
+        condiciones.append("extract(month from rb.fecha) = %s")
+        parametros.append(mes)
+    if vendedor_filtro:
+        condiciones.append("cld.vendedor = %s")
+        parametros.append(vendedor_filtro)
+    if desarrollador_filtro:
+        condiciones.append("cld.desarrollador = %s")
+        parametros.append(desarrollador_filtro)
+    where_sql = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+
+    filas = db.execute(f"""
+        SELECT cld.booking, cld.folio, cld.vendedor, cld.total_vendedor,
+               cld.desarrollador, cld.total_desarrollador
+        FROM comisiones_liquidacion_detalle cld
+        LEFT JOIN reporte_bookings rb ON rb.referencia = cld.booking
+        {where_sql}
+        ORDER BY cld.booking
+    """, parametros).fetchall()
+    db.close()
+
+    encabezados = ["Booking", "Folio de pago", "Vendedor", "Comisión Vendedor", "Desarrollador", "Comisión Desarrollador"]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Bookings"
+    for col, encabezado in enumerate(encabezados, start=1):
+        celda = ws.cell(row=1, column=col, value=encabezado)
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = PatternFill(fill_type="solid", fgColor="C1502E")
+
+    fila_excel = 2
+    for f in filas:
+        plaza = plaza_por_vendedor.get(normalizar(f["vendedor"]), "#N/D")
+        if oficina_filtro and plaza != oficina_filtro:
+            continue
+        ws.cell(row=fila_excel, column=1, value=f["booking"])
+        ws.cell(row=fila_excel, column=2, value=f"Folio {f['folio']}")
+        ws.cell(row=fila_excel, column=3, value=f["vendedor"] or "")
+        celda_cv = ws.cell(row=fila_excel, column=4, value=float(f["total_vendedor"]))
+        celda_cv.number_format = "#,##0.00"
+        ws.cell(row=fila_excel, column=5, value=f["desarrollador"] or "")
+        celda_cd = ws.cell(row=fila_excel, column=6, value=float(f["total_desarrollador"]))
+        celda_cd.number_format = "#,##0.00"
+        fila_excel += 1
+
+    for col, ancho in zip("ABCDEF", [18, 14, 26, 16, 26, 18]):
+        ws.column_dimensions[col].width = ancho
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=True, download_name="Bookings_por_periodo.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/comisiones/exportar")
