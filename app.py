@@ -823,6 +823,7 @@ def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
     soup = BeautifulSoup(res.content, "html.parser")
     header_map = None
     bookings = []
+    referencias_vistas = set()
     campos_necesarios = {
         "Referencia": "referencia", "Fecha de creacion": "fecha", "Vendedor": "vendedor",
         "Ejecutivo": "ejecutivo", "Venta por": "venta_por", "Cliente servicio": "cliente_servicio",
@@ -844,6 +845,17 @@ def descargar_bookings_cargolink(fecha_inicio, fecha_fin):
         fila = {campos_necesarios[header_map[i]]: v for i, v in enumerate(celdas) if header_map.get(i) in campos_necesarios}
         if not fila.get("vendedor") or not fila.get("fecha"):
             continue
+
+        # El reporte de CargoLink repite la misma fila (misma referencia,
+        # mismo venta/profit) una vez por cada documento/línea asociada al
+        # booking en vez de traer un renglón por booking — sin este filtro
+        # se sumaba venta/profit varias veces por el mismo booking (hasta
+        # 5x), inflando los totales de la plaza.
+        referencia = (fila.get("referencia") or "").strip()
+        if referencia and referencia in referencias_vistas:
+            continue
+        if referencia:
+            referencias_vistas.add(referencia)
 
         fecha_texto = fila["fecha"].split(" ")[0]
         try:
