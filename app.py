@@ -3439,29 +3439,28 @@ def comisiones():
             "SELECT DISTINCT plaza FROM catalogo_vendedores WHERE plaza IS NOT NULL ORDER BY 1"
         ).fetchall()
     ]
-    # Los selects de Vendedor/Desarrollador no se limitan al catálogo: se
-    # completan con quien ya tenga liquidaciones reales cargadas pero todavía
-    # no esté dado de alta ahí (p.ej. Paola Huerta o Gabriela González como
-    # desarrolladoras) — si no, desaparecían del filtro aunque sí tuvieran
-    # bookings en el reporte. A los que solo vienen de aquí no se les conoce
-    # su plaza, así que quedan sin acotar por Oficina (se siguen viendo con
-    # "Todas", pero no bajo una oficina específica).
+    # Los selects de Vendedor/Desarrollador se arman desde las liquidaciones
+    # ya cargadas, NO desde el catálogo: así solo aparece quien de verdad
+    # tiene registros que buscar (antes, alguien dado de alta en el catálogo
+    # pero sin ninguna liquidación real —p.ej. Jaqueline Dueñas— aparecía en
+    # el filtro y siempre regresaba "sin resultados"), y de paso se
+    # completan los que sí tienen liquidaciones pero no están en el catálogo
+    # (p.ej. Paola Huerta o Gabriela González como desarrolladoras). El
+    # LEFT JOIN trae la plaza cuando el catálogo la tiene, para poder acotar
+    # por Oficina; si no la tiene, ese vendedor/desarrollador queda sin
+    # acotar (se ve con "Todas", pero no bajo una oficina específica).
     vendedores_catalogo_reporte = db.execute("""
-        SELECT vendedor, plaza FROM catalogo_vendedores
-        UNION
-        SELECT DISTINCT cld.vendedor, NULL
+        SELECT DISTINCT cld.vendedor AS vendedor, cv.plaza AS plaza
         FROM comisiones_liquidacion_detalle cld
+        LEFT JOIN catalogo_vendedores cv ON cv.vendedor = cld.vendedor
         WHERE cld.vendedor IS NOT NULL AND cld.vendedor <> ''
-          AND NOT EXISTS (SELECT 1 FROM catalogo_vendedores cv WHERE cv.vendedor = cld.vendedor)
         ORDER BY vendedor
     """).fetchall()
     desarrolladores_catalogo_reporte = db.execute("""
-        SELECT desarrollador, plaza FROM catalogo_desarrolladores
-        UNION
-        SELECT DISTINCT cld.desarrollador, NULL
+        SELECT DISTINCT cld.desarrollador AS desarrollador, cd.plaza AS plaza
         FROM comisiones_liquidacion_detalle cld
+        LEFT JOIN catalogo_desarrolladores cd ON cd.desarrollador = cld.desarrollador
         WHERE cld.desarrollador IS NOT NULL AND cld.desarrollador <> ''
-          AND NOT EXISTS (SELECT 1 FROM catalogo_desarrolladores cd WHERE cd.desarrollador = cld.desarrollador)
         ORDER BY desarrollador
     """).fetchall()
     # catalogo_desarrolladores.plaza casi nunca está capturada (a diferencia
