@@ -3407,6 +3407,23 @@ def comisiones():
         except RuntimeError as e:
             flash(f"No se pudo consultar la lista de folios en CargoLink: {e}")
 
+    # Buscador "¿en qué folio se pagó este booking?": busca en TODOS los
+    # folios cargados, sin importar cuál esté seleccionado arriba — a
+    # diferencia de la tabla principal, que solo muestra el folio_actual.
+    buscar_booking = (request.args.get("buscar_booking") or "").strip()
+    resultados_busqueda_booking = None
+    db = get_db()
+    if buscar_booking:
+        resultados_busqueda_booking = db.execute("""
+            SELECT folio, descripcion, booking, folio_cobro, profit,
+                   vendedor, pct_vendedor, total_vendedor,
+                   desarrollador, pct_desarrollador, total_desarrollador
+            FROM comisiones_liquidacion_detalle
+            WHERE booking ILIKE %s
+            ORDER BY folio DESC, booking
+        """, (f"%{buscar_booking}%",)).fetchall()
+    db.close()
+
     return render_template(
         "comisiones.html",
         folios_disponibles=folios_disponibles,
@@ -3424,6 +3441,8 @@ def comisiones():
         por_vendedor=por_vendedor,
         por_desarrollador=por_desarrollador,
         cobros_cargados=cobros_cargados,
+        buscar_booking=buscar_booking,
+        resultados_busqueda_booking=resultados_busqueda_booking,
     )
 
 

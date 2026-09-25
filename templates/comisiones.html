@@ -206,6 +206,40 @@
       {% endif %}
     </div>
 
+    <div class="card">
+      <h3 style="margin-top:0;">Buscar booking</h3>
+      <p class="hint" style="margin-top:-.5rem;">Busca en todos los folios cargados en qué liquidación se pagó un booking.</p>
+      <form method="get" action="{{ url_for('comisiones') }}" class="row" style="align-items:flex-end;">
+        {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
+        <div class="field" style="max-width:280px;">
+          <label for="buscar-booking">Número de booking</label>
+          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Ej. 2607-3715-FCLI">
+        </div>
+        <div><button type="submit" class="btn small secondary">Buscar</button></div>
+      </form>
+      {% if resultados_busqueda_booking is not none %}
+        {% if resultados_busqueda_booking %}
+        <table style="margin-top:1rem;">
+          <thead><tr><th>Folio</th><th>Booking</th><th>Vendedor</th><th>Com. Vendedor</th><th>Desarrollador</th><th>Com. Desarrollador</th></tr></thead>
+          <tbody>
+            {% for r in resultados_busqueda_booking %}
+            <tr>
+              <td><a href="{{ url_for('comisiones', folio=r.folio) }}">Folio {{ r.folio }}</a> · {{ r.descripcion }}</td>
+              <td>{{ r.booking }}</td>
+              <td>{{ r.vendedor or '—' }}</td>
+              <td>${{ "{:,.2f}".format(r.total_vendedor) }}</td>
+              <td>{{ r.desarrollador or '—' }}</td>
+              <td>${{ "{:,.2f}".format(r.total_desarrollador) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty" style="margin-top:1rem;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
+        {% endif %}
+      {% endif %}
+    </div>
+
     {% if folio_actual %}
     <div class="com-kpis">
       <div class="com-kpi"><div class="label">Bookings</div><div class="value">{{ filas|length }}</div></div>
