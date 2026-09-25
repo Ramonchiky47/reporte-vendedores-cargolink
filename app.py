@@ -3424,6 +3424,29 @@ def comisiones():
         """, (f"%{buscar_booking}%",)).fetchall()
     db.close()
 
+    # Filtros del reporte "Bookings por periodo/oficina/vendedor" (ventana
+    # emergente aparte, junto al buscador de booking) — catálogos para sus
+    # selects; el resultado en sí se trae por AJAX vía comisiones_reporte_bookings.
+    db = get_db()
+    anios_disponibles = [
+        r["anio"] for r in db.execute(
+            "SELECT DISTINCT extract(year from fecha)::int AS anio FROM reporte_bookings "
+            "WHERE fecha IS NOT NULL ORDER BY 1 DESC"
+        ).fetchall()
+    ]
+    oficinas_disponibles = [
+        r["plaza"] for r in db.execute(
+            "SELECT DISTINCT plaza FROM catalogo_vendedores WHERE plaza IS NOT NULL ORDER BY 1"
+        ).fetchall()
+    ]
+    vendedores_catalogo_reporte = [
+        r["vendedor"] for r in db.execute("SELECT vendedor FROM catalogo_vendedores ORDER BY vendedor").fetchall()
+    ]
+    desarrolladores_catalogo_reporte = [
+        r["desarrollador"] for r in db.execute("SELECT desarrollador FROM catalogo_desarrolladores ORDER BY desarrollador").fetchall()
+    ]
+    db.close()
+
     return render_template(
         "comisiones.html",
         folios_disponibles=folios_disponibles,
@@ -3443,7 +3466,74 @@ def comisiones():
         cobros_cargados=cobros_cargados,
         buscar_booking=buscar_booking,
         resultados_busqueda_booking=resultados_busqueda_booking,
+        anios_disponibles=anios_disponibles,
+        oficinas_disponibles=oficinas_disponibles,
+        vendedores_catalogo_reporte=vendedores_catalogo_reporte,
+        desarrolladores_catalogo_reporte=desarrolladores_catalogo_reporte,
     )
+
+
+@app.route("/comisiones/reporte-bookings")
+@login_required
+def comisiones_reporte_bookings():
+    """JSON para la ventana emergente de "Bookings por periodo/oficina/
+    vendedor" junto al buscador de booking: cruza comisiones_liquidacion_detalle
+    (folio, comisión pagada) con reporte_bookings (fecha real del booking, para
+    poder filtrar por año/mes de creación) y catalogo_vendedores (para el
+    filtro de oficina/plaza, igual que el resto de la app)."""
+    if not usuario_puede_comisiones():
+        return {"error": "No tienes permiso para ver Comisiones."}, 403
+
+    anio = request.args.get("anio", type=int)
+    mes = request.args.get("mes", type=int)
+    oficina_filtro = (request.args.get("oficina") or "").strip()
+    vendedor_filtro = (request.args.get("vendedor") or "").strip()
+    desarrollador_filtro = (request.args.get("desarrollador") or "").strip()
+
+    db = get_db()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    condiciones = []
+    parametros = []
+    if anio:
+        condiciones.append("extract(year from rb.fecha) = %s")
+        parametros.append(anio)
+    if mes:
+        condiciones.append("extract(month from rb.fecha) = %s")
+        parametros.append(mes)
+    if vendedor_filtro:
+        condiciones.append("cld.vendedor = %s")
+        parametros.append(vendedor_filtro)
+    if desarrollador_filtro:
+        condiciones.append("cld.desarrollador = %s")
+        parametros.append(desarrollador_filtro)
+    where_sql = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+
+    filas = db.execute(f"""
+        SELECT cld.booking, cld.folio, cld.vendedor, cld.total_vendedor,
+               cld.desarrollador, cld.total_desarrollador
+        FROM comisiones_liquidacion_detalle cld
+        LEFT JOIN reporte_bookings rb ON rb.referencia = cld.booking
+        {where_sql}
+        ORDER BY cld.booking
+    """, parametros).fetchall()
+    db.close()
+
+    resultado = []
+    for f in filas:
+        plaza = plaza_por_vendedor.get(normalizar(f["vendedor"]), "#N/D")
+        if oficina_filtro and plaza != oficina_filtro:
+            continue
+        resultado.append({
+            "booking": f["booking"],
+            "folio": f["folio"],
+            "vendedor": f["vendedor"] or "",
+            "comision_vendedor": float(f["total_vendedor"]),
+            "desarrollador": f["desarrollador"] or "",
+            "comision_desarrollador": float(f["total_desarrollador"]),
+        })
+    return {"filas": resultado}
 
 
 @app.route("/comisiones/exportar")

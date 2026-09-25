@@ -240,16 +240,21 @@
     </div>
 
     <div class="com-buscar-flotante" id="com-buscar-flotante">
-      <form method="get" action="{{ url_for('comisiones') }}" id="form-buscar-booking">
-        {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
-        <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Buscar booking..." autocomplete="off" title="Buscar en qué folio se pagó un booking">
-        <button type="submit" title="Buscar">
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <div style="display:flex; align-items:center; gap:.3rem;">
+        <form method="get" action="{{ url_for('comisiones') }}" id="form-buscar-booking">
+          {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
+          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Buscar booking..." autocomplete="off" title="Buscar en qué folio se pagó un booking">
+          <button type="submit" title="Buscar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+          {% if buscar_booking %}
+          <a class="com-limpiar" href="{{ url_for('comisiones', folio=folio_actual) }}" title="Limpiar">&times;</a>
+          {% endif %}
+        </form>
+        <button type="button" id="com-abrir-reporte" title="Buscar bookings por año, mes, oficina, vendedor o desarrollador">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
         </button>
-        {% if buscar_booking %}
-        <a class="com-limpiar" href="{{ url_for('comisiones', folio=folio_actual) }}" title="Limpiar">&times;</a>
-        {% endif %}
-      </form>
+      </div>
       <div id="resultados-busqueda-booking">
       {% if resultados_busqueda_booking is not none %}
         {% if resultados_busqueda_booking %}
@@ -303,6 +308,133 @@
         window.addEventListener("load", posicionar);
         if (document.fonts && document.fonts.ready) document.fonts.ready.then(posicionar);
       }
+    })();
+    </script>
+
+    <div class="com-modal-overlay" id="com-modal-reporte">
+      <div class="com-modal-panel">
+        <div class="com-modal-body">
+          <div class="com-modal-toolbar">
+            <button type="button" class="com-modal-cerrar" id="com-modal-reporte-cerrar" aria-label="Cerrar">&times;</button>
+          </div>
+          <p style="margin:0 0 1.25rem; font-size:1.05rem; font-weight:700; color:var(--ink);">Bookings por periodo / oficina / vendedor</p>
+          <form id="form-reporte-bookings" class="row" style="align-items:flex-end; margin-bottom:1rem;">
+            <div class="field" style="max-width:130px;">
+              <label for="reporte-anio">Año</label>
+              <select id="reporte-anio">
+                <option value="">Todos</option>
+                {% for a in anios_disponibles %}
+                <option value="{{ a }}">{{ a }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field" style="max-width:160px;">
+              <label for="reporte-mes">Mes</label>
+              <select id="reporte-mes">
+                <option value="">Todos</option>
+                <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+              </select>
+            </div>
+            <div class="field" style="max-width:180px;">
+              <label for="reporte-oficina">Oficina</label>
+              <select id="reporte-oficina">
+                <option value="">Todas</option>
+                {% for o in oficinas_disponibles %}
+                <option value="{{ o }}">{{ o }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label for="reporte-vendedor">Vendedor</label>
+              <select id="reporte-vendedor">
+                <option value="">Todos</option>
+                {% for v in vendedores_catalogo_reporte %}
+                <option value="{{ v }}">{{ v }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field" style="max-width:220px;">
+              <label for="reporte-desarrollador">Desarrollador</label>
+              <select id="reporte-desarrollador">
+                <option value="">Todos</option>
+                {% for d in desarrolladores_catalogo_reporte %}
+                <option value="{{ d }}">{{ d }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div><button type="submit" class="btn small">Buscar</button></div>
+          </form>
+          <div id="reporte-bookings-resultado"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+    (function () {
+      const modal = document.getElementById("com-modal-reporte");
+      const abrir = document.getElementById("com-abrir-reporte");
+      const cerrar = document.getElementById("com-modal-reporte-cerrar");
+      const form = document.getElementById("form-reporte-bookings");
+      const resultadoDiv = document.getElementById("reporte-bookings-resultado");
+      if (!modal || !abrir || !form) return;
+
+      function fmtMoneda(n) {
+        return "$" + (n || 0).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function buscar() {
+        const params = new URLSearchParams({
+          anio: document.getElementById("reporte-anio").value,
+          mes: document.getElementById("reporte-mes").value,
+          oficina: document.getElementById("reporte-oficina").value,
+          vendedor: document.getElementById("reporte-vendedor").value,
+          desarrollador: document.getElementById("reporte-desarrollador").value,
+        });
+        resultadoDiv.innerHTML = '<p class="hint">Buscando…</p>';
+        fetch("{{ url_for('comisiones_reporte_bookings') }}?" + params.toString())
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.error) {
+              resultadoDiv.innerHTML = '<p class="empty">' + data.error + "</p>";
+              return;
+            }
+            if (!data.filas.length) {
+              resultadoDiv.innerHTML = '<p class="empty">No encontré bookings con esos filtros.</p>';
+              return;
+            }
+            const filasHtml = data.filas.map((f) => `
+              <tr>
+                <td>${f.booking}</td>
+                <td>Folio ${f.folio}</td>
+                <td>${f.vendedor || "—"}</td>
+                <td>${fmtMoneda(f.comision_vendedor)}</td>
+                <td>${f.desarrollador || "—"}</td>
+                <td>${fmtMoneda(f.comision_desarrollador)}</td>
+              </tr>
+            `).join("");
+            resultadoDiv.innerHTML = `
+              <p class="hint">${data.filas.length} booking(s) encontrado(s).</p>
+              <table>
+                <thead><tr><th>Booking</th><th>Folio de pago</th><th>Vendedor</th><th>Comisión Vendedor</th><th>Desarrollador</th><th>Comisión Desarrollador</th></tr></thead>
+                <tbody>${filasHtml}</tbody>
+              </table>
+            `;
+          })
+          .catch(() => {
+            resultadoDiv.innerHTML = '<p class="empty">Ocurrió un error al buscar.</p>';
+          });
+      }
+
+      abrir.addEventListener("click", () => {
+        modal.classList.add("abierto");
+        resultadoDiv.innerHTML = "";
+      });
+      if (cerrar) cerrar.addEventListener("click", () => modal.classList.remove("abierto"));
+      modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("abierto"); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") modal.classList.remove("abierto"); });
+      form.addEventListener("submit", (e) => { e.preventDefault(); buscar(); });
     })();
     </script>
 
