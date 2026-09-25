@@ -122,6 +122,38 @@
     padding: .5rem .7rem; border-radius: 8px; border: 1px solid var(--border-strong); font-weight: 600;
   }
   .com-cargar-form { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+
+  .com-buscar-flotante {
+    position: fixed; top: 90px; right: 1.5rem; z-index: 40;
+    background: #fff; border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: .4rem .5rem; box-shadow: 0 2px 10px rgba(15,23,42,.1);
+  }
+  .com-buscar-flotante form { display: flex; align-items: center; gap: .3rem; }
+  .com-buscar-flotante input[type="text"] {
+    border: 1px solid var(--border); border-radius: 6px; padding: .35rem .55rem;
+    font-size: .78rem; width: 170px;
+  }
+  .com-buscar-flotante button {
+    display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+    padding: 0; border: none; border-radius: 6px; background: transparent; color: var(--ink-3); cursor: pointer;
+  }
+  .com-buscar-flotante button:hover { background: #f1f5f9; color: var(--ink); }
+  .com-buscar-flotante .com-limpiar {
+    display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+    color: var(--ink-3); text-decoration: none; font-size: 1rem; border-radius: 6px;
+  }
+  .com-buscar-flotante .com-limpiar:hover { background: #f1f5f9; color: var(--danger-dark); }
+  .com-buscar-resultados {
+    position: absolute; top: calc(100% + .4rem); right: 0; width: 460px; max-width: 80vw;
+    max-height: 60vh; overflow-y: auto; background: #fff; border: 1px solid var(--border-strong);
+    border-radius: 10px; box-shadow: 0 8px 24px rgba(15,23,42,.15); padding: .75rem; font-size: .76rem;
+  }
+  .com-buscar-resultados table { width: 100%; }
+  .com-buscar-resultados th, .com-buscar-resultados td { padding: .35rem .5rem; white-space: nowrap; }
+  @media (max-width: 760px) {
+    .com-buscar-flotante { position: static; margin-bottom: 1rem; box-shadow: none; }
+    .com-buscar-resultados { position: static; width: 100%; max-width: none; margin-top: .5rem; }
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -206,42 +238,41 @@
       {% endif %}
     </div>
 
-    <div class="card">
-      <h3 style="margin-top:0;">Buscar booking</h3>
-      <p class="hint" style="margin-top:-.5rem;">Busca en todos los folios cargados en qué liquidación se pagó un booking.</p>
-      <form method="get" action="{{ url_for('comisiones') }}" class="row" style="align-items:flex-end;" id="form-buscar-booking">
+    <div class="com-buscar-flotante" id="com-buscar-flotante">
+      <form method="get" action="{{ url_for('comisiones') }}" id="form-buscar-booking">
         {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
-        <div class="field" style="max-width:280px;">
-          <label for="buscar-booking">Número de booking</label>
-          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Ej. 2607-3715-FCLI" autocomplete="off">
-        </div>
-        <div style="display:flex; gap:.5rem;">
-          <button type="submit" class="btn small secondary">Buscar</button>
-          {% if buscar_booking %}
-          <a class="btn small secondary" href="{{ url_for('comisiones', folio=folio_actual) }}">Limpiar</a>
-          {% endif %}
-        </div>
+        <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Buscar booking..." autocomplete="off" title="Buscar en qué folio se pagó un booking">
+        <button type="submit" title="Buscar">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </button>
+        {% if buscar_booking %}
+        <a class="com-limpiar" href="{{ url_for('comisiones', folio=folio_actual) }}" title="Limpiar">&times;</a>
+        {% endif %}
       </form>
       <div id="resultados-busqueda-booking">
       {% if resultados_busqueda_booking is not none %}
         {% if resultados_busqueda_booking %}
-        <table style="margin-top:1rem;">
-          <thead><tr><th>Folio</th><th>Booking</th><th>Vendedor</th><th>Com. Vendedor</th><th>Desarrollador</th><th>Com. Desarrollador</th></tr></thead>
-          <tbody>
-            {% for r in resultados_busqueda_booking %}
-            <tr>
-              <td><a href="{{ url_for('comisiones', folio=r.folio) }}">Folio {{ r.folio }}</a> · {{ r.descripcion }}</td>
-              <td>{{ r.booking }}</td>
-              <td>{{ r.vendedor or '—' }}</td>
-              <td>${{ "{:,.2f}".format(r.total_vendedor) }}</td>
-              <td>{{ r.desarrollador or '—' }}</td>
-              <td>${{ "{:,.2f}".format(r.total_desarrollador) }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+        <div class="com-buscar-resultados">
+          <table>
+            <thead><tr><th>Folio</th><th>Booking</th><th>Vendedor</th><th>Com. Vendedor</th><th>Desarrollador</th><th>Com. Desarrollador</th></tr></thead>
+            <tbody>
+              {% for r in resultados_busqueda_booking %}
+              <tr>
+                <td><a href="{{ url_for('comisiones', folio=r.folio) }}">Folio {{ r.folio }}</a> · {{ r.descripcion }}</td>
+                <td>{{ r.booking }}</td>
+                <td>{{ r.vendedor or '—' }}</td>
+                <td>${{ "{:,.2f}".format(r.total_vendedor) }}</td>
+                <td>{{ r.desarrollador or '—' }}</td>
+                <td>${{ "{:,.2f}".format(r.total_desarrollador) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
         {% else %}
-        <p class="empty" style="margin-top:1rem;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
+        <div class="com-buscar-resultados">
+          <p class="empty" style="margin:0;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
+        </div>
         {% endif %}
       {% endif %}
       </div>
