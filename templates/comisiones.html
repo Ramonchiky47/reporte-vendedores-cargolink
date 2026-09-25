@@ -416,6 +416,10 @@
         if (exportarLink) exportarLink.href = "{{ url_for('comisiones_reporte_bookings_exportar') }}?" + filtrosActuales().toString();
       }
       form.addEventListener("change", actualizarExportar);
+      // Además del evento "change" de los selects, se recalcula justo al dar
+      // clic — así la liga siempre refleja lo seleccionado en ese momento,
+      // sin depender de que ningún evento previo se haya disparado bien.
+      if (exportarLink) exportarLink.addEventListener("click", actualizarExportar);
       actualizarExportar();
 
       function buscar() {
