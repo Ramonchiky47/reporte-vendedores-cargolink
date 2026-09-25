@@ -209,14 +209,20 @@
     <div class="card">
       <h3 style="margin-top:0;">Buscar booking</h3>
       <p class="hint" style="margin-top:-.5rem;">Busca en todos los folios cargados en qué liquidación se pagó un booking.</p>
-      <form method="get" action="{{ url_for('comisiones') }}" class="row" style="align-items:flex-end;">
+      <form method="get" action="{{ url_for('comisiones') }}" class="row" style="align-items:flex-end;" id="form-buscar-booking">
         {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
         <div class="field" style="max-width:280px;">
           <label for="buscar-booking">Número de booking</label>
-          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Ej. 2607-3715-FCLI">
+          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Ej. 2607-3715-FCLI" autocomplete="off">
         </div>
-        <div><button type="submit" class="btn small secondary">Buscar</button></div>
+        <div style="display:flex; gap:.5rem;">
+          <button type="submit" class="btn small secondary">Buscar</button>
+          {% if buscar_booking %}
+          <a class="btn small secondary" href="{{ url_for('comisiones', folio=folio_actual) }}">Limpiar</a>
+          {% endif %}
+        </div>
       </form>
+      <div id="resultados-busqueda-booking">
       {% if resultados_busqueda_booking is not none %}
         {% if resultados_busqueda_booking %}
         <table style="margin-top:1rem;">
@@ -238,7 +244,18 @@
         <p class="empty" style="margin-top:1rem;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
         {% endif %}
       {% endif %}
+      </div>
     </div>
+    <script>
+    (function () {
+      var input = document.getElementById("buscar-booking");
+      var resultados = document.getElementById("resultados-busqueda-booking");
+      if (!input || !resultados) return;
+      input.addEventListener("input", function () {
+        if (input.value.trim() === "") resultados.innerHTML = "";
+      });
+    })();
+    </script>
 
     {% if folio_actual %}
     <div class="com-kpis">
