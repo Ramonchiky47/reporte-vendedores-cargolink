@@ -6557,7 +6557,7 @@ def construir_inicio_crm(
         "cotizaciones_crm_todas", 30, """
             SELECT co.id, co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento,
                    co.cliente_folio, co.cliente_prospecto, co.nombre_cotizacion,
-                   co.estatus, co.perdida_en, cb.ganada_desde,
+                   co.estatus, co.perdida_en, cb.ganada_desde, co.creado_por_user_id,
                    ac.vendedor AS cliente_vendedor, ac.razon_social,
                    f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado
             FROM crm_cotizaciones co
@@ -6668,6 +6668,7 @@ def construir_inicio_crm(
         filas_tarea.append({"d": d, "vendedor": vendedor, "actividad": normalizar(r["actividad"])})
 
     creador_extra_lower = creador_extra_cotizaciones.lower() if creador_extra_cotizaciones else None
+    usuario_id_actual = session.get("usuario_id")
     filas_cot = []
     for r in cotizaciones:
         d = r["fecha_creacion"]
@@ -6681,7 +6682,14 @@ def construir_inicio_crm(
         es_creador_extra = bool(
             creador_extra_lower and r["creador_correo"] and r["creador_correo"].lower() == creador_extra_lower
         )
-        if not es_creador_extra:
+        # Lo que YO mismo creé siempre se ve, sin importar plaza — mismo
+        # criterio que ya aplica construir_cotizaciones_crm (es_creacion_propia):
+        # un prospecto (cliente_folio nulo) no tiene plaza de la que heredar
+        # ninguna, así que a alguien restringido por plaza sus propios
+        # prospectos le desaparecían de Inicio/Resultados (0 cotizaciones
+        # creadas aunque sí las tuviera esa semana).
+        es_creacion_propia = bool(usuario_id_actual and str(r["creado_por_user_id"] or "") == str(usuario_id_actual))
+        if not (es_creador_extra or es_creacion_propia):
             if r["cliente_folio"] is not None:
                 plaza = plaza_por_vendedor.get(normalizar(r["cliente_vendedor"]), "#N/D")
             else:
