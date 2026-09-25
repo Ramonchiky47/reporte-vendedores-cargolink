@@ -127,6 +127,7 @@
     position: fixed; top: 90px; right: 1.5rem; z-index: 40;
     background: #fff; border: 1px solid var(--border-strong); border-radius: 10px;
     padding: .4rem .5rem; box-shadow: 0 2px 10px rgba(15,23,42,.1);
+    transition: top .15s ease;
   }
   .com-buscar-flotante form { display: flex; align-items: center; gap: .3rem; }
   .com-buscar-flotante input[type="text"] {
@@ -281,10 +282,27 @@
     (function () {
       var input = document.getElementById("buscar-booking");
       var resultados = document.getElementById("resultados-busqueda-booking");
-      if (!input || !resultados) return;
-      input.addEventListener("input", function () {
-        if (input.value.trim() === "") resultados.innerHTML = "";
-      });
+      if (input && resultados) {
+        input.addEventListener("input", function () {
+          if (input.value.trim() === "") resultados.innerHTML = "";
+        });
+      }
+
+      // La cajita flotante va justo debajo del encabezado — pero el
+      // encabezado se parte en dos líneas (o más) según cuántos links de
+      // navegación quepan a lo ancho, así que su altura no es fija: se mide
+      // en vivo en vez de asumir un valor, para que nunca quede tapada.
+      var widget = document.getElementById("com-buscar-flotante");
+      var topbar = document.querySelector(".topbar");
+      if (widget && topbar) {
+        var posicionar = function () {
+          widget.style.top = (topbar.getBoundingClientRect().bottom + 12) + "px";
+        };
+        posicionar();
+        window.addEventListener("resize", posicionar);
+        window.addEventListener("load", posicionar);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(posicionar);
+      }
     })();
     </script>
 
