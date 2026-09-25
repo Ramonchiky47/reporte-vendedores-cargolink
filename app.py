@@ -1883,8 +1883,15 @@ def agregar_cabeceras_seguridad(resp):
     # lista de Cotizaciones, y "Editar" navegando dentro de ese mismo
     # iframe) se embeben en un <iframe> propio, mismo origen;
     # frame-ancestors 'none' bloqueaba esos iframes igual que uno externo,
-    # dejando el visor/modal en blanco.
-    if request.endpoint in ("pricing_pdf", "crm_cotizacion_detalle", "crm_cotizacion_editar"):
+    # dejando el visor/modal en blanco. Los formularios de "Solicitar
+    # información a Pricing" (Marítimo/Aéreo y Terrestre Internacional) se
+    # abren con un link normal desde dentro de ese mismo iframe (Editar →
+    # Solicitar), así que también necesitan la cabecera permisiva o el
+    # iframe se queda en blanco al navegar a ellos.
+    if request.endpoint in (
+        "pricing_pdf", "crm_cotizacion_detalle", "crm_cotizacion_editar",
+        "crm_solicitud_maritimo_nueva", "crm_solicitud_transporte_terrestre_nueva",
+    ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     else:
