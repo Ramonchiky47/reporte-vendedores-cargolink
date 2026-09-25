@@ -3439,12 +3439,48 @@ def comisiones():
             "SELECT DISTINCT plaza FROM catalogo_vendedores WHERE plaza IS NOT NULL ORDER BY 1"
         ).fetchall()
     ]
-    vendedores_catalogo_reporte = db.execute(
-        "SELECT vendedor, plaza FROM catalogo_vendedores ORDER BY vendedor"
-    ).fetchall()
-    desarrolladores_catalogo_reporte = db.execute(
-        "SELECT desarrollador, plaza FROM catalogo_desarrolladores ORDER BY desarrollador"
-    ).fetchall()
+    # Los selects de Vendedor/Desarrollador no se limitan al catálogo: se
+    # completan con quien ya tenga liquidaciones reales cargadas pero todavía
+    # no esté dado de alta ahí (p.ej. Paola Huerta o Gabriela González como
+    # desarrolladoras) — si no, desaparecían del filtro aunque sí tuvieran
+    # bookings en el reporte. A los que solo vienen de aquí no se les conoce
+    # su plaza, así que quedan sin acotar por Oficina (se siguen viendo con
+    # "Todas", pero no bajo una oficina específica).
+    vendedores_catalogo_reporte = db.execute("""
+        SELECT vendedor, plaza FROM catalogo_vendedores
+        UNION
+        SELECT DISTINCT cld.vendedor, NULL
+        FROM comisiones_liquidacion_detalle cld
+        WHERE cld.vendedor IS NOT NULL AND cld.vendedor <> ''
+          AND NOT EXISTS (SELECT 1 FROM catalogo_vendedores cv WHERE cv.vendedor = cld.vendedor)
+        ORDER BY vendedor
+    """).fetchall()
+    desarrolladores_catalogo_reporte = db.execute("""
+        SELECT desarrollador, plaza FROM catalogo_desarrolladores
+        UNION
+        SELECT DISTINCT cld.desarrollador, NULL
+        FROM comisiones_liquidacion_detalle cld
+        WHERE cld.desarrollador IS NOT NULL AND cld.desarrollador <> ''
+          AND NOT EXISTS (SELECT 1 FROM catalogo_desarrolladores cd WHERE cd.desarrollador = cld.desarrollador)
+        ORDER BY desarrollador
+    """).fetchall()
+    # catalogo_desarrolladores.plaza casi nunca está capturada (a diferencia
+    # de catalogo_vendedores, donde sí), así que para poder acotar el select
+    # de Desarrollador según la Oficina elegida se deriva de los datos reales:
+    # con qué vendedores (y por lo tanto qué plaza) ha aparecido cada
+    # desarrollador en las liquidaciones ya cargadas.
+    plaza_por_vendedor_reporte = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    desarrolladores_por_oficina = {}
+    for r in db.execute(
+        "SELECT DISTINCT vendedor, desarrollador FROM comisiones_liquidacion_detalle "
+        "WHERE vendedor IS NOT NULL AND desarrollador IS NOT NULL"
+    ):
+        plaza = plaza_por_vendedor_reporte.get(normalizar(r["vendedor"]))
+        if plaza:
+            desarrolladores_por_oficina.setdefault(plaza, set()).add(r["desarrollador"])
+    desarrolladores_por_oficina = {k: sorted(v) for k, v in desarrolladores_por_oficina.items()}
     db.close()
 
     return render_template(
@@ -3470,6 +3506,7 @@ def comisiones():
         oficinas_disponibles=oficinas_disponibles,
         vendedores_catalogo_reporte=vendedores_catalogo_reporte,
         desarrolladores_catalogo_reporte=desarrolladores_catalogo_reporte,
+        desarrolladores_por_oficina_json=json.dumps(desarrolladores_por_oficina),
     )
 
 

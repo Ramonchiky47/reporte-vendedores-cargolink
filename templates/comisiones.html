@@ -9,6 +9,12 @@
        fijo, empuja el contenido hacia el centro dejando espacio de sobra. */
     main { padding-right: 220px; }
   }
+  /* Los campos de "Bookings por periodo/oficina/vendedor" traían flex:1 del
+     .row genérico (se estiran a llenar el espacio libre), lo que en la fila
+     donde solo caben Vendedor y Desarrollador los pegaba casi sin separación
+     entre sí — aquí cada uno conserva su propio ancho y con más aire entre ellos. */
+  #form-reporte-bookings { gap: 1rem 1.5rem; }
+  #form-reporte-bookings .field { flex: 0 0 auto; }
   .com-descripcion { font-size: .85rem; color: var(--ink-2); margin: -.5rem 0 1.25rem; }
   .com-descripcion b { color: var(--ink); }
   .com-resumen { width: auto; min-width: 100%; font-variant-numeric: tabular-nums; font-size: .73rem; }
@@ -317,6 +323,7 @@
     })();
     </script>
 
+    <script id="datos-desarrolladores-por-oficina" type="application/json">{{ desarrolladores_por_oficina_json | safe }}</script>
     <div class="com-modal-overlay" id="com-modal-reporte">
       <div class="com-modal-panel">
         <div class="com-modal-body">
@@ -456,13 +463,23 @@
       const selectOficina = document.getElementById("reporte-oficina");
       const selectVendedor = document.getElementById("reporte-vendedor");
       const selectDesarrollador = document.getElementById("reporte-desarrollador");
+      // catalogo_desarrolladores casi nunca trae su plaza capturada (a
+      // diferencia de catalogo_vendedores, donde sí), así que Desarrollador
+      // no se puede acotar por data-plaza como Vendedor — se usa esta lista
+      // armada con datos reales: qué desarrolladores han aparecido en
+      // liquidaciones junto a vendedores de cada oficina.
+      const desarrolladoresPorOficina = JSON.parse(document.getElementById("datos-desarrolladores-por-oficina").textContent);
       function filtrarPorOficina() {
         const plaza = selectOficina.value;
-        [selectVendedor, selectDesarrollador].forEach((select) => {
+        const desarrolladoresValidos = plaza ? new Set(desarrolladoresPorOficina[plaza] || []) : null;
+        [
+          { select: selectVendedor, permite: (opcion) => !plaza || opcion.dataset.plaza === plaza },
+          { select: selectDesarrollador, permite: (opcion) => !desarrolladoresValidos || desarrolladoresValidos.has(opcion.value) },
+        ].forEach(({ select, permite }) => {
           let seleccionValida = false;
           Array.from(select.options).forEach((opcion) => {
             if (!opcion.value) return; // "Todos" siempre visible
-            const visible = !plaza || opcion.dataset.plaza === plaza;
+            const visible = permite(opcion);
             opcion.hidden = !visible;
             if (visible && opcion.selected) seleccionValida = true;
           });
