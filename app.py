@@ -4391,7 +4391,7 @@ def administracion_antiguedad_saldos_enviar_ahora():
             fallidos.append(f"{cliente} (sin correo en el catálogo de Clientes por Pagar)")
             continue
         nombre_contacto_cliente, correos_cliente = entrada
-        contactos = [(nombre_contacto_cliente, correo) for correo in correos_cliente]
+        correo_principal, *correos_copia_cliente = correos_cliente
 
         facturas_cliente = [f for f in reporte["facturas"] if f["cliente"] == cliente]
         if not facturas_cliente:
@@ -4420,20 +4420,20 @@ def administracion_antiguedad_saldos_enviar_ahora():
         if not adjuntos:
             continue
 
-        for nombre_contacto, correo in contactos:
-            cuerpo = render_template(
-                "administracion_antiguedad_email.html",
-                nombre_contacto=nombre_contacto or "Cliente", fecha_envio=fecha_envio,
-                bloques_moneda=bloques_moneda,
-            )
-            try:
-                enviar_correo_smtp(correo, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos, cc=copia_correos)
-                enviados += 1
-            except RuntimeError as e:
-                flash(f"No se pudo enviar: {e}")
-                return redirect(url_for("administracion_antiguedad_saldos"))
-            except Exception as e:
-                fallidos.append(f"{cliente} <{correo}> ({e})")
+        cuerpo = render_template(
+            "administracion_antiguedad_email.html",
+            nombre_contacto=nombre_contacto_cliente or "Cliente", fecha_envio=fecha_envio,
+            bloques_moneda=bloques_moneda,
+        )
+        cc_envio = correos_copia_cliente + copia_correos
+        try:
+            enviar_correo_smtp(correo_principal, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos, cc=cc_envio)
+            enviados += 1
+        except RuntimeError as e:
+            flash(f"No se pudo enviar: {e}")
+            return redirect(url_for("administracion_antiguedad_saldos"))
+        except Exception as e:
+            fallidos.append(f"{cliente} <{correo_principal}> ({e})")
 
     mensaje = f"Correos enviados: {enviados}."
     if fallidos:
