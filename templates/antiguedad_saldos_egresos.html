@@ -96,6 +96,15 @@
     <div class="card"><p class="empty">Todavía no hay datos. Da clic en "Actualizar desde CargoLink" para descargarlos.</p></div>
     {% else %}
 
+    {% if totales_cobrado %}
+    <p class="hint" style="margin:-.5rem 0 .4rem;">Cobrado al cliente (facturas de proveedor cuya factura de cliente asociada ya está marcada como "Cobrada" en CargoLink):</p>
+    <div class="adm-kpis">
+      {% for moneda, total in totales_cobrado.items() %}
+      <div class="adm-kpi"><div class="label">Cobrado {{ moneda }}</div><div class="value">${{ "{:,.2f}".format(total) }}</div></div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <div class="adm-kpis">
       {% for moneda, total in totales_moneda.items() %}
       <div class="adm-kpi"><div class="label">Total {{ moneda }}</div><div class="value">${{ "{:,.2f}".format(total) }}</div></div>

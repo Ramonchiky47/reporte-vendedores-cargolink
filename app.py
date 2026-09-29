@@ -287,6 +287,7 @@ def init_db():
             cliente text,
             factura_cliente text,
             estatus text,
+            monto_cobrar numeric not null default 0,
             fecha_recepcion timestamp,
             referencia_booking text,
             fecha_factura date,
@@ -308,6 +309,7 @@ def init_db():
             generado_en timestamptz not null default now()
         );
     """)
+    db.execute("ALTER TABLE antiguedad_saldos_egresos ADD COLUMN IF NOT EXISTS monto_cobrar numeric not null default 0;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS reporte_bookings (
             id bigint generated always as identity primary key,
@@ -1503,7 +1505,46 @@ def descargar_antiguedad_saldos_egresos_cargolink():
         raise RuntimeError("Error al consultar Antigüedad de saldos (Egresos) en CargoLink.")
     data = r_consulta.json()
 
+    # El export ("Exportar Excel" de esa misma pantalla) trae, cuando la
+    # factura de proveedor está ligada a una factura de cliente concreta,
+    # el nombre de ese cliente y si ya se le cobró (columnas Cliente/Factura
+    # cliente/Moneda/Monto/Estatus) — datos que la API del grid no expone.
+    # Se cruza por (proveedor, factura), que identifica la factura de forma
+    # única dentro de cada proveedor.
+    cobro_por_factura = {}
+    try:
+        r_excel = sesion.get(f"{CARGOLINK_ANTIGUEDAD_EGRESOS_URL}excelAV2.php?token={token}&por=", headers=headers, timeout=120)
+        if r_excel.status_code == 200 and r_excel.content:
+            soup_excel = BeautifulSoup(r_excel.content.decode("utf-8-sig", errors="replace"), "html.parser")
+            header_map = None
+            for tr in soup_excel.find_all("tr"):
+                celdas = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+                if not celdas:
+                    continue
+                if len(celdas) == 1 and celdas[0] in ("MXN", "USD", "EUR"):
+                    header_map = None
+                    continue
+                if header_map is None:
+                    header_map = {i: nombre for i, nombre in enumerate(celdas)} if "Folio" in celdas and "Proveedor" in celdas else "otro"
+                    continue
+                if header_map == "otro":
+                    continue
+                fila_excel = dict(zip(header_map.values(), celdas))
+                clave = (fila_excel.get("Proveedor") or "", fila_excel.get("Factura") or "")
+                if clave[1] and (fila_excel.get("Cliente") or fila_excel.get("Estatus")):
+                    cobro_por_factura[clave] = {
+                        "cliente": fila_excel.get("Cliente") or None,
+                        "factura_cliente": fila_excel.get("Factura cliente") or None,
+                        "estatus": fila_excel.get("Estatus") or None,
+                        "monto_cobrar": fila_excel.get("Monto") or "",
+                    }
+    except (requests.RequestException, ValueError):
+        pass  # el KPI de cobrado es informativo; si falla, se sigue con lo demás en 0/None
+
     def num(v):
+        v = (v if v is not None else "0")
+        if isinstance(v, str):
+            v = v.replace(",", "").replace("$", "").strip()
         try:
             return float(v)
         except (TypeError, ValueError):
@@ -1555,16 +1596,19 @@ def descargar_antiguedad_saldos_egresos_cargolink():
             fila[bucket_col] = total
 
         no_booking = (v.get("no_booking") or "").strip() or None
+        factura = v.get("folio") or None
+        cobro = cobro_por_factura.get((proveedor, factura or ""))
         facturas.append({
             "proveedor": proveedor,
             "moneda": (v.get("Moneda") or "").strip() or "N/D",
-            "cliente": cliente_por_booking.get(no_booking) if no_booking else None,
-            "factura_cliente": None,
-            "estatus": None,
+            "cliente": (cobro or {}).get("cliente") or (cliente_por_booking.get(no_booking) if no_booking else None),
+            "factura_cliente": (cobro or {}).get("factura_cliente"),
+            "estatus": (cobro or {}).get("estatus"),
+            "monto_cobrar": num((cobro or {}).get("monto_cobrar")),
             "fecha_recepcion": fecha_hora(v.get("recepcion")),
             "referencia_booking": no_booking,
             "fecha_factura": fecha(v.get("fecha"), "%Y-%m-%d"),
-            "factura": v.get("folio") or None,
+            "factura": factura,
             "vencimiento": fecha(v.get("vencimiento"), "%d-%m-%Y"),
             "profit": num(v.get("profit_final")),
             "monto_factura": num(v.get("Total")),
@@ -1588,7 +1632,7 @@ def actualizar_antiguedad_saldos_egresos():
     facturas = descargar_antiguedad_saldos_egresos_cargolink()
 
     columnas = [
-        "proveedor", "moneda", "cliente", "factura_cliente", "estatus", "fecha_recepcion",
+        "proveedor", "moneda", "cliente", "factura_cliente", "estatus", "monto_cobrar", "fecha_recepcion",
         "referencia_booking", "fecha_factura", "factura", "vencimiento", "profit", "monto_factura",
         "folio_anticipo", "fecha_anticipo", "monto_anticipo_aplicado",
         "por_vencer", "dias_0_7", "dias_8_14", "dias_15_21", "dias_22_28", "dias_29_35", "mas_36", "total",
@@ -4842,6 +4886,7 @@ def antiguedad_saldos_egresos():
     db = get_db()
     facturas_rows = db.execute("""
         SELECT proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
+               estatus, monto_cobrar,
                por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
@@ -4854,10 +4899,15 @@ def antiguedad_saldos_egresos():
     facturas = []
     for f in facturas_rows:
         f = dict(f)
-        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total"):
+        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total", "monto_cobrar"):
             f[campo] = float(f[campo] or 0)
         f["vencido"] = sum(f[b] for b in ANTIGUEDAD_EGRESOS_BUCKETS if b != "por_vencer")
         facturas.append(f)
+
+    totales_cobrado = {}
+    for f in facturas:
+        if (f["estatus"] or "").strip().upper() == "COBRADA":
+            totales_cobrado[f["moneda"]] = totales_cobrado.get(f["moneda"], 0.0) + f["monto_cobrar"]
 
     por_proveedor_moneda = {}
     orden = []
@@ -4908,6 +4958,7 @@ def antiguedad_saldos_egresos():
     return render_template(
         "antiguedad_saldos_egresos.html",
         filas=filas, grupos=grupos, buckets=buckets, totales_moneda=totales_moneda,
+        totales_cobrado=totales_cobrado,
         monedas_disponibles=monedas_disponibles, facturas_json=facturas_json,
         generado_en=generado_en, total_facturas=len(facturas),
     )
