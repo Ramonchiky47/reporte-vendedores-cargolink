@@ -1210,6 +1210,39 @@ def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PA
     return r.json().get("valores", [])
 
 
+def pagos_con_facturas_ligadas_cargolink(id_proveedor):
+    """Igual que buscar_pagos_proveedor_cargolink(id_proveedor, fecha=None)
+    pero, para cada pago, agrega la lista de facturas de proveedor a las que
+    CargoLink lo tiene aplicado (cat=api2&fn=buscarDocumentosLigadosalPagoProv
+    &id_mov_bancario=...) — es el mismo dato que se ve en el PDF del
+    comprobante ("Folio/Fecha/Referencia/Afectación/$ Saldo"), pero vía API
+    en vez de tener que abrir cada PDF. Un pago puede cubrir varias facturas
+    (por ejemplo una renta con 3 facturas del mismo mes)."""
+    sesion, headers, token = _conectar_pagos_cargolink()
+    body = {"filtros": {}, "filtros2": {"fechaini": "", "fechafin": ""}, "filtros3": {"id_proveedor": str(id_proveedor)}}
+    r = sesion.post(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit=0",
+        json=body, headers={"Content-Type": "application/json"}, timeout=60,
+    )
+    if r.status_code != 200:
+        raise RuntimeError("Error al consultar los pagos del proveedor en CargoLink.")
+    pagos = r.json().get("valores", [])
+
+    for pago in pagos:
+        pago["facturas_ligadas"] = []
+        try:
+            r_lig = sesion.get(
+                f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=buscarDocumentosLigadosalPagoProv&id_mov_bancario={pago['Id']}",
+                headers=headers, timeout=30,
+            )
+            if r_lig.status_code == 200:
+                pago["facturas_ligadas"] = r_lig.json().get("valores") or []
+        except (requests.RequestException, ValueError):
+            pass  # si falla para un pago puntual, se sigue con el resto
+
+    return pagos
+
+
 def adjuntar_comprobante_pago_cargolink(id_mov_banco, nombre_archivo, contenido, tipo_mime):
     """Sube el PDF/imagen del recibo como evidencia de un movimiento
     bancario (Pago) ya existente en CargoLink — el mismo endpoint que usa
@@ -4985,18 +5018,18 @@ def antiguedad_saldos_egresos_actualizar():
 @app.route("/antiguedad-saldos-egresos/pagos-proveedor")
 @login_required
 def antiguedad_saldos_egresos_pagos_proveedor():
-    """Lista (sin intentar adivinar a qué factura corresponde cada uno) los
-    pagos hechos a un proveedor en CargoLink — para que, al ver una factura
-    con saldo ya parcialmente pagado, se pueda verificar a simple vista cuál
-    pago la cubre, en vez de que el sistema arriesgue una asociación por
-    coincidencia de monto/fecha que podría ser incorrecta."""
+    """Pagos hechos a un proveedor en CargoLink, con la(s) factura(s) que
+    cada uno tiene aplicada(s) — el mismo dato que trae el PDF del
+    comprobante ("Folio/Fecha/Referencia/Afectación/$ Saldo"), obtenido vía
+    API (buscarDocumentosLigadosalPagoProv) en vez de tener que abrir cada
+    PDF a mano."""
     if not usuario_puede_ver_administracion():
         return {"error": "Sin permiso"}, 403
     id_proveedor = (request.args.get("id_proveedor") or "").strip()
     if not id_proveedor:
         return {"error": "Falta id_proveedor"}, 400
     try:
-        pagos = buscar_pagos_proveedor_cargolink(id_proveedor, fecha=None)
+        pagos = pagos_con_facturas_ligadas_cargolink(id_proveedor)
     except RuntimeError as e:
         return {"error": str(e)}, 502
 
@@ -5009,6 +5042,10 @@ def antiguedad_saldos_egresos_pagos_proveedor():
             "referencia": p.get("referencia"),
             "usuario": p.get("usuario_pago"),
             "url_pago": f"https://fwd.cargolink.mx/{p['url_pago']}" if p.get("url_pago") else None,
+            "facturas_ligadas": [
+                {"factura": fl.get("Factura"), "fecha": fl.get("Fecha"), "importe": fl.get("Importe")}
+                for fl in (p.get("facturas_ligadas") or [])
+            ],
         }
         for p in pagos
     ]}

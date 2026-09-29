@@ -355,7 +355,7 @@
     });
     const filas = Array.from(porCliente.entries()).sort((a, b) => b[1].total - a[1].total);
     const filasHtml = filas.map(([cliente, d]) => `
-        <tr><td>${cliente}</td><td>${d.cantidad}</td><td>${fmtMoneda(d.total)}</td></tr>
+        <tr data-cliente-resumen="${cliente.replace(/"/g, "&quot;")}"><td>${cliente}</td><td>${d.cantidad}</td><td>${fmtMoneda(d.total)}</td></tr>
       `).join("");
     return `
       <table class="adm-resumen">
@@ -373,10 +373,7 @@
   function mostrarPagosProveedor(idProveedor, nombreProveedor, volver) {
     contenido.innerHTML = `
       <p class="adm-modal-titulo">Pagos hechos a ${nombreProveedor}</p>
-      <p class="hint" style="margin-top:-.75rem;">
-        No se intenta adivinar a cuál factura corresponde cada pago — CargoLink no liga esa relación directamente.
-        Verifica por fecha/monto cuál cubre la factura que estabas revisando.
-      </p>
+      <p class="hint" style="margin-top:-.75rem;">La columna "Factura pagada" es la(s) factura(s) de proveedor a la(s) que CargoLink tiene aplicado ese pago.</p>
       <div style="margin-bottom:.75rem;">
         <button type="button" class="btn small secondary" id="adm-btn-volver-pagos">← Volver</button>
       </div>
@@ -398,20 +395,28 @@
           cont.innerHTML = '<p class="empty">No se encontraron pagos para este proveedor.</p>';
           return;
         }
-        const filasHtml = pagos.map((p) => `
-            <tr>
+        const filasHtml = pagos.map((p) => {
+          const ligadas = p.facturas_ligadas || [];
+          const facturaTxt = ligadas.length
+            ? ligadas.map((fl) => `${fl.factura || "—"} (${fmtMonto(fl.importe)})`).join("<br>")
+            : '<span style="color:var(--ink-3);">Sin factura ligada</span>';
+          const filaSombreada = !ligadas.length ? ' style="background:#fef2f2;"' : "";
+          return `
+            <tr${filaSombreada}>
               <td>${(p.fecha || "—").split(" ")[0]}</td>
               <td>${p.moneda || "—"}</td>
               <td>${fmtMonto(p.monto)}</td>
+              <td>${facturaTxt}</td>
               <td>${p.banco || "—"}</td>
               <td>${p.referencia || "—"}</td>
               <td>${p.usuario || "—"}</td>
               <td>${p.url_pago ? `<a href="${p.url_pago}" target="_blank" rel="noopener">Ver PDF</a>` : "—"}</td>
             </tr>
-          `).join("");
+          `;
+        }).join("");
         cont.innerHTML = `
           <table class="adm-resumen">
-            <thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Banco</th><th>Referencia</th><th>Usuario</th><th>Comprobante</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Factura pagada</th><th>Banco</th><th>Referencia</th><th>Usuario</th><th>Comprobante</th></tr></thead>
             <tbody>${filasHtml}</tbody>
           </table>
         `;
@@ -434,23 +439,57 @@
     const idProveedor = facturas.find((f) => f.id_proveedor)?.id_proveedor;
 
     let vistaResumen = false;
+    let clienteSeleccionado = null;
 
     function render() {
+      let tituloExtra = "";
+      let tablaHtml;
+      if (clienteSeleccionado) {
+        const facturasCliente = facturas.filter((f) => (f.cliente || "— (sin cliente)") === clienteSeleccionado);
+        tituloExtra = ` · Cliente: ${clienteSeleccionado}`;
+        tablaHtml = tablaDetalleFacturas(facturasCliente);
+      } else if (vistaResumen) {
+        tablaHtml = tablaResumenPorCliente(facturas);
+      } else {
+        tablaHtml = tablaDetalleFacturas(facturas);
+      }
+
       contenido.innerHTML = `
-        <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+        <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento}${tituloExtra} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
         <div style="margin-bottom:.75rem; display:flex; gap:.5rem; flex-wrap:wrap;">
-          <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
-          ${idProveedor ? '<button type="button" class="btn small secondary" id="adm-btn-ver-pagos">Ver pagos del proveedor</button>' : ""}
+          ${clienteSeleccionado ? '<button type="button" class="btn small secondary" id="adm-btn-volver-cliente">← Volver al resumen por cliente</button>' : `
+            <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
+            ${idProveedor ? '<button type="button" class="btn small secondary" id="adm-btn-ver-pagos">Ver pagos del proveedor</button>' : ""}
+          `}
         </div>
-        <div id="adm-modal-tabla">${vistaResumen ? tablaResumenPorCliente(facturas) : tablaDetalleFacturas(facturas)}</div>
+        <div id="adm-modal-tabla">${tablaHtml}</div>
       `;
+
+      if (clienteSeleccionado) {
+        document.getElementById("adm-btn-volver-cliente").addEventListener("click", () => {
+          clienteSeleccionado = null;
+          render();
+        });
+        return;
+      }
+
       document.getElementById("adm-btn-resumen-cliente").addEventListener("click", () => {
         vistaResumen = !vistaResumen;
         render();
       });
       const btnPagos = document.getElementById("adm-btn-ver-pagos");
       if (btnPagos) btnPagos.addEventListener("click", () => mostrarPagosProveedor(idProveedor, proveedorReal, render));
+
+      if (vistaResumen) {
+        document.querySelectorAll("#adm-modal-tabla tr[data-cliente-resumen]").forEach((tr) => {
+          tr.style.cursor = "pointer";
+          tr.addEventListener("click", () => {
+            clienteSeleccionado = tr.dataset.clienteResumen;
+            render();
+          });
+        });
+      }
     }
 
     render();
