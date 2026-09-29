@@ -323,11 +323,7 @@
     dias_22_28: "22-28", dias_29_35: "29-35", mas_36: "+36",
   };
 
-  function abrirProveedor(proveedorReal, moneda, bucket) {
-    let facturas = FACTURAS.filter((f) => f.proveedor === proveedorReal && f.moneda === moneda);
-    if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
-    facturas.sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
-
+  function tablaDetalleFacturas(facturas) {
     const filasHtml = facturas.map((f) => `
         <tr>
           <td>${f.referencia_booking || "—"}</td>
@@ -340,17 +336,63 @@
           <td style="${f.vencido ? 'color:var(--danger-dark);font-weight:600;' : ''}">${fmtMoneda(f.total)}</td>
         </tr>
       `).join("");
-
-    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
-    const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
-
-    contenido.innerHTML = `
-      <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+    return `
       <table class="adm-resumen">
         <thead><tr><th>Booking</th><th>Factura</th><th>Cliente</th><th>Fecha factura</th><th>Vencimiento</th><th>Valor factura</th><th>Pagado</th><th>Saldo</th></tr></thead>
         <tbody>${filasHtml}</tbody>
       </table>
     `;
+  }
+
+  function tablaResumenPorCliente(facturas) {
+    const porCliente = new Map();
+    facturas.forEach((f) => {
+      const clave = f.cliente || "— (sin cliente)";
+      if (!porCliente.has(clave)) porCliente.set(clave, { cantidad: 0, total: 0 });
+      const acc = porCliente.get(clave);
+      acc.cantidad += 1;
+      acc.total += f.total || 0;
+    });
+    const filas = Array.from(porCliente.entries()).sort((a, b) => b[1].total - a[1].total);
+    const filasHtml = filas.map(([cliente, d]) => `
+        <tr><td>${cliente}</td><td>${d.cantidad}</td><td>${fmtMoneda(d.total)}</td></tr>
+      `).join("");
+    return `
+      <table class="adm-resumen">
+        <thead><tr><th>Cliente</th><th>Facturas</th><th>Saldo</th></tr></thead>
+        <tbody>${filasHtml}</tbody>
+      </table>
+    `;
+  }
+
+  function abrirProveedor(proveedorReal, moneda, bucket) {
+    let facturas = FACTURAS.filter((f) => f.proveedor === proveedorReal && f.moneda === moneda);
+    if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
+    facturas.sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+
+    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+    const vencido = facturas.reduce((acc, f) => acc + (f.vencido || 0), 0);
+    const porVencer = total - vencido;
+    const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
+
+    let vistaResumen = false;
+
+    function render() {
+      contenido.innerHTML = `
+        <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+        <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
+        <div style="margin-bottom:.75rem;">
+          <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
+        </div>
+        <div id="adm-modal-tabla">${vistaResumen ? tablaResumenPorCliente(facturas) : tablaDetalleFacturas(facturas)}</div>
+      `;
+      document.getElementById("adm-btn-resumen-cliente").addEventListener("click", () => {
+        vistaResumen = !vistaResumen;
+        render();
+      });
+    }
+
+    render();
     modal.classList.add("abierto");
   }
 
