@@ -1456,16 +1456,27 @@ def descargar_antiguedad_saldos_cargolink():
     return {"filas": filas, "facturas": facturas, "totales_moneda": totales_moneda, "buckets": buckets}
 
 
+ANTIGUEDAD_EGRESOS_BUCKET_KEYS_API = {
+    "venc_0": "por_vencer", "venc_0_7": "dias_0_7", "venc_8_14": "dias_8_14", "venc_15_21": "dias_15_21",
+    "venc_22_28": "dias_22_28", "venc_29_35": "dias_29_35", "venc_36": "mas_36",
+}
+
+
 def descargar_antiguedad_saldos_egresos_cargolink():
     """Se conecta a CargoLink, entra a Egresos → Antigüedad de saldos (m=70)
-    y descarga el mismo archivo que genera el botón "Exportar Excel" de esa
-    pantalla (excelAV2.php) — no la API cruda del grid, que trae por cada
-    factura un árbol enorme de cargos de booking que no hace falta para este
-    reporte. El archivo es en realidad una tabla HTML servida con
-    content-type/extensión de Excel (truco común de reportes viejos), con
-    tres bloques (uno por moneda: MXN, USD, EUR), cada uno con una tabla de
-    detalle por factura seguida de un resumen por proveedor que se ignora
-    aquí (se recalculan los totales por proveedor a partir del detalle).
+    y consulta la misma API que usa esa pantalla para pintar la tabla en
+    vivo (cat=apiLiquidacion&fn=consultaantiguedadProveedores).
+
+    Se probó primero con el archivo que genera el botón "Exportar Excel"
+    (excelAV2.php), pero Ramón detectó que sus montos no cuadraban contra
+    lo que muestra la pantalla — el export trae el total ORIGINAL de la
+    factura, sin descontar anticipos/pagos parciales ya aplicados, mientras
+    que el campo "total_factura" de esta API sí es el saldo neto pendiente
+    (el mismo que ve CargoLink en pantalla). Cada renglón trae además
+    exactamente una de las claves "venc_0"/"venc_0_7"/.../"venc_36" — el
+    bucket de antigüedad en el que CargoLink ya clasificó ese saldo — que
+    se usa tal cual en vez de recalcularlo aquí.
+
     Regresa una lista de dicts, uno por factura. No toca la base de datos."""
     usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
     password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
@@ -1484,17 +1495,18 @@ def descargar_antiguedad_saldos_egresos_cargolink():
         raise RuntimeError("No se pudo obtener el token de sesión de Antigüedad de saldos (Egresos).")
     token = match_token.group(1)
 
-    r_excel = sesion.get(f"{CARGOLINK_ANTIGUEDAD_EGRESOS_URL}excelAV2.php?token={token}&por=", headers=headers, timeout=120)
-    if r_excel.status_code != 200 or len(r_excel.content) == 0:
-        raise RuntimeError("Error al descargar Antigüedad de saldos (Egresos) desde CargoLink.")
-
-    soup = BeautifulSoup(r_excel.content.decode("utf-8-sig", errors="replace"), "html.parser")
+    r_consulta = sesion.get(
+        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=apiLiquidacion&fn=consultaantiguedadProveedores",
+        headers=headers, timeout=120,
+    )
+    if r_consulta.status_code != 200:
+        raise RuntimeError("Error al consultar Antigüedad de saldos (Egresos) en CargoLink.")
+    data = r_consulta.json()
 
     def num(v):
-        v = (v or "0").replace(",", "").replace("$", "").strip()
         try:
             return float(v)
-        except ValueError:
+        except (TypeError, ValueError):
             return 0.0
 
     def fecha(v, formato):
@@ -1515,64 +1527,52 @@ def descargar_antiguedad_saldos_egresos_cargolink():
         except ValueError:
             return None
 
-    columnas = {
-        "Proveedor": "proveedor", "Cliente": "cliente", "Factura cliente": "factura_cliente",
-        "Estatus": "estatus", "Fecha Recepcion": "fecha_recepcion", "Referencia booking": "referencia_booking",
-        "Fecha Fact": "fecha_factura", "Factura": "factura", "Vencimiento": "vencimiento",
-        "Profit": "profit", "Monto factura": "monto_factura", "Folio anticipo": "folio_anticipo",
-        "Fecha anticipo": "fecha_anticipo", "Monto anticipo aplicado": "monto_anticipo_aplicado",
-        "Por vencer": "por_vencer", "0 A 7": "dias_0_7", "8 a 14": "dias_8_14", "15 a 21": "dias_15_21",
-        "22 a 28": "dias_22_28", "29 a 35": "dias_29_35", "Mas de 36": "mas_36", "Total": "total",
+    # "no_booking" (referencia de booking) es lo único que trae esta API para
+    # ubicar el cliente final de la factura de proveedor — se resuelve contra
+    # reporte_bookings, que ya tenemos importado, en vez de dejarlo vacío.
+    db = get_db()
+    cliente_por_booking = {
+        r["referencia"]: r["cliente_servicio"]
+        for r in db.execute("SELECT DISTINCT ON (referencia) referencia, cliente_servicio FROM reporte_bookings WHERE referencia IS NOT NULL")
     }
+    db.close()
 
-    moneda_actual = None
-    header_map = None  # None = pendiente de detectar; "detalle" = mapea columnas; "otro" = ignorar hasta el próximo bloque
     facturas = []
-    for tr in soup.find_all("tr"):
-        celdas = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
-        if not celdas:
-            continue
-        if len(celdas) == 1 and celdas[0] in ("MXN", "USD", "EUR"):
-            moneda_actual = celdas[0]
-            header_map = None
-            continue
-        if header_map is None:
-            if "Folio" in celdas and "Proveedor" in celdas:
-                header_map = {i: nombre for i, nombre in enumerate(celdas)}
-            else:
-                header_map = "otro"
-            continue
-        if header_map == "otro" or moneda_actual is None:
+    for v in data.get("valores") or []:
+        proveedor = (v.get("proveedor") or "").strip()
+        if not proveedor:
             continue
 
-        fila = {columnas[header_map[i]]: v for i, v in enumerate(celdas) if header_map.get(i) in columnas}
-        if not fila.get("proveedor"):
-            continue
+        bucket_col = None
+        for clave_api, col in ANTIGUEDAD_EGRESOS_BUCKET_KEYS_API.items():
+            if v.get(clave_api) not in (None, ""):
+                bucket_col = col
+                break
 
+        fila = {b: 0.0 for b in ANTIGUEDAD_EGRESOS_BUCKETS}
+        total = num(v.get("total_factura"))
+        if bucket_col:
+            fila[bucket_col] = total
+
+        no_booking = (v.get("no_booking") or "").strip() or None
         facturas.append({
-            "proveedor": fila["proveedor"],
-            "moneda": moneda_actual,
-            "cliente": fila.get("cliente") or None,
-            "factura_cliente": fila.get("factura_cliente") or None,
-            "estatus": fila.get("estatus") or None,
-            "fecha_recepcion": fecha_hora(fila.get("fecha_recepcion")),
-            "referencia_booking": fila.get("referencia_booking") or None,
-            "fecha_factura": fecha(fila.get("fecha_factura"), "%Y-%m-%d"),
-            "factura": fila.get("factura") or None,
-            "vencimiento": fecha(fila.get("vencimiento"), "%d-%m-%Y"),
-            "profit": num(fila.get("profit")),
-            "monto_factura": num(fila.get("monto_factura")),
-            "folio_anticipo": fila.get("folio_anticipo") or None,
-            "fecha_anticipo": fecha(fila.get("fecha_anticipo"), "%d-%m-%Y"),
-            "monto_anticipo_aplicado": num(fila.get("monto_anticipo_aplicado")),
-            "por_vencer": num(fila.get("por_vencer")),
-            "dias_0_7": num(fila.get("dias_0_7")),
-            "dias_8_14": num(fila.get("dias_8_14")),
-            "dias_15_21": num(fila.get("dias_15_21")),
-            "dias_22_28": num(fila.get("dias_22_28")),
-            "dias_29_35": num(fila.get("dias_29_35")),
-            "mas_36": num(fila.get("mas_36")),
-            "total": num(fila.get("total")),
+            "proveedor": proveedor,
+            "moneda": (v.get("Moneda") or "").strip() or "N/D",
+            "cliente": cliente_por_booking.get(no_booking) if no_booking else None,
+            "factura_cliente": None,
+            "estatus": None,
+            "fecha_recepcion": fecha_hora(v.get("recepcion")),
+            "referencia_booking": no_booking,
+            "fecha_factura": fecha(v.get("fecha"), "%Y-%m-%d"),
+            "factura": v.get("folio") or None,
+            "vencimiento": fecha(v.get("vencimiento"), "%d-%m-%Y"),
+            "profit": num(v.get("profit_final")),
+            "monto_factura": num(v.get("Total")),
+            "folio_anticipo": None,
+            "fecha_anticipo": None,
+            "monto_anticipo_aplicado": 0.0,
+            "total": total,
+            **fila,
         })
 
     return facturas
