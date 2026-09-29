@@ -236,6 +236,7 @@
     {% endif %}
 
 <script id="datos-facturas" type="application/json">{{ facturas_json | safe }}</script>
+<script id="datos-complemento-cliente" type="application/json">{{ complemento_json | safe }}</script>
 <script>
 (function () {
   const vistaDetallada = document.getElementById("vista-detallada");
@@ -323,6 +324,38 @@
   if (!modal) return;
 
   const FACTURAS = JSON.parse(document.getElementById("datos-facturas").textContent);
+  const COMPLEMENTO_POR_CLIENTE = JSON.parse(document.getElementById("datos-complemento-cliente").textContent);
+
+  function tablaComplementoCliente(clienteReal) {
+    const filas = COMPLEMENTO_POR_CLIENTE[clienteReal];
+    if (!filas || !filas.length) return "";
+    const totalComplemento = filas.reduce((acc, r) => acc + (r.total || 0), 0);
+    const filasHtml = filas.map((r) => `
+        <tr>
+          <td>${r.booking || "—"}</td>
+          <td>${r.folio || "—"}</td>
+          <td><span class="adm-badge" style="background:#e0e7ff;color:#3730a3;">Pagado proveedor</span></td>
+          <td>${r.fecha_factura || "—"}</td>
+          <td>${r.vencimiento || "—"}</td>
+          <td>${r.moneda || "—"}</td>
+          <td>${fmtMoneda(r.total)}</td>
+        </tr>
+      `).join("");
+    return `
+      <div class="card" style="margin-top:1.25rem; background:#f8fafc;">
+        <h2 style="font-size:.95rem;">Pendientes de cobro al cliente — proveedor ya pagado</h2>
+        <p class="hint" style="margin-top:-.5rem;">
+          Bookings de este cliente en Ingresos → Antigüedad de saldos que ya no aparecen en Egresos porque el
+          proveedor de ese booking ya está pagado por completo — el cliente todavía no le paga a AV2.
+          ${filas.length} booking(s), ${fmtMoneda(totalComplemento)}.
+        </p>
+        <table class="adm-resumen">
+          <thead><tr><th>Booking</th><th>Folio</th><th>Estado</th><th>Fecha factura</th><th>Vencimiento</th><th>Moneda</th><th>Total</th></tr></thead>
+          <tbody>${filasHtml}</tbody>
+        </table>
+      </div>
+    `;
+  }
   const contenido = document.getElementById("adm-modal-contenido");
 
   function valorCeldaOrden(tr, idx) {
@@ -605,6 +638,7 @@
           <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
         </div>
         <div id="adm-modal-tabla">${tablaHtml}</div>
+        ${clienteSeleccionado ? tablaComplementoCliente(clienteSeleccionado) : ""}
       `;
       hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
       const btnExportar = document.getElementById("adm-btn-exportar");
@@ -658,6 +692,7 @@
           <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
         </div>
         <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
+        ${tablaComplementoCliente(clienteReal)}
       `;
       hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
       document.getElementById("adm-btn-exportar").addEventListener("click", () => {

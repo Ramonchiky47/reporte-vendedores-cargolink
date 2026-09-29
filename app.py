@@ -313,6 +313,20 @@ def init_db():
     db.execute("ALTER TABLE antiguedad_saldos_egresos ADD COLUMN IF NOT EXISTS monto_cobrar numeric not null default 0;")
     db.execute("ALTER TABLE antiguedad_saldos_egresos ADD COLUMN IF NOT EXISTS id_proveedor text;")
     db.execute("""
+        CREATE TABLE IF NOT EXISTS antiguedad_saldos_ingresos (
+            id bigint generated always as identity primary key,
+            cliente text,
+            booking text,
+            folio text,
+            fecha_factura text,
+            vencimiento text,
+            dias_vencimiento numeric,
+            moneda text,
+            total numeric not null default 0,
+            generado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
         CREATE TABLE IF NOT EXISTS reporte_bookings (
             id bigint generated always as identity primary key,
             mes text not null,
@@ -1684,6 +1698,36 @@ def actualizar_antiguedad_saldos_egresos():
         valores = [f[c] for f in lote for c in columnas]
         cur.execute(
             f"INSERT INTO antiguedad_saldos_egresos ({', '.join(columnas)}) VALUES {placeholders}",
+            valores,
+        )
+    db.commit()
+    db.close()
+    return len(facturas)
+
+
+def actualizar_antiguedad_saldos_ingresos_detalle():
+    """Descarga Ingresos → Antigüedad de saldos de CargoLink (lo que deben
+    los clientes a AV2) y reemplaza por completo antiguedad_saldos_ingresos
+    — mismo criterio de borrar-y-reemplazar que Egresos. Se usa solo para
+    complementar el detalle de Egresos por cliente: bookings donde el
+    proveedor ya está pagado (por eso ya no aparecen en Egresos) pero el
+    cliente todavía no le paga a AV2. Regresa la cantidad de facturas
+    guardadas."""
+    reporte = descargar_antiguedad_saldos_cargolink()
+    facturas = reporte["facturas"]
+
+    columnas = ["cliente", "booking", "folio", "fecha_factura", "vencimiento", "dias_vencimiento", "moneda", "total"]
+    TAMANO_LOTE = 500
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM antiguedad_saldos_ingresos")
+    for inicio in range(0, len(facturas), TAMANO_LOTE):
+        lote = facturas[inicio:inicio + TAMANO_LOTE]
+        placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas)) + ")"] * len(lote))
+        valores = [f[c] for f in lote for c in columnas]
+        cur.execute(
+            f"INSERT INTO antiguedad_saldos_ingresos ({', '.join(columnas)}) VALUES {placeholders}",
             valores,
         )
     db.commit()
@@ -4928,6 +4972,10 @@ def antiguedad_saldos_egresos():
         ORDER BY proveedor, moneda, vencimiento
     """).fetchall()
     generado_en = db.execute("SELECT max(generado_en) AS g FROM antiguedad_saldos_egresos").fetchone()["g"]
+    ingresos_rows = db.execute("""
+        SELECT cliente, booking, folio, fecha_factura, vencimiento, dias_vencimiento, moneda, total
+        FROM antiguedad_saldos_ingresos
+    """).fetchall()
     db.close()
 
     buckets = [(b, ANTIGUEDAD_EGRESOS_BUCKET_LABELS[b]) for b in ANTIGUEDAD_EGRESOS_BUCKETS]
@@ -5005,6 +5053,36 @@ def antiguedad_saldos_egresos():
     )
     cant_facturadas_sin_pagar = cant_facturadas - cant_facturadas_pagadas
 
+    # Complemento por cliente: bookings de Ingresos → Antigüedad de saldos
+    # (lo que debe el cliente) que ya no aparecen en Egresos porque el
+    # proveedor de ese booking ya está pagado — CargoLink solo lista ahí
+    # saldos pendientes, así que uno saldado simplemente desaparece del
+    # reporte. Esto hace visible ese hueco (proveedor pagado, cliente sin
+    # cobrar) dentro del detalle por cliente.
+    ingresos_por_cliente_norm = {}
+    for r in ingresos_rows:
+        ingresos_por_cliente_norm.setdefault(normalizar(r["cliente"]), []).append(dict(r))
+
+    bookings_egresos_por_cliente = {}
+    for f in facturas:
+        if not f["cliente"]:
+            continue
+        bookings_egresos_por_cliente.setdefault(f["cliente"], set()).add(f["referencia_booking"])
+
+    complemento_por_cliente = {}
+    for cliente, bookings_egresos in bookings_egresos_por_cliente.items():
+        candidatos = ingresos_por_cliente_norm.get(normalizar(cliente), [])
+        faltantes = [r for r in candidatos if r["booking"] not in bookings_egresos]
+        if faltantes:
+            complemento_por_cliente[cliente] = [
+                {
+                    "booking": r["booking"], "folio": r["folio"],
+                    "fecha_factura": r["fecha_factura"], "vencimiento": r["vencimiento"],
+                    "moneda": r["moneda"], "total": float(r["total"] or 0),
+                }
+                for r in faltantes
+            ]
+
     def bucket_de(f):
         for b in ANTIGUEDAD_EGRESOS_BUCKETS:
             if f[b]:
@@ -5024,10 +5102,13 @@ def antiguedad_saldos_egresos():
         for f in facturas
     ]).replace("</", "<\\/")
 
+    complemento_json = json.dumps(complemento_por_cliente).replace("</", "<\\/")
+
     return render_template(
         "antiguedad_saldos_egresos.html",
         filas=filas, grupos=grupos, buckets=buckets, totales_moneda=totales_moneda,
         monedas_disponibles=monedas_disponibles, facturas_json=facturas_json,
+        complemento_json=complemento_json,
         generado_en=generado_en, total_facturas=len(facturas),
         cant_facturadas=cant_facturadas, cant_no_facturadas=cant_no_facturadas,
         cant_facturadas_pagadas=cant_facturadas_pagadas, cant_facturadas_sin_pagar=cant_facturadas_sin_pagar,
@@ -5042,9 +5123,18 @@ def antiguedad_saldos_egresos_actualizar():
         return redirect(url_for("dashboard_plazas_vendedores"))
     try:
         cantidad = actualizar_antiguedad_saldos_egresos()
-        flash(f"Antigüedad de saldos (Egresos) actualizada: {cantidad} factura(s) descargadas de CargoLink.")
+        mensaje = f"Antigüedad de saldos (Egresos) actualizada: {cantidad} factura(s) descargadas de CargoLink."
     except RuntimeError as e:
         flash(f"No se pudo actualizar: {e}")
+        return redirect(url_for("antiguedad_saldos_egresos"))
+
+    try:
+        cantidad_ingresos = actualizar_antiguedad_saldos_ingresos_detalle()
+        mensaje += f" Ingresos (para complementar por cliente): {cantidad_ingresos} factura(s)."
+    except RuntimeError as e:
+        mensaje += f" No se pudo actualizar Ingresos para el complemento por cliente: {e}"
+
+    flash(mensaje)
     return redirect(url_for("antiguedad_saldos_egresos"))
 
 
