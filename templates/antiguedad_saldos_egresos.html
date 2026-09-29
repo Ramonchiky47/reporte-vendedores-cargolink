@@ -32,6 +32,7 @@
     display: inline-block; margin: 0 .2rem .2rem 0; padding: .1rem .5rem; border-radius: 999px;
     font-size: .68rem; font-weight: 700; background: #eef2ff; color: #4338ca;
   }
+  .adm-badge { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 700; white-space: nowrap; }
 
   .adm-controles-vista { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1rem; }
   .adm-segmentado { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
@@ -60,7 +61,7 @@
   }
   .adm-modal-overlay.abierto { display: flex; }
   .adm-modal-panel {
-    background: #fff; border-radius: 12px; width: 100%; max-width: 900px;
+    background: #fff; border-radius: 12px; width: 100%; max-width: 1400px;
     box-shadow: 0 20px 50px rgba(0,0,0,.3); max-height: 90vh; display: flex; flex-direction: column;
   }
   .adm-modal-toolbar { position: absolute; top: 1rem; right: 1rem; }
@@ -109,11 +110,11 @@
       <h2>Por proveedor</h2>
       <div class="adm-controles-vista">
         <div class="adm-buscador" style="margin-bottom:0;">
-          <input type="text" id="proveedor-buscador" placeholder="Buscar proveedor..." autocomplete="off">
+          <input type="text" id="proveedor-buscador" placeholder="Buscar proveedor o cliente..." autocomplete="off">
         </div>
         <div class="adm-segmentado" id="selector-vista">
           <button type="button" class="activo" data-vista="detallada">Detallada</button>
-          <button type="button" data-vista="agrupada">Agrupada por proveedor</button>
+          <button type="button" data-vista="agrupada">Agrupada por cliente</button>
         </div>
         {% if monedas_disponibles|length > 1 %}
         <div class="adm-monedas" id="selector-moneda">
@@ -165,14 +166,14 @@
       <div class="tabla-scroll" style="overflow-x:auto;" id="vista-agrupada" hidden>
         <table class="adm-resumen">
           <thead>
-            <tr><th>Proveedor</th><th>Moneda(s)</th><th>Total</th></tr>
+            <tr><th>Cliente</th><th>Moneda(s)</th><th>Total</th></tr>
           </thead>
           <tbody>
             {% for g in grupos %}
-            <tr class="adm-grupo-header" data-proveedor="{{ g.proveedor|lower }}" data-grupo="grupo-{{ loop.index }}"
-                data-proveedor-grupo="{{ g.proveedor }}" data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}"
+            <tr class="adm-grupo-header" data-cliente="{{ g.cliente|lower }}" data-grupo="grupo-{{ loop.index }}"
+                data-cliente-grupo="{{ g.cliente }}" data-monedas="{{ g.filas|map(attribute='moneda')|join(',') }}"
                 data-buckets="{% for f in g.filas %}{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.vencido %}vencido {% endif %}{% endfor %}">
-              <td><span class="adm-flecha">🔍</span>{{ g.proveedor }}</td>
+              <td><span class="adm-flecha">🔍</span>{{ g.cliente }}</td>
               <td>{% for f in g.filas %}<span class="adm-moneda-badge">{{ f.moneda }}</span>{% endfor %}</td>
               <td>${{ "{:,.2f}".format(g.filas|sum(attribute='total')) }}</td>
             </tr>
@@ -190,7 +191,7 @@
                   </thead>
                   <tbody>
                     {% for f in g.filas %}
-                    <tr data-proveedor-real="{{ g.proveedor }}" data-moneda="{{ f.moneda }}"
+                    <tr data-cliente-real="{{ g.cliente }}" data-moneda="{{ f.moneda }}"
                         data-buckets="{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.vencido %}vencido{% endif %}">
                       <td>{{ f.moneda }}</td>
                       {% for key, _ in buckets %}
@@ -248,7 +249,7 @@
       vistaAgrupada.querySelectorAll("tr.adm-grupo-header").forEach((header) => {
         const monedas = (header.dataset.monedas || "").split(",");
         const buckets = (header.dataset.buckets || "").trim().split(/\s+/).filter(Boolean);
-        const coincideTexto = !q || header.dataset.proveedor.includes(q);
+        const coincideTexto = !q || header.dataset.cliente.includes(q);
         const coincideMoneda = !monedaFiltro || monedas.includes(monedaFiltro);
         const coincideBucket = !bucketFiltro || buckets.includes(bucketFiltro);
         const visible = coincideTexto && coincideMoneda && coincideBucket;
@@ -323,12 +324,26 @@
     dias_22_28: "22-28", dias_29_35: "29-35", mas_36: "+36",
   };
 
-  function tablaDetalleFacturas(facturas) {
+  function facturadoBadge(f) {
+    if (!f.factura_cliente) {
+      return '<span class="adm-badge" style="background:#fee2e2;color:#991b1b;">Sin facturar</span>';
+    }
+    const cobrada = (f.estatus || "").toUpperCase() === "COBRADA";
+    const bg = cobrada ? "#dcfce7" : "#fef3c7";
+    const color = cobrada ? "#166534" : "#92400e";
+    return `<span class="adm-badge" style="background:${bg};color:${color};">${cobrada ? "Cobrada" : "Por cobrar"}</span>`;
+  }
+
+  function tablaDetalleFacturas(facturas, mostrarProveedor) {
+    const colProveedor = mostrarProveedor ? "<th>Proveedor</th>" : "";
     const filasHtml = facturas.map((f) => `
-        <tr>
+        <tr data-factura="${(f.factura || "").replace(/"/g, "&quot;")}" data-id-proveedor="${f.id_proveedor || ""}" style="${f.factura ? "cursor:pointer;" : ""}">
           <td>${f.referencia_booking || "—"}</td>
           <td>${f.factura || "—"}</td>
+          ${mostrarProveedor ? `<td>${f.proveedor || "—"}</td>` : ""}
           <td>${f.cliente || "—"}</td>
+          <td>${f.factura_cliente || "—"}</td>
+          <td>${facturadoBadge(f)}</td>
           <td>${f.fecha_factura || "—"}</td>
           <td>${f.vencimiento || "—"}</td>
           <td>${fmtMoneda(f.monto_factura)}</td>
@@ -338,7 +353,7 @@
       `).join("");
     return `
       <table class="adm-resumen">
-        <thead><tr><th>Booking</th><th>Factura</th><th>Cliente</th><th>Fecha factura</th><th>Vencimiento</th><th>Valor factura</th><th>Pagado</th><th>Saldo</th></tr></thead>
+        <thead><tr><th>Booking</th><th>Factura</th>${colProveedor}<th>Cliente</th><th>Factura cliente</th><th>Facturado</th><th>Fecha factura</th><th>Vencimiento</th><th>Valor factura</th><th>Pagado</th><th>Saldo</th></tr></thead>
         <tbody>${filasHtml}</tbody>
       </table>
     `;
@@ -432,9 +447,6 @@
     if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
     facturas.sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
 
-    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
-    const vencido = facturas.reduce((acc, f) => acc + (f.vencido || 0), 0);
-    const porVencer = total - vencido;
     const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
     const idProveedor = facturas.find((f) => f.id_proveedor)?.id_proveedor;
 
@@ -444,19 +456,24 @@
     function render() {
       let tituloExtra = "";
       let tablaHtml;
+      let facturasVista = facturas;
       if (clienteSeleccionado) {
-        const facturasCliente = facturas.filter((f) => (f.cliente || "— (sin cliente)") === clienteSeleccionado);
+        facturasVista = facturas.filter((f) => (f.cliente || "— (sin cliente)") === clienteSeleccionado);
         tituloExtra = ` · Cliente: ${clienteSeleccionado}`;
-        tablaHtml = tablaDetalleFacturas(facturasCliente);
+        tablaHtml = tablaDetalleFacturas(facturasVista, false);
       } else if (vistaResumen) {
         tablaHtml = tablaResumenPorCliente(facturas);
       } else {
-        tablaHtml = tablaDetalleFacturas(facturas);
+        tablaHtml = tablaDetalleFacturas(facturas, false);
       }
 
+      const totalVista = facturasVista.reduce((acc, f) => acc + (f.total || 0), 0);
+      const vencidoVista = facturasVista.reduce((acc, f) => acc + (f.vencido || 0), 0);
+      const porVencerVista = totalVista - vencidoVista;
+
       contenido.innerHTML = `
-        <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento}${tituloExtra} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
-        <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
+        <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento}${tituloExtra} — ${facturasVista.length} factura(s), saldo ${fmtMoneda(totalVista)}</p>
+        <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencidoVista)}</strong> · Por vencer: <strong>${fmtMoneda(porVencerVista)}</strong></p>
         <div style="margin-bottom:.75rem; display:flex; gap:.5rem; flex-wrap:wrap;">
           ${clienteSeleccionado ? '<button type="button" class="btn small secondary" id="adm-btn-volver-cliente">← Volver al resumen por cliente</button>' : `
             <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
@@ -496,6 +513,28 @@
     modal.classList.add("abierto");
   }
 
+  function abrirCliente(clienteReal, moneda, bucket) {
+    let facturas = FACTURAS.filter((f) => (f.cliente || "— (sin cliente)") === clienteReal && f.moneda === moneda);
+    if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
+    facturas.sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+
+    const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
+
+    function render() {
+      const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+      const vencido = facturas.reduce((acc, f) => acc + (f.vencido || 0), 0);
+      const porVencer = total - vencido;
+      contenido.innerHTML = `
+        <p class="adm-modal-titulo">Cliente: ${clienteReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+        <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
+        <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
+      `;
+    }
+
+    render();
+    modal.classList.add("abierto");
+  }
+
   document.querySelectorAll(".adm-resumen tbody tr[data-proveedor-real]").forEach((tr) => {
     tr.addEventListener("click", () => abrirProveedor(tr.dataset.proveedorReal, tr.dataset.moneda));
     tr.querySelectorAll("td[data-bucket-cell]").forEach((celda) => {
@@ -516,7 +555,7 @@
         const tablaClon = tabla.cloneNode(true);
         tablaClon.querySelectorAll("tr[hidden]").forEach((tr) => { tr.hidden = false; });
         contenido.innerHTML = `
-          <p class="adm-modal-titulo">${header.dataset.proveedorGrupo} — saldo por moneda</p>
+          <p class="adm-modal-titulo">${header.dataset.clienteGrupo} — saldo por moneda</p>
           <div style="overflow-x:auto;">${tablaClon.outerHTML}</div>
           <p class="hint" style="margin-top:.75rem;">Clic en una fila para ver el detalle de sus facturas.</p>
         `;
@@ -526,10 +565,17 @@
   }
 
   contenido.addEventListener("click", (e) => {
-    const fila = e.target.closest("tr[data-moneda][data-proveedor-real]");
-    if (!fila) return;
     const celdaBucket = e.target.closest("td[data-bucket-cell]");
-    abrirProveedor(fila.dataset.proveedorReal, fila.dataset.moneda, celdaBucket ? celdaBucket.dataset.bucketCell : null);
+    const bucket = celdaBucket ? celdaBucket.dataset.bucketCell : null;
+    const filaProveedor = e.target.closest("tr[data-moneda][data-proveedor-real]");
+    if (filaProveedor) {
+      abrirProveedor(filaProveedor.dataset.proveedorReal, filaProveedor.dataset.moneda, bucket);
+      return;
+    }
+    const filaCliente = e.target.closest("tr[data-moneda][data-cliente-real]");
+    if (filaCliente) {
+      abrirCliente(filaCliente.dataset.clienteReal, filaCliente.dataset.moneda, bucket);
+    }
   });
 
   function cerrarModal() { modal.classList.remove("abierto"); }

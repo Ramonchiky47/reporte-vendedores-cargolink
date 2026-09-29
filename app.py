@@ -4921,7 +4921,8 @@ def antiguedad_saldos_egresos():
 
     db = get_db()
     facturas_rows = db.execute("""
-        SELECT proveedor, id_proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
+        SELECT proveedor, id_proveedor, moneda, cliente, factura_cliente, estatus, referencia_booking, factura,
+               fecha_factura, vencimiento,
                monto_factura, por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
@@ -4959,14 +4960,36 @@ def antiguedad_saldos_egresos():
     filas = [por_proveedor_moneda[clave] for clave in orden]
     filas.sort(key=lambda r: r["total"], reverse=True)
 
-    proveedores_agrupados = {}
-    orden_proveedores = []
-    for f in filas:
-        if f["proveedor"] not in proveedores_agrupados:
-            proveedores_agrupados[f["proveedor"]] = {"proveedor": f["proveedor"], "filas": []}
-            orden_proveedores.append(f["proveedor"])
-        proveedores_agrupados[f["proveedor"]]["filas"].append(f)
-    grupos = [proveedores_agrupados[p] for p in orden_proveedores]
+    # "Agrupada" agrupa por CLIENTE (no por proveedor): una factura de
+    # proveedor puede no tener cliente ligado (gastos propios, como renta de
+    # oficina) — esas se juntan bajo "— (sin cliente)".
+    por_cliente_moneda = {}
+    orden_cliente = []
+    for f in facturas:
+        cliente = f["cliente"] or "— (sin cliente)"
+        clave = (cliente, f["moneda"])
+        if clave not in por_cliente_moneda:
+            por_cliente_moneda[clave] = {
+                "cliente": cliente, "moneda": f["moneda"],
+                **{b: 0.0 for b in ANTIGUEDAD_EGRESOS_BUCKETS}, "vencido": 0.0, "total": 0.0,
+            }
+            orden_cliente.append(clave)
+        agg = por_cliente_moneda[clave]
+        for b in ANTIGUEDAD_EGRESOS_BUCKETS:
+            agg[b] += float(f[b] or 0)
+        agg["vencido"] += f["vencido"]
+        agg["total"] += float(f["total"] or 0)
+
+    filas_cliente = [por_cliente_moneda[clave] for clave in orden_cliente]
+
+    clientes_agrupados = {}
+    orden_clientes = []
+    for f in filas_cliente:
+        if f["cliente"] not in clientes_agrupados:
+            clientes_agrupados[f["cliente"]] = {"cliente": f["cliente"], "filas": []}
+            orden_clientes.append(f["cliente"])
+        clientes_agrupados[f["cliente"]]["filas"].append(f)
+    grupos = [clientes_agrupados[c] for c in orden_clientes]
     grupos.sort(key=lambda g: sum(f["total"] for f in g["filas"]), reverse=True)
 
     totales_moneda = {}
@@ -4984,6 +5007,7 @@ def antiguedad_saldos_egresos():
     facturas_json = json.dumps([
         {
             "proveedor": f["proveedor"], "id_proveedor": f["id_proveedor"], "moneda": f["moneda"], "cliente": f["cliente"],
+            "factura_cliente": f["factura_cliente"], "estatus": f["estatus"],
             "referencia_booking": f["referencia_booking"], "factura": f["factura"],
             "fecha_factura": f["fecha_factura"].strftime("%Y-%m-%d") if f["fecha_factura"] else None,
             "vencimiento": f["vencimiento"].strftime("%Y-%m-%d") if f["vencimiento"] else None,
