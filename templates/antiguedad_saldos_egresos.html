@@ -26,6 +26,8 @@
   .adm-resumen tbody tr:hover td:first-child { color: var(--accent); text-decoration: underline; }
   .adm-resumen tbody tr[hidden] { display: none; }
   .adm-resumen td.vencido { color: var(--danger-dark); font-weight: 600; }
+  .adm-resumen td.adm-celda-bucket { cursor: pointer; }
+  .adm-resumen td.adm-celda-bucket:hover { text-decoration: underline; background: #fef2f2; }
   .adm-moneda-badge {
     display: inline-block; margin: 0 .2rem .2rem 0; padding: .1rem .5rem; border-radius: 999px;
     font-size: .68rem; font-weight: 700; background: #eef2ff; color: #4338ca;
@@ -150,7 +152,7 @@
               <td>{{ f.proveedor }}</td>
               <td>{{ f.moneda }}</td>
               {% for key, _ in buckets %}
-              <td class="{{ 'vencido' if key != 'por_vencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
+              <td class="{{ 'vencido adm-celda-bucket' if key != 'por_vencer' and f[key] else ('adm-celda-bucket' if f[key] else '') }}" {{ 'data-bucket-cell="' ~ key ~ '"' if f[key] else '' }}>{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
               {% endfor %}
               <td class="vencido">${{ "{:,.2f}".format(f.vencido) }}</td>
               <td>${{ "{:,.2f}".format(f.total) }}</td>
@@ -192,7 +194,7 @@
                         data-buckets="{% for key, _ in buckets %}{% if f[key] %}{{ key }} {% endif %}{% endfor %}{% if f.vencido %}vencido{% endif %}">
                       <td>{{ f.moneda }}</td>
                       {% for key, _ in buckets %}
-                      <td class="{{ 'vencido' if key != 'por_vencer' and f[key] else '' }}">{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
+                      <td class="{{ 'vencido adm-celda-bucket' if key != 'por_vencer' and f[key] else ('adm-celda-bucket' if f[key] else '') }}" {{ 'data-bucket-cell="' ~ key ~ '"' if f[key] else '' }}>{{ "{:,.2f}".format(f[key]) if f[key] else "—" }}</td>
                       {% endfor %}
                       <td class="vencido">${{ "{:,.2f}".format(f.vencido) }}</td>
                       <td>${{ "{:,.2f}".format(f.total) }}</td>
@@ -316,9 +318,15 @@
     return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function abrirProveedor(proveedorReal, moneda) {
-    const facturas = FACTURAS.filter((f) => f.proveedor === proveedorReal && f.moneda === moneda)
-      .sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+  const ETIQUETAS_BUCKET = {
+    por_vencer: "Por vencer", dias_0_7: "0-7", dias_8_14: "8-14", dias_15_21: "15-21",
+    dias_22_28: "22-28", dias_29_35: "29-35", mas_36: "+36",
+  };
+
+  function abrirProveedor(proveedorReal, moneda, bucket) {
+    let facturas = FACTURAS.filter((f) => f.proveedor === proveedorReal && f.moneda === moneda);
+    if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
+    facturas.sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
 
     const filasHtml = facturas.map((f) => `
         <tr>
@@ -327,16 +335,19 @@
           <td>${f.cliente || "—"}</td>
           <td>${f.fecha_factura || "—"}</td>
           <td>${f.vencimiento || "—"}</td>
+          <td>${fmtMoneda(f.monto_factura)}</td>
+          <td>${fmtMoneda(f.pagado)}</td>
           <td style="${f.vencido ? 'color:var(--danger-dark);font-weight:600;' : ''}">${fmtMoneda(f.total)}</td>
         </tr>
       `).join("");
 
     const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+    const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
 
     contenido.innerHTML = `
-      <p class="adm-modal-titulo">${proveedorReal} · ${moneda} — ${facturas.length} factura(s), total ${fmtMoneda(total)}</p>
+      <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
       <table class="adm-resumen">
-        <thead><tr><th>Booking</th><th>Factura</th><th>Cliente</th><th>Fecha factura</th><th>Vencimiento</th><th>Total</th></tr></thead>
+        <thead><tr><th>Booking</th><th>Factura</th><th>Cliente</th><th>Fecha factura</th><th>Vencimiento</th><th>Valor factura</th><th>Pagado</th><th>Saldo</th></tr></thead>
         <tbody>${filasHtml}</tbody>
       </table>
     `;
@@ -345,6 +356,12 @@
 
   document.querySelectorAll(".adm-resumen tbody tr[data-proveedor-real]").forEach((tr) => {
     tr.addEventListener("click", () => abrirProveedor(tr.dataset.proveedorReal, tr.dataset.moneda));
+    tr.querySelectorAll("td[data-bucket-cell]").forEach((celda) => {
+      celda.addEventListener("click", (e) => {
+        e.stopPropagation();
+        abrirProveedor(tr.dataset.proveedorReal, tr.dataset.moneda, celda.dataset.bucketCell);
+      });
+    });
   });
 
   if (vistaAgrupada) {
@@ -369,7 +386,8 @@
   contenido.addEventListener("click", (e) => {
     const fila = e.target.closest("tr[data-moneda][data-proveedor-real]");
     if (!fila) return;
-    abrirProveedor(fila.dataset.proveedorReal, fila.dataset.moneda);
+    const celdaBucket = e.target.closest("td[data-bucket-cell]");
+    abrirProveedor(fila.dataset.proveedorReal, fila.dataset.moneda, celdaBucket ? celdaBucket.dataset.bucketCell : null);
   });
 
   function cerrarModal() { modal.classList.remove("abierto"); }

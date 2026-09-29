@@ -4886,7 +4886,7 @@ def antiguedad_saldos_egresos():
     db = get_db()
     facturas_rows = db.execute("""
         SELECT proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
-               por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
+               monto_factura, por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
     """).fetchall()
@@ -4898,9 +4898,10 @@ def antiguedad_saldos_egresos():
     facturas = []
     for f in facturas_rows:
         f = dict(f)
-        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total"):
+        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total", "monto_factura"):
             f[campo] = float(f[campo] or 0)
         f["vencido"] = sum(f[b] for b in ANTIGUEDAD_EGRESOS_BUCKETS if b != "por_vencer")
+        f["pagado"] = max(f["monto_factura"] - f["total"], 0.0)
         facturas.append(f)
 
     por_proveedor_moneda = {}
@@ -4938,13 +4939,20 @@ def antiguedad_saldos_egresos():
 
     monedas_disponibles = sorted(totales_moneda.keys())
 
+    def bucket_de(f):
+        for b in ANTIGUEDAD_EGRESOS_BUCKETS:
+            if f[b]:
+                return b
+        return None
+
     facturas_json = json.dumps([
         {
             "proveedor": f["proveedor"], "moneda": f["moneda"], "cliente": f["cliente"],
             "referencia_booking": f["referencia_booking"], "factura": f["factura"],
             "fecha_factura": f["fecha_factura"].strftime("%Y-%m-%d") if f["fecha_factura"] else None,
             "vencimiento": f["vencimiento"].strftime("%Y-%m-%d") if f["vencimiento"] else None,
-            "total": f["total"], "vencido": f["vencido"],
+            "total": f["total"], "vencido": f["vencido"], "bucket": bucket_de(f),
+            "monto_factura": f["monto_factura"], "pagado": f["pagado"],
         }
         for f in facturas
     ]).replace("</", "<\\/")
