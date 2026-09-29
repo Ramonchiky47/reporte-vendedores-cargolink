@@ -66,6 +66,12 @@ ANTIGUEDAD_BUCKET_LABELS = {
     "porvencer": "Por vencer", "0a30": "0-30", "31a60": "31-60", "61a90": "61-90",
     "91a120": "91-120", "121a150": "121-150", "151a180": "151-180", "mas181": "+181",
 }
+ANTIGUEDAD_EGRESOS_BUCKETS = ["por_vencer", "dias_0_7", "dias_8_14", "dias_15_21", "dias_22_28", "dias_29_35", "mas_36"]
+ANTIGUEDAD_EGRESOS_BUCKET_LABELS = {
+    "por_vencer": "Por vencer", "dias_0_7": "0-7", "dias_8_14": "8-14", "dias_15_21": "15-21",
+    "dias_22_28": "22-28", "dias_29_35": "29-35", "mas_36": "+36",
+}
+CARGOLINK_ANTIGUEDAD_EGRESOS_URL = "https://fwd.cargolink.mx/templates/antiguedadSaldoEgreso/"
 CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 CARGOLINK_LIQ_VENDEDOR_URL = "https://fwd.cargolink.mx/templates/egresos_liq_vendedor/"
 CARGOLINK_PAGOS_URL = "https://fwd.cargolink.mx/templates/reportePagos/"
@@ -271,6 +277,35 @@ def init_db():
             creado_por_user_id uuid,
             creado_en timestamptz not null default now(),
             procesado_en timestamptz
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
+            id bigint generated always as identity primary key,
+            proveedor text not null,
+            moneda text not null,
+            cliente text,
+            factura_cliente text,
+            estatus text,
+            fecha_recepcion timestamp,
+            referencia_booking text,
+            fecha_factura date,
+            factura text,
+            vencimiento date,
+            profit numeric,
+            monto_factura numeric,
+            folio_anticipo text,
+            fecha_anticipo date,
+            monto_anticipo_aplicado numeric,
+            por_vencer numeric not null default 0,
+            dias_0_7 numeric not null default 0,
+            dias_8_14 numeric not null default 0,
+            dias_15_21 numeric not null default 0,
+            dias_22_28 numeric not null default 0,
+            dias_29_35 numeric not null default 0,
+            mas_36 numeric not null default 0,
+            total numeric not null default 0,
+            generado_en timestamptz not null default now()
         );
     """)
     db.execute("""
@@ -1419,6 +1454,161 @@ def descargar_antiguedad_saldos_cargolink():
         totales_moneda[moneda] = num(d.get("total"))
 
     return {"filas": filas, "facturas": facturas, "totales_moneda": totales_moneda, "buckets": buckets}
+
+
+def descargar_antiguedad_saldos_egresos_cargolink():
+    """Se conecta a CargoLink, entra a Egresos → Antigüedad de saldos (m=70)
+    y descarga el mismo archivo que genera el botón "Exportar Excel" de esa
+    pantalla (excelAV2.php) — no la API cruda del grid, que trae por cada
+    factura un árbol enorme de cargos de booking que no hace falta para este
+    reporte. El archivo es en realidad una tabla HTML servida con
+    content-type/extensión de Excel (truco común de reportes viejos), con
+    tres bloques (uno por moneda: MXN, USD, EUR), cada uno con una tabla de
+    detalle por factura seguida de un resumen por proveedor que se ignora
+    aquí (se recalculan los totales por proveedor a partir del detalle).
+    Regresa una lista de dicts, uno por factura. No toca la base de datos."""
+    usuario = (os.environ.get("CARGOLINK_USUARIO") or "").strip()
+    password = (os.environ.get("CARGOLINK_PASSWORD") or "").strip()
+    if not usuario or not password:
+        raise RuntimeError("Faltan las variables de entorno CARGOLINK_USUARIO / CARGOLINK_PASSWORD.")
+
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
+    sesion = requests.Session()
+    r_login = sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": usuario, "password": password}, headers=headers, timeout=60)
+    if r_login.status_code != 200 or '"activo"' not in r_login.text:
+        raise RuntimeError("No se pudo iniciar sesión en CargoLink.")
+
+    r_pagina = sesion.get(f"{CARGOLINK_ANTIGUEDAD_EGRESOS_URL}?m=70", headers=headers, timeout=60)
+    match_token = re.search(r"token=([a-f0-9]{32}\d*)", r_pagina.text)
+    if not match_token:
+        raise RuntimeError("No se pudo obtener el token de sesión de Antigüedad de saldos (Egresos).")
+    token = match_token.group(1)
+
+    r_excel = sesion.get(f"{CARGOLINK_ANTIGUEDAD_EGRESOS_URL}excelAV2.php?token={token}&por=", headers=headers, timeout=120)
+    if r_excel.status_code != 200 or len(r_excel.content) == 0:
+        raise RuntimeError("Error al descargar Antigüedad de saldos (Egresos) desde CargoLink.")
+
+    soup = BeautifulSoup(r_excel.content.decode("utf-8-sig", errors="replace"), "html.parser")
+
+    def num(v):
+        v = (v or "0").replace(",", "").replace("$", "").strip()
+        try:
+            return float(v)
+        except ValueError:
+            return 0.0
+
+    def fecha(v, formato):
+        v = (v or "").strip()
+        if not v:
+            return None
+        try:
+            return datetime.strptime(v, formato).date()
+        except ValueError:
+            return None
+
+    def fecha_hora(v):
+        v = (v or "").strip()
+        if not v:
+            return None
+        try:
+            return datetime.strptime(v, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+
+    columnas = {
+        "Proveedor": "proveedor", "Cliente": "cliente", "Factura cliente": "factura_cliente",
+        "Estatus": "estatus", "Fecha Recepcion": "fecha_recepcion", "Referencia booking": "referencia_booking",
+        "Fecha Fact": "fecha_factura", "Factura": "factura", "Vencimiento": "vencimiento",
+        "Profit": "profit", "Monto factura": "monto_factura", "Folio anticipo": "folio_anticipo",
+        "Fecha anticipo": "fecha_anticipo", "Monto anticipo aplicado": "monto_anticipo_aplicado",
+        "Por vencer": "por_vencer", "0 A 7": "dias_0_7", "8 a 14": "dias_8_14", "15 a 21": "dias_15_21",
+        "22 a 28": "dias_22_28", "29 a 35": "dias_29_35", "Mas de 36": "mas_36", "Total": "total",
+    }
+
+    moneda_actual = None
+    header_map = None  # None = pendiente de detectar; "detalle" = mapea columnas; "otro" = ignorar hasta el próximo bloque
+    facturas = []
+    for tr in soup.find_all("tr"):
+        celdas = [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
+        if not celdas:
+            continue
+        if len(celdas) == 1 and celdas[0] in ("MXN", "USD", "EUR"):
+            moneda_actual = celdas[0]
+            header_map = None
+            continue
+        if header_map is None:
+            if "Folio" in celdas and "Proveedor" in celdas:
+                header_map = {i: nombre for i, nombre in enumerate(celdas)}
+            else:
+                header_map = "otro"
+            continue
+        if header_map == "otro" or moneda_actual is None:
+            continue
+
+        fila = {columnas[header_map[i]]: v for i, v in enumerate(celdas) if header_map.get(i) in columnas}
+        if not fila.get("proveedor"):
+            continue
+
+        facturas.append({
+            "proveedor": fila["proveedor"],
+            "moneda": moneda_actual,
+            "cliente": fila.get("cliente") or None,
+            "factura_cliente": fila.get("factura_cliente") or None,
+            "estatus": fila.get("estatus") or None,
+            "fecha_recepcion": fecha_hora(fila.get("fecha_recepcion")),
+            "referencia_booking": fila.get("referencia_booking") or None,
+            "fecha_factura": fecha(fila.get("fecha_factura"), "%Y-%m-%d"),
+            "factura": fila.get("factura") or None,
+            "vencimiento": fecha(fila.get("vencimiento"), "%d-%m-%Y"),
+            "profit": num(fila.get("profit")),
+            "monto_factura": num(fila.get("monto_factura")),
+            "folio_anticipo": fila.get("folio_anticipo") or None,
+            "fecha_anticipo": fecha(fila.get("fecha_anticipo"), "%d-%m-%Y"),
+            "monto_anticipo_aplicado": num(fila.get("monto_anticipo_aplicado")),
+            "por_vencer": num(fila.get("por_vencer")),
+            "dias_0_7": num(fila.get("dias_0_7")),
+            "dias_8_14": num(fila.get("dias_8_14")),
+            "dias_15_21": num(fila.get("dias_15_21")),
+            "dias_22_28": num(fila.get("dias_22_28")),
+            "dias_29_35": num(fila.get("dias_29_35")),
+            "mas_36": num(fila.get("mas_36")),
+            "total": num(fila.get("total")),
+        })
+
+    return facturas
+
+
+def actualizar_antiguedad_saldos_egresos():
+    """Descarga Antigüedad de saldos (Egresos) de CargoLink y reemplaza por
+    completo el contenido de antiguedad_saldos_egresos — se borra todo lo
+    anterior y se inserta lo recién descargado, sin acumular histórico ni
+    intentar hacer match con lo que ya había (mismo criterio que pidió
+    Ramón: "borras la informacion actual y remplazas la misma"). Regresa la
+    cantidad de facturas guardadas."""
+    facturas = descargar_antiguedad_saldos_egresos_cargolink()
+
+    columnas = [
+        "proveedor", "moneda", "cliente", "factura_cliente", "estatus", "fecha_recepcion",
+        "referencia_booking", "fecha_factura", "factura", "vencimiento", "profit", "monto_factura",
+        "folio_anticipo", "fecha_anticipo", "monto_anticipo_aplicado",
+        "por_vencer", "dias_0_7", "dias_8_14", "dias_15_21", "dias_22_28", "dias_29_35", "mas_36", "total",
+    ]
+    TAMANO_LOTE = 500
+
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("DELETE FROM antiguedad_saldos_egresos")
+    for inicio in range(0, len(facturas), TAMANO_LOTE):
+        lote = facturas[inicio:inicio + TAMANO_LOTE]
+        placeholders = ", ".join(["(" + ", ".join(["%s"] * len(columnas)) + ")"] * len(lote))
+        valores = [f[c] for f in lote for c in columnas]
+        cur.execute(
+            f"INSERT INTO antiguedad_saldos_egresos ({', '.join(columnas)}) VALUES {placeholders}",
+            valores,
+        )
+    db.commit()
+    db.close()
+    return len(facturas)
 
 
 def normalizar_lista_correos(texto):
@@ -4640,6 +4830,101 @@ def administracion_antiguedad_saldos_cliente_exportar():
         return redirect(url_for("administracion_antiguedad_saldos"))
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name=f"{nombre_archivo_base}.pdf", mimetype="application/pdf")
+
+
+@app.route("/antiguedad-saldos-egresos")
+@login_required
+def antiguedad_saldos_egresos():
+    if not usuario_puede_ver_administracion():
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+
+    db = get_db()
+    facturas_rows = db.execute("""
+        SELECT proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
+               por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
+        FROM antiguedad_saldos_egresos
+        ORDER BY proveedor, moneda, vencimiento
+    """).fetchall()
+    generado_en = db.execute("SELECT max(generado_en) AS g FROM antiguedad_saldos_egresos").fetchone()["g"]
+    db.close()
+
+    buckets = [(b, ANTIGUEDAD_EGRESOS_BUCKET_LABELS[b]) for b in ANTIGUEDAD_EGRESOS_BUCKETS]
+
+    facturas = []
+    for f in facturas_rows:
+        f = dict(f)
+        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total"):
+            f[campo] = float(f[campo] or 0)
+        f["vencido"] = sum(f[b] for b in ANTIGUEDAD_EGRESOS_BUCKETS if b != "por_vencer")
+        facturas.append(f)
+
+    por_proveedor_moneda = {}
+    orden = []
+    for f in facturas:
+        clave = (f["proveedor"], f["moneda"])
+        if clave not in por_proveedor_moneda:
+            por_proveedor_moneda[clave] = {
+                "proveedor": f["proveedor"], "moneda": f["moneda"],
+                **{b: 0.0 for b in ANTIGUEDAD_EGRESOS_BUCKETS}, "vencido": 0.0, "total": 0.0,
+            }
+            orden.append(clave)
+        agg = por_proveedor_moneda[clave]
+        for b in ANTIGUEDAD_EGRESOS_BUCKETS:
+            agg[b] += float(f[b] or 0)
+        agg["vencido"] += f["vencido"]
+        agg["total"] += float(f["total"] or 0)
+
+    filas = [por_proveedor_moneda[clave] for clave in orden]
+    filas.sort(key=lambda r: r["total"], reverse=True)
+
+    proveedores_agrupados = {}
+    orden_proveedores = []
+    for f in filas:
+        if f["proveedor"] not in proveedores_agrupados:
+            proveedores_agrupados[f["proveedor"]] = {"proveedor": f["proveedor"], "filas": []}
+            orden_proveedores.append(f["proveedor"])
+        proveedores_agrupados[f["proveedor"]]["filas"].append(f)
+    grupos = [proveedores_agrupados[p] for p in orden_proveedores]
+    grupos.sort(key=lambda g: sum(f["total"] for f in g["filas"]), reverse=True)
+
+    totales_moneda = {}
+    for f in filas:
+        totales_moneda[f["moneda"]] = totales_moneda.get(f["moneda"], 0.0) + f["total"]
+
+    monedas_disponibles = sorted(totales_moneda.keys())
+
+    facturas_json = json.dumps([
+        {
+            "proveedor": f["proveedor"], "moneda": f["moneda"], "cliente": f["cliente"],
+            "referencia_booking": f["referencia_booking"], "factura": f["factura"],
+            "fecha_factura": f["fecha_factura"].strftime("%Y-%m-%d") if f["fecha_factura"] else None,
+            "vencimiento": f["vencimiento"].strftime("%Y-%m-%d") if f["vencimiento"] else None,
+            "total": f["total"], "vencido": f["vencido"],
+        }
+        for f in facturas
+    ]).replace("</", "<\\/")
+
+    return render_template(
+        "antiguedad_saldos_egresos.html",
+        filas=filas, grupos=grupos, buckets=buckets, totales_moneda=totales_moneda,
+        monedas_disponibles=monedas_disponibles, facturas_json=facturas_json,
+        generado_en=generado_en, total_facturas=len(facturas),
+    )
+
+
+@app.route("/antiguedad-saldos-egresos/actualizar", methods=["POST"])
+@login_required
+def antiguedad_saldos_egresos_actualizar():
+    if not usuario_puede_ver_administracion():
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+    try:
+        cantidad = actualizar_antiguedad_saldos_egresos()
+        flash(f"Antigüedad de saldos (Egresos) actualizada: {cantidad} factura(s) descargadas de CargoLink.")
+    except RuntimeError as e:
+        flash(f"No se pudo actualizar: {e}")
+    return redirect(url_for("antiguedad_saldos_egresos"))
 
 
 EXTENSIONES_RECIBO_PERMITIDAS = {"pdf", "png", "jpg", "jpeg"}
