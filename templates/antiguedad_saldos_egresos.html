@@ -397,6 +397,38 @@
     });
   }
 
+  // Exporta a CSV (se abre directo en Excel) las filas visibles de una
+  // tabla — respeta el orden y los filtros que ya se aplicaron en pantalla,
+  // porque lee el DOM tal cual está en vez de volver a pedir los datos.
+  function exportarTablaCSV(tabla, nombreArchivo) {
+    if (!tabla) return;
+    const limpiar = (texto) => {
+      const t = (texto || "").replace(/\s+/g, " ").trim();
+      return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    const encabezados = Array.from(tabla.querySelectorAll("thead th")).map((th) => {
+      const clon = th.cloneNode(true);
+      clon.querySelectorAll(".adm-orden-flecha").forEach((f) => f.remove());
+      return limpiar(clon.textContent);
+    });
+    const filas = Array.from(tabla.querySelectorAll("tbody > tr")).filter((tr) => !tr.hidden);
+    const lineas = [encabezados.join(",")];
+    filas.forEach((tr) => {
+      const celdas = Array.from(tr.children).map((td) => limpiar(td.textContent));
+      lineas.push(celdas.join(","));
+    });
+    const csv = "﻿" + lineas.join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nombreArchivo.replace(/[^a-zA-Z0-9_\-]+/g, "_") + ".csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   function fmtMoneda(n) {
     if (n == null) return "—";
     const signo = n < 0 ? "-" : "";
@@ -473,12 +505,16 @@
     contenido.innerHTML = `
       <p class="adm-modal-titulo">Pagos hechos a ${nombreProveedor}</p>
       <p class="hint" style="margin-top:-.75rem;">La columna "Factura pagada" es la(s) factura(s) de proveedor a la(s) que CargoLink tiene aplicado ese pago.</p>
-      <div style="margin-bottom:.75rem;">
+      <div style="margin-bottom:.75rem; display:flex; gap:.5rem;">
         <button type="button" class="btn small secondary" id="adm-btn-volver-pagos">← Volver</button>
+        <button type="button" class="btn small secondary" id="adm-btn-exportar-pagos">Exportar</button>
       </div>
       <div id="adm-modal-tabla"><p class="hint">Cargando pagos…</p></div>
     `;
     document.getElementById("adm-btn-volver-pagos").addEventListener("click", volver);
+    document.getElementById("adm-btn-exportar-pagos").addEventListener("click", () => {
+      exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), `Pagos_${nombreProveedor}`);
+    });
 
     fetch("{{ url_for('antiguedad_saldos_egresos_pagos_proveedor') }}?id_proveedor=" + encodeURIComponent(idProveedor))
       .then((r) => r.json())
@@ -556,6 +592,8 @@
       const vencidoVista = facturasVista.reduce((acc, f) => acc + (f.vencido || 0), 0);
       const porVencerVista = totalVista - vencidoVista;
 
+      const nombreArchivo = ["Antiguedad", proveedorReal, moneda, clienteSeleccionado || ""].filter(Boolean).join("_");
+
       contenido.innerHTML = `
         <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento}${tituloExtra} — ${facturasVista.length} factura(s), saldo ${fmtMoneda(totalVista)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencidoVista)}</strong> · Por vencer: <strong>${fmtMoneda(porVencerVista)}</strong></p>
@@ -564,10 +602,13 @@
             <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
             ${idProveedor ? '<button type="button" class="btn small secondary" id="adm-btn-ver-pagos">Ver pagos del proveedor</button>' : ""}
           `}
+          <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
         </div>
         <div id="adm-modal-tabla">${tablaHtml}</div>
       `;
       hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
+      const btnExportar = document.getElementById("adm-btn-exportar");
+      if (btnExportar) btnExportar.addEventListener("click", () => exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), nombreArchivo));
 
       if (clienteSeleccionado) {
         document.getElementById("adm-btn-volver-cliente").addEventListener("click", () => {
@@ -613,9 +654,15 @@
       contenido.innerHTML = `
         <p class="adm-modal-titulo">Cliente: ${clienteReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
+        <div style="margin-bottom:.75rem;">
+          <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
+        </div>
         <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
       `;
       hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
+      document.getElementById("adm-btn-exportar").addEventListener("click", () => {
+        exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), `Antiguedad_${clienteReal}_${moneda}`);
+      });
     }
 
     render();
@@ -636,9 +683,15 @@
     const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
     contenido.innerHTML = `
       <p class="adm-modal-titulo">${config.titulo} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+      <div style="margin-bottom:.75rem;">
+        <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
+      </div>
       <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
     `;
     hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
+    document.getElementById("adm-btn-exportar").addEventListener("click", () => {
+      exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), `Antiguedad_${config.titulo}`);
+    });
     modal.classList.add("abierto");
   }
 
