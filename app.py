@@ -4886,7 +4886,6 @@ def antiguedad_saldos_egresos():
     db = get_db()
     facturas_rows = db.execute("""
         SELECT proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
-               estatus, monto_cobrar,
                por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
@@ -4899,15 +4898,10 @@ def antiguedad_saldos_egresos():
     facturas = []
     for f in facturas_rows:
         f = dict(f)
-        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total", "monto_cobrar"):
+        for campo in (*ANTIGUEDAD_EGRESOS_BUCKETS, "total"):
             f[campo] = float(f[campo] or 0)
         f["vencido"] = sum(f[b] for b in ANTIGUEDAD_EGRESOS_BUCKETS if b != "por_vencer")
         facturas.append(f)
-
-    totales_cobrado = {}
-    for f in facturas:
-        if (f["estatus"] or "").strip().upper() == "COBRADA":
-            totales_cobrado[f["moneda"]] = totales_cobrado.get(f["moneda"], 0.0) + f["monto_cobrar"]
 
     por_proveedor_moneda = {}
     orden = []
@@ -4958,7 +4952,6 @@ def antiguedad_saldos_egresos():
     return render_template(
         "antiguedad_saldos_egresos.html",
         filas=filas, grupos=grupos, buckets=buckets, totales_moneda=totales_moneda,
-        totales_cobrado=totales_cobrado,
         monedas_disponibles=monedas_disponibles, facturas_json=facturas_json,
         generado_en=generado_en, total_facturas=len(facturas),
     )
