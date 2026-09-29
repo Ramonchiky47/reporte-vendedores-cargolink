@@ -365,6 +365,63 @@
     `;
   }
 
+  function fmtMonto(v) {
+    const n = parseFloat(v);
+    return isNaN(n) ? (v || "—") : fmtMoneda(n);
+  }
+
+  function mostrarPagosProveedor(idProveedor, nombreProveedor, volver) {
+    contenido.innerHTML = `
+      <p class="adm-modal-titulo">Pagos hechos a ${nombreProveedor}</p>
+      <p class="hint" style="margin-top:-.75rem;">
+        No se intenta adivinar a cuál factura corresponde cada pago — CargoLink no liga esa relación directamente.
+        Verifica por fecha/monto cuál cubre la factura que estabas revisando.
+      </p>
+      <div style="margin-bottom:.75rem;">
+        <button type="button" class="btn small secondary" id="adm-btn-volver-pagos">← Volver</button>
+      </div>
+      <div id="adm-modal-tabla"><p class="hint">Cargando pagos…</p></div>
+    `;
+    document.getElementById("adm-btn-volver-pagos").addEventListener("click", volver);
+
+    fetch("{{ url_for('antiguedad_saldos_egresos_pagos_proveedor') }}?id_proveedor=" + encodeURIComponent(idProveedor))
+      .then((r) => r.json())
+      .then((data) => {
+        const cont = document.getElementById("adm-modal-tabla");
+        if (!cont) return;
+        if (data.error) {
+          cont.innerHTML = `<p class="empty">${data.error}</p>`;
+          return;
+        }
+        const pagos = (data.pagos || []).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+        if (!pagos.length) {
+          cont.innerHTML = '<p class="empty">No se encontraron pagos para este proveedor.</p>';
+          return;
+        }
+        const filasHtml = pagos.map((p) => `
+            <tr>
+              <td>${(p.fecha || "—").split(" ")[0]}</td>
+              <td>${p.moneda || "—"}</td>
+              <td>${fmtMonto(p.monto)}</td>
+              <td>${p.banco || "—"}</td>
+              <td>${p.referencia || "—"}</td>
+              <td>${p.usuario || "—"}</td>
+              <td>${p.url_pago ? `<a href="${p.url_pago}" target="_blank" rel="noopener">Ver PDF</a>` : "—"}</td>
+            </tr>
+          `).join("");
+        cont.innerHTML = `
+          <table class="adm-resumen">
+            <thead><tr><th>Fecha</th><th>Moneda</th><th>Monto</th><th>Banco</th><th>Referencia</th><th>Usuario</th><th>Comprobante</th></tr></thead>
+            <tbody>${filasHtml}</tbody>
+          </table>
+        `;
+      })
+      .catch(() => {
+        const cont = document.getElementById("adm-modal-tabla");
+        if (cont) cont.innerHTML = '<p class="empty">Ocurrió un error al consultar los pagos.</p>';
+      });
+  }
+
   function abrirProveedor(proveedorReal, moneda, bucket) {
     let facturas = FACTURAS.filter((f) => f.proveedor === proveedorReal && f.moneda === moneda);
     if (bucket) facturas = facturas.filter((f) => f.bucket === bucket);
@@ -374,6 +431,7 @@
     const vencido = facturas.reduce((acc, f) => acc + (f.vencido || 0), 0);
     const porVencer = total - vencido;
     const segmento = bucket ? ` · ${ETIQUETAS_BUCKET[bucket] || bucket}` : "";
+    const idProveedor = facturas.find((f) => f.id_proveedor)?.id_proveedor;
 
     let vistaResumen = false;
 
@@ -381,8 +439,9 @@
       contenido.innerHTML = `
         <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
-        <div style="margin-bottom:.75rem;">
+        <div style="margin-bottom:.75rem; display:flex; gap:.5rem; flex-wrap:wrap;">
           <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
+          ${idProveedor ? '<button type="button" class="btn small secondary" id="adm-btn-ver-pagos">Ver pagos del proveedor</button>' : ""}
         </div>
         <div id="adm-modal-tabla">${vistaResumen ? tablaResumenPorCliente(facturas) : tablaDetalleFacturas(facturas)}</div>
       `;
@@ -390,6 +449,8 @@
         vistaResumen = !vistaResumen;
         render();
       });
+      const btnPagos = document.getElementById("adm-btn-ver-pagos");
+      if (btnPagos) btnPagos.addEventListener("click", () => mostrarPagosProveedor(idProveedor, proveedorReal, render));
     }
 
     render();

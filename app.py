@@ -283,6 +283,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
             id bigint generated always as identity primary key,
             proveedor text not null,
+            id_proveedor text,
             moneda text not null,
             cliente text,
             factura_cliente text,
@@ -310,6 +311,7 @@ def init_db():
         );
     """)
     db.execute("ALTER TABLE antiguedad_saldos_egresos ADD COLUMN IF NOT EXISTS monto_cobrar numeric not null default 0;")
+    db.execute("ALTER TABLE antiguedad_saldos_egresos ADD COLUMN IF NOT EXISTS id_proveedor text;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS reporte_bookings (
             id bigint generated always as identity primary key,
@@ -1600,6 +1602,7 @@ def descargar_antiguedad_saldos_egresos_cargolink():
         cobro = cobro_por_factura.get((proveedor, factura or ""))
         facturas.append({
             "proveedor": proveedor,
+            "id_proveedor": (v.get("id_proveedor") or "").strip() or None,
             "moneda": (v.get("Moneda") or "").strip() or "N/D",
             "cliente": (cobro or {}).get("cliente") or (cliente_por_booking.get(no_booking) if no_booking else None),
             "factura_cliente": (cobro or {}).get("factura_cliente"),
@@ -1632,7 +1635,7 @@ def actualizar_antiguedad_saldos_egresos():
     facturas = descargar_antiguedad_saldos_egresos_cargolink()
 
     columnas = [
-        "proveedor", "moneda", "cliente", "factura_cliente", "estatus", "monto_cobrar", "fecha_recepcion",
+        "proveedor", "id_proveedor", "moneda", "cliente", "factura_cliente", "estatus", "monto_cobrar", "fecha_recepcion",
         "referencia_booking", "fecha_factura", "factura", "vencimiento", "profit", "monto_factura",
         "folio_anticipo", "fecha_anticipo", "monto_anticipo_aplicado",
         "por_vencer", "dias_0_7", "dias_8_14", "dias_15_21", "dias_22_28", "dias_29_35", "mas_36", "total",
@@ -4885,7 +4888,7 @@ def antiguedad_saldos_egresos():
 
     db = get_db()
     facturas_rows = db.execute("""
-        SELECT proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
+        SELECT proveedor, id_proveedor, moneda, cliente, referencia_booking, factura, fecha_factura, vencimiento,
                monto_factura, por_vencer, dias_0_7, dias_8_14, dias_15_21, dias_22_28, dias_29_35, mas_36, total, generado_en
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
@@ -4947,7 +4950,7 @@ def antiguedad_saldos_egresos():
 
     facturas_json = json.dumps([
         {
-            "proveedor": f["proveedor"], "moneda": f["moneda"], "cliente": f["cliente"],
+            "proveedor": f["proveedor"], "id_proveedor": f["id_proveedor"], "moneda": f["moneda"], "cliente": f["cliente"],
             "referencia_booking": f["referencia_booking"], "factura": f["factura"],
             "fecha_factura": f["fecha_factura"].strftime("%Y-%m-%d") if f["fecha_factura"] else None,
             "vencimiento": f["vencimiento"].strftime("%Y-%m-%d") if f["vencimiento"] else None,
@@ -4977,6 +4980,38 @@ def antiguedad_saldos_egresos_actualizar():
     except RuntimeError as e:
         flash(f"No se pudo actualizar: {e}")
     return redirect(url_for("antiguedad_saldos_egresos"))
+
+
+@app.route("/antiguedad-saldos-egresos/pagos-proveedor")
+@login_required
+def antiguedad_saldos_egresos_pagos_proveedor():
+    """Lista (sin intentar adivinar a qué factura corresponde cada uno) los
+    pagos hechos a un proveedor en CargoLink — para que, al ver una factura
+    con saldo ya parcialmente pagado, se pueda verificar a simple vista cuál
+    pago la cubre, en vez de que el sistema arriesgue una asociación por
+    coincidencia de monto/fecha que podría ser incorrecta."""
+    if not usuario_puede_ver_administracion():
+        return {"error": "Sin permiso"}, 403
+    id_proveedor = (request.args.get("id_proveedor") or "").strip()
+    if not id_proveedor:
+        return {"error": "Falta id_proveedor"}, 400
+    try:
+        pagos = buscar_pagos_proveedor_cargolink(id_proveedor, fecha=None)
+    except RuntimeError as e:
+        return {"error": str(e)}, 502
+
+    return {"pagos": [
+        {
+            "fecha": p.get("Fecha"),
+            "moneda": p.get("moneda_mov"),
+            "monto": p.get("Total"),
+            "banco": p.get("Banco"),
+            "referencia": p.get("referencia"),
+            "usuario": p.get("usuario_pago"),
+            "url_pago": f"https://fwd.cargolink.mx/{p['url_pago']}" if p.get("url_pago") else None,
+        }
+        for p in pagos
+    ]}
 
 
 EXTENSIONES_RECIBO_PERMITIDAS = {"pdf", "png", "jpg", "jpeg"}
