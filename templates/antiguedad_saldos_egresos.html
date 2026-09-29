@@ -19,6 +19,9 @@
 
   .adm-resumen { width: 100%; font-variant-numeric: tabular-nums; font-size: .74rem; }
   .adm-resumen th, .adm-resumen td { text-align: right; white-space: nowrap; padding: .5rem .7rem; }
+  .adm-resumen th.adm-th-ordenable { cursor: pointer; user-select: none; }
+  .adm-resumen th.adm-th-ordenable:hover { color: var(--accent); }
+  .adm-orden-flecha { font-size: .65rem; }
   .adm-resumen th:first-child, .adm-resumen td:first-child { text-align: left; }
   .adm-resumen th:nth-child(2), .adm-resumen td:nth-child(2) { text-align: left; }
   .adm-resumen tbody tr { cursor: pointer; }
@@ -104,6 +107,13 @@
       <div class="adm-kpi"><div class="label">Total {{ moneda }}</div><div class="value">${{ "{:,.2f}".format(total) }}</div></div>
       {% endfor %}
       <div class="adm-kpi"><div class="label">Facturas</div><div class="value">{{ total_facturas }}</div></div>
+    </div>
+
+    <div class="adm-kpis">
+      <div class="adm-kpi"><div class="label">Referencias facturadas</div><div class="value">{{ cant_facturadas }}</div></div>
+      <div class="adm-kpi"><div class="label">Referencias sin facturar</div><div class="value">{{ cant_no_facturadas }}</div></div>
+      <div class="adm-kpi"><div class="label">Facturadas y pagadas</div><div class="value">{{ cant_facturadas_pagadas }}</div></div>
+      <div class="adm-kpi"><div class="label">Facturadas sin pagar</div><div class="value">{{ cant_facturadas_sin_pagar }}</div></div>
     </div>
 
     <div class="card">
@@ -313,6 +323,78 @@
   const FACTURAS = JSON.parse(document.getElementById("datos-facturas").textContent);
   const contenido = document.getElementById("adm-modal-contenido");
 
+  function valorCeldaOrden(tr, idx) {
+    const celda = tr.children[idx];
+    return celda ? celda.textContent.trim() : "";
+  }
+  function numeroOrden(txt) {
+    const limpio = txt.replace(/[^0-9.\-]/g, "");
+    return limpio === "" || limpio === "-" ? null : parseFloat(limpio);
+  }
+  function compararOrden(a, b, idx, dir) {
+    const va = valorCeldaOrden(a, idx), vb = valorCeldaOrden(b, idx);
+    const na = numeroOrden(va), nb = numeroOrden(vb);
+    const cmp = (na !== null && nb !== null) ? na - nb : va.localeCompare(vb, "es");
+    return dir === "asc" ? cmp : -cmp;
+  }
+  function marcarFlecha(th, dir) {
+    th.querySelectorAll(".adm-orden-flecha").forEach((f) => f.remove());
+    const flecha = document.createElement("span");
+    flecha.className = "adm-orden-flecha";
+    flecha.textContent = dir === "asc" ? " ▲" : " ▼";
+    th.appendChild(flecha);
+  }
+
+  // Click en un <th> ordena las filas de la tabla por esa columna (numérico
+  // si la celda es un monto/fecha, alfabético si no), alternando asc/desc.
+  // Sirve para cualquier tabla de filas planas (sin agrupar).
+  function hacerOrdenable(tabla) {
+    if (!tabla) return;
+    const thead = tabla.querySelector("thead");
+    const tbody = tabla.querySelector("tbody");
+    if (!thead || !tbody) return;
+    const ths = Array.from(thead.querySelectorAll("th"));
+    ths.forEach((th, idx) => {
+      th.classList.add("adm-th-ordenable");
+      th.addEventListener("click", () => {
+        const dirActual = th.dataset.dir === "asc" ? "desc" : "asc";
+        ths.forEach((t) => { t.dataset.dir = ""; t.querySelectorAll(".adm-orden-flecha").forEach((f) => f.remove()); });
+        th.dataset.dir = dirActual;
+        marcarFlecha(th, dirActual);
+        const filas = Array.from(tbody.querySelectorAll(":scope > tr"));
+        filas.sort((a, b) => compararOrden(a, b, idx, dirActual));
+        filas.forEach((tr) => tbody.appendChild(tr));
+      });
+    });
+  }
+
+  // Igual que hacerOrdenable(), pero para la tabla "Agrupada": cada grupo es
+  // un <tr class="adm-grupo-header"> seguido de su <tr class="adm-grupo-detalle">
+  // oculto — hay que moverlos siempre juntos para no romper esa relación.
+  function hacerOrdenableGrupos(tabla) {
+    if (!tabla) return;
+    const thead = tabla.querySelector("thead");
+    const tbody = tabla.querySelector("tbody");
+    if (!thead || !tbody) return;
+    const ths = Array.from(thead.querySelectorAll("th"));
+    ths.forEach((th, idx) => {
+      th.classList.add("adm-th-ordenable");
+      th.addEventListener("click", () => {
+        const dirActual = th.dataset.dir === "asc" ? "desc" : "asc";
+        ths.forEach((t) => { t.dataset.dir = ""; t.querySelectorAll(".adm-orden-flecha").forEach((f) => f.remove()); });
+        th.dataset.dir = dirActual;
+        marcarFlecha(th, dirActual);
+        const headers = Array.from(tbody.querySelectorAll(":scope > tr.adm-grupo-header"));
+        headers.sort((a, b) => compararOrden(a, b, idx, dirActual));
+        headers.forEach((header) => {
+          const detalle = tbody.querySelector('tr.adm-grupo-detalle[data-grupo-padre="' + header.dataset.grupo + '"]');
+          tbody.appendChild(header);
+          if (detalle) tbody.appendChild(detalle);
+        });
+      });
+    });
+  }
+
   function fmtMoneda(n) {
     if (n == null) return "—";
     const signo = n < 0 ? "-" : "";
@@ -435,6 +517,7 @@
             <tbody>${filasHtml}</tbody>
           </table>
         `;
+        hacerOrdenable(cont.querySelector("table"));
       })
       .catch(() => {
         const cont = document.getElementById("adm-modal-tabla");
@@ -482,6 +565,7 @@
         </div>
         <div id="adm-modal-tabla">${tablaHtml}</div>
       `;
+      hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
 
       if (clienteSeleccionado) {
         document.getElementById("adm-btn-volver-cliente").addEventListener("click", () => {
@@ -529,6 +613,7 @@
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
         <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
       `;
+      hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
     }
 
     render();
@@ -582,6 +667,9 @@
   document.getElementById("adm-modal-cerrar").addEventListener("click", cerrarModal);
   modal.addEventListener("click", (e) => { if (e.target === modal) cerrarModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
+
+  hacerOrdenable(document.querySelector("#vista-detallada table"));
+  hacerOrdenableGrupos(document.querySelector("#vista-agrupada table"));
 })();
 </script>
 {% endblock %}

@@ -4998,6 +4998,13 @@ def antiguedad_saldos_egresos():
 
     monedas_disponibles = sorted(totales_moneda.keys())
 
+    cant_facturadas = sum(1 for f in facturas if f["factura_cliente"])
+    cant_no_facturadas = len(facturas) - cant_facturadas
+    cant_facturadas_pagadas = sum(
+        1 for f in facturas if f["factura_cliente"] and (f["estatus"] or "").strip().upper() == "COBRADA"
+    )
+    cant_facturadas_sin_pagar = cant_facturadas - cant_facturadas_pagadas
+
     def bucket_de(f):
         for b in ANTIGUEDAD_EGRESOS_BUCKETS:
             if f[b]:
@@ -5022,6 +5029,8 @@ def antiguedad_saldos_egresos():
         filas=filas, grupos=grupos, buckets=buckets, totales_moneda=totales_moneda,
         monedas_disponibles=monedas_disponibles, facturas_json=facturas_json,
         generado_en=generado_en, total_facturas=len(facturas),
+        cant_facturadas=cant_facturadas, cant_no_facturadas=cant_no_facturadas,
+        cant_facturadas_pagadas=cant_facturadas_pagadas, cant_facturadas_sin_pagar=cant_facturadas_sin_pagar,
     )
 
 
