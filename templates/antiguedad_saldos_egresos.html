@@ -13,6 +13,8 @@
   .adm-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.25rem; }
   .adm-kpi .label { font-size: .72rem; color: var(--ink-3); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
   .adm-kpi .value { font-size: 1.4rem; font-weight: 700; color: var(--ink); margin-top: .25rem; font-variant-numeric: tabular-nums; }
+  .adm-kpi.adm-kpi-clic { cursor: pointer; }
+  .adm-kpi.adm-kpi-clic:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 
   .adm-buscador { margin-bottom: 1rem; max-width: 340px; }
   .adm-buscador input { padding: .55rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font-size: .85rem; width: 100%; }
@@ -110,10 +112,10 @@
     </div>
 
     <div class="adm-kpis">
-      <div class="adm-kpi"><div class="label">Referencias facturadas</div><div class="value">{{ cant_facturadas }}</div></div>
-      <div class="adm-kpi"><div class="label">Referencias sin facturar</div><div class="value">{{ cant_no_facturadas }}</div></div>
-      <div class="adm-kpi"><div class="label">Facturadas y pagadas</div><div class="value">{{ cant_facturadas_pagadas }}</div></div>
-      <div class="adm-kpi"><div class="label">Facturadas sin pagar</div><div class="value">{{ cant_facturadas_sin_pagar }}</div></div>
+      <div class="adm-kpi adm-kpi-clic" data-kpi="facturadas"><div class="label">Referencias facturadas</div><div class="value">{{ cant_facturadas }}</div></div>
+      <div class="adm-kpi adm-kpi-clic" data-kpi="pagadas"><div class="label">Facturadas y pagadas</div><div class="value">{{ cant_facturadas_pagadas }}</div></div>
+      <div class="adm-kpi adm-kpi-clic" data-kpi="sin_pagar"><div class="label">Facturadas sin pagar</div><div class="value">{{ cant_facturadas_sin_pagar }}</div></div>
+      <div class="adm-kpi adm-kpi-clic" data-kpi="sin_facturar"><div class="label">Referencias sin facturar</div><div class="value">{{ cant_no_facturadas }}</div></div>
     </div>
 
     <div class="card">
@@ -619,6 +621,30 @@
     render();
     modal.classList.add("abierto");
   }
+
+  const FILTROS_KPI = {
+    facturadas: { titulo: "Referencias facturadas", filtro: (f) => !!f.factura_cliente },
+    sin_facturar: { titulo: "Referencias sin facturar", filtro: (f) => !f.factura_cliente },
+    pagadas: { titulo: "Facturadas y pagadas", filtro: (f) => !!f.factura_cliente && (f.estatus || "").toUpperCase() === "COBRADA" },
+    sin_pagar: { titulo: "Facturadas sin pagar", filtro: (f) => !!f.factura_cliente && (f.estatus || "").toUpperCase() !== "COBRADA" },
+  };
+
+  function abrirFacturacion(tipo) {
+    const config = FILTROS_KPI[tipo];
+    if (!config) return;
+    const facturas = FACTURAS.filter(config.filtro).sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+    contenido.innerHTML = `
+      <p class="adm-modal-titulo">${config.titulo} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+      <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
+    `;
+    hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
+    modal.classList.add("abierto");
+  }
+
+  document.querySelectorAll(".adm-kpi-clic[data-kpi]").forEach((tarjeta) => {
+    tarjeta.addEventListener("click", () => abrirFacturacion(tarjeta.dataset.kpi));
+  });
 
   document.querySelectorAll(".adm-resumen tbody tr[data-proveedor-real]").forEach((tr) => {
     tr.addEventListener("click", () => abrirProveedor(tr.dataset.proveedorReal, tr.dataset.moneda));
