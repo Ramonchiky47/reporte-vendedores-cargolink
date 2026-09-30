@@ -483,6 +483,20 @@
     return `<span class="adm-badge" style="background:${bg};color:${color};">${cobrada ? "Cobrada" : "Por cobrar"}</span>`;
   }
 
+  // Línea de resumen (saldo de proveedor, no monto de cliente) partido por
+  // estatus de facturación al cliente — complementa a Vencido/Por vencer,
+  // que es la misma plata vista por antigüedad en vez de por facturación.
+  function resumenFacturacionHtml(facturas) {
+    const sumaPor = (clave) => facturas.filter((f) => estatusFacturaKey(f) === clave).reduce((acc, f) => acc + (f.total || 0), 0);
+    return `
+      <p class="hint" style="margin-top:-.5rem;">
+        Sin factura: <strong>${fmtMoneda(sumaPor("sin_facturar"))}</strong> ·
+        Por cobrar: <strong>${fmtMoneda(sumaPor("por_cobrar"))}</strong> ·
+        Cobrado: <strong style="color:#166534;">${fmtMoneda(sumaPor("cobrada"))}</strong>
+      </p>
+    `;
+  }
+
   function estatusFacturaKey(f) {
     if (!f.factura_cliente) return "sin_facturar";
     return (f.estatus || "").toUpperCase() === "COBRADA" ? "cobrada" : "por_cobrar";
@@ -636,6 +650,7 @@
       contenido.innerHTML = `
         <p class="adm-modal-titulo">${proveedorReal} · ${moneda}${segmento}${tituloExtra} — ${facturasVista.length} factura(s), saldo ${fmtMoneda(totalVista)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencidoVista)}</strong> · Por vencer: <strong>${fmtMoneda(porVencerVista)}</strong></p>
+        ${resumenFacturacionHtml(facturasVista)}
         <div style="margin-bottom:.75rem; display:flex; gap:.5rem; flex-wrap:wrap;">
           ${clienteSeleccionado ? '<button type="button" class="btn small secondary" id="adm-btn-volver-cliente">← Volver al resumen por cliente</button>' : `
             <button type="button" class="btn small secondary" id="adm-btn-resumen-cliente">${vistaResumen ? "Ver detalle de facturas" : "Ver resumen por cliente"}</button>
@@ -694,6 +709,7 @@
       contenido.innerHTML = `
         <p class="adm-modal-titulo">Cliente: ${clienteReal} · ${moneda}${segmento} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
         <p class="hint" style="margin-top:-.75rem;">Vencido: <strong style="color:var(--danger-dark);">${fmtMoneda(vencido)}</strong> · Por vencer: <strong>${fmtMoneda(porVencer)}</strong></p>
+        ${resumenFacturacionHtml(facturas)}
         <div style="margin-bottom:.75rem;">
           <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
         </div>
