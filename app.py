@@ -145,6 +145,10 @@ def init_db():
     # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
     # correos de cobranza), antes exclusivo de es_admin.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
+    # Permiso aparte para el reporte de Antigüedad de Saldos (Egresos) —
+    # antes solo lo daba puede_ver_administracion; ahora se puede otorgar
+    # solo, sin dar el resto de Administración.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_antiguedad_saldos boolean not null default false;")
     # "Solo ver su información" (Catálogos → Visualización de Plazas): ata
     # el login a UN vendedor del catálogo y, si está marcado, restringe a
     # ese usuario a los datos de ese vendedor únicamente (además de sus
@@ -2482,6 +2486,7 @@ def permisos_frescos_usuario():
             coalesce(todas_las_plazas, false) AS todas_las_plazas,
             coalesce(puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(puede_ver_administracion, false) AS puede_ver_administracion,
+            coalesce(puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos,
             vendedor_asociado, coalesce(solo_su_informacion, false) AS solo_su_informacion,
             cotizaciones_creador_extra,
             desarrollador_asociado, coalesce(solo_su_informacion_desarrollador, false) AS solo_su_informacion_desarrollador,
@@ -2957,6 +2962,18 @@ def usuario_puede_ver_administracion():
     return bool(p.get("puede_ver_administracion"))
 
 
+def usuario_puede_ver_antiguedad_saldos():
+    """True = puede ver la pestaña Antigüedad de Saldos (Egresos/
+    proveedores). Permiso individual (app_user_permissions.
+    puede_ver_antiguedad_saldos, otorgado desde Catálogos → Permisos de
+    Usuario); quien ya tiene Administración también puede, igual que los
+    administradores."""
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
+        return True
+    return bool(p.get("puede_ver_administracion")) or bool(p.get("puede_ver_antiguedad_saldos"))
+
+
 def plazas_con_crm_habilitado():
     """Plazas a las que Catálogos → CRM por Plaza les dio acceso a CRM
     completo (todo usuario asignado a esa plaza en Visibilidad de Plazas
@@ -3037,6 +3054,7 @@ def inject_permisos():
         "puede_transporte_terrestre": usuario_puede_transporte_terrestre(),
         "puede_autorizar_minutas": usuario_puede_autorizar_minutas(),
         "puede_ver_administracion": usuario_puede_ver_administracion(),
+        "puede_ver_antiguedad_saldos": usuario_puede_ver_antiguedad_saldos(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
 
@@ -4959,8 +4977,8 @@ def administracion_antiguedad_saldos_cliente_exportar():
 @app.route("/antiguedad-saldos-egresos")
 @login_required
 def antiguedad_saldos_egresos():
-    if not usuario_puede_ver_administracion():
-        flash("No tienes permiso para ver Administración.")
+    if not usuario_puede_ver_antiguedad_saldos():
+        flash("No tienes permiso para ver Antigüedad de Saldos.")
         return redirect(url_for("dashboard_plazas_vendedores"))
 
     db = get_db()
@@ -5118,8 +5136,8 @@ def antiguedad_saldos_egresos():
 @app.route("/antiguedad-saldos-egresos/actualizar", methods=["POST"])
 @login_required
 def antiguedad_saldos_egresos_actualizar():
-    if not usuario_puede_ver_administracion():
-        flash("No tienes permiso para ver Administración.")
+    if not usuario_puede_ver_antiguedad_saldos():
+        flash("No tienes permiso para ver Antigüedad de Saldos.")
         return redirect(url_for("dashboard_plazas_vendedores"))
     try:
         cantidad = actualizar_antiguedad_saldos_egresos()
@@ -5146,7 +5164,7 @@ def antiguedad_saldos_egresos_pagos_proveedor():
     comprobante ("Folio/Fecha/Referencia/Afectación/$ Saldo"), obtenido vía
     API (buscarDocumentosLigadosalPagoProv) en vez de tener que abrir cada
     PDF a mano."""
-    if not usuario_puede_ver_administracion():
+    if not usuario_puede_ver_antiguedad_saldos():
         return {"error": "Sin permiso"}, 403
     id_proveedor = (request.args.get("id_proveedor") or "").strip()
     if not id_proveedor:
@@ -10523,6 +10541,7 @@ PERMISOS_LISTA = [
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
     ("puede_ver_administracion", "Administración"),
+    ("puede_ver_antiguedad_saldos", "Antigüedad de Saldos"),
 ]
 PERMISOS_TOGGLEABLES = {campo for campo, _ in PERMISOS_LISTA}
 
@@ -10544,7 +10563,8 @@ def permisos_actualizar():
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
-            coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion
+            coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
+            coalesce(p.puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
