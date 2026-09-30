@@ -483,10 +483,16 @@
     return `<span class="adm-badge" style="background:${bg};color:${color};">${cobrada ? "Cobrada" : "Por cobrar"}</span>`;
   }
 
+  function estatusFacturaKey(f) {
+    if (!f.factura_cliente) return "sin_facturar";
+    return (f.estatus || "").toUpperCase() === "COBRADA" ? "cobrada" : "por_cobrar";
+  }
+
   function tablaDetalleFacturas(facturas, mostrarProveedor) {
     const colProveedor = mostrarProveedor ? "<th>Proveedor</th>" : "";
     const filasHtml = facturas.map((f) => `
-        <tr data-factura="${(f.factura || "").replace(/"/g, "&quot;")}" data-id-proveedor="${f.id_proveedor || ""}" style="${f.factura ? "cursor:pointer;" : ""}">
+        <tr data-factura="${(f.factura || "").replace(/"/g, "&quot;")}" data-id-proveedor="${f.id_proveedor || ""}"
+            data-estatus-factura="${estatusFacturaKey(f)}" style="${f.factura ? "cursor:pointer;" : ""}">
           <td>${f.referencia_booking || "—"}</td>
           <td>${f.factura || "—"}</td>
           ${mostrarProveedor ? `<td>${f.proveedor || "—"}</td>` : ""}
@@ -711,22 +717,48 @@
     sin_pagar: { titulo: "Facturadas sin pagar", filtro: (f) => !!f.factura_cliente && (f.estatus || "").toUpperCase() !== "COBRADA" },
   };
 
+  const ETIQUETAS_ESTATUS_FACTURA = { cobrada: "Cobradas", por_cobrar: "Por cobrar", sin_facturar: "Sin facturar" };
+
   function abrirFacturacion(tipo) {
     const config = FILTROS_KPI[tipo];
     if (!config) return;
-    const facturas = FACTURAS.filter(config.filtro).sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
-    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
-    contenido.innerHTML = `
-      <p class="adm-modal-titulo">${config.titulo} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
-      <div style="margin-bottom:.75rem;">
-        <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
-      </div>
-      <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
-    `;
-    hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
-    document.getElementById("adm-btn-exportar").addEventListener("click", () => {
-      exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), `Antiguedad_${config.titulo}`);
-    });
+    const todas = FACTURAS.filter(config.filtro).sort((a, b) => (a.vencimiento || "").localeCompare(b.vencimiento || ""));
+    let estatusFiltro = "";
+
+    function render() {
+      const facturas = estatusFiltro ? todas.filter((f) => estatusFacturaKey(f) === estatusFiltro) : todas;
+      const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+      const estatusPresentes = Array.from(new Set(todas.map(estatusFacturaKey)));
+      const pillsHtml = estatusPresentes.length > 1 ? `
+        <div class="adm-monedas" id="filtro-estatus-factura" style="margin-bottom:.75rem;">
+          <button type="button" class="adm-moneda-pill ${estatusFiltro === "" ? "activo" : ""}" data-estatus="">Todas</button>
+          ${estatusPresentes.map((e) => `<button type="button" class="adm-moneda-pill ${estatusFiltro === e ? "activo" : ""}" data-estatus="${e}">${ETIQUETAS_ESTATUS_FACTURA[e] || e}</button>`).join("")}
+        </div>
+      ` : "";
+      contenido.innerHTML = `
+        <p class="adm-modal-titulo">${config.titulo} — ${facturas.length} factura(s), saldo ${fmtMoneda(total)}</p>
+        ${pillsHtml}
+        <div style="margin-bottom:.75rem;">
+          <button type="button" class="btn small secondary" id="adm-btn-exportar">Exportar</button>
+        </div>
+        <div id="adm-modal-tabla">${tablaDetalleFacturas(facturas, true)}</div>
+      `;
+      hacerOrdenable(document.querySelector("#adm-modal-tabla table"));
+      document.getElementById("adm-btn-exportar").addEventListener("click", () => {
+        exportarTablaCSV(document.querySelector("#adm-modal-tabla table"), `Antiguedad_${config.titulo}`);
+      });
+      const filtroPills = document.getElementById("filtro-estatus-factura");
+      if (filtroPills) {
+        filtroPills.querySelectorAll(".adm-moneda-pill").forEach((pill) => {
+          pill.addEventListener("click", () => {
+            estatusFiltro = pill.dataset.estatus;
+            render();
+          });
+        });
+      }
+    }
+
+    render();
     modal.classList.add("abierto");
   }
 
