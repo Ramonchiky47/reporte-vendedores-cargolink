@@ -6385,6 +6385,11 @@ def construir_cotizaciones_crm(
                        (SELECT max(creado_en) FROM crm_solicitudes_transporte_terrestre_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
                 FROM crm_solicitudes_transporte_terrestre s
                 WHERE s.cotizacion_id = co.id
+                UNION ALL
+                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
+                       (SELECT max(creado_en) FROM crm_solicitudes_transporte_nacional_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                FROM crm_solicitudes_transporte_nacional s
+                WHERE s.cotizacion_id = co.id
             ) combinado
             ORDER BY creado_en DESC
             LIMIT 1
