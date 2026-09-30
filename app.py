@@ -4989,7 +4989,8 @@ def antiguedad_saldos_egresos():
         FROM antiguedad_saldos_egresos
         ORDER BY proveedor, moneda, vencimiento
     """).fetchall()
-    generado_en = db.execute("SELECT max(generado_en) AS g FROM antiguedad_saldos_egresos").fetchone()["g"]
+    generado_en_raw = db.execute("SELECT max(generado_en) AS g FROM antiguedad_saldos_egresos").fetchone()["g"]
+    generado_en = generado_en_raw.astimezone(TZ_LOCAL) if generado_en_raw else None
     ingresos_rows = db.execute("""
         SELECT cliente, booking, folio, fecha_factura, vencimiento, dias_vencimiento, moneda, total
         FROM antiguedad_saldos_ingresos
