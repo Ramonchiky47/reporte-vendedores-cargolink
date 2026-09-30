@@ -52,6 +52,23 @@
   .nav-links { display: flex; gap: .35rem; align-items: center; }
   .nav-links a { padding: .45rem .9rem; border-radius: 8px; }
   .nav-links a.active { background: #1e293b; color: #fff; }
+  .nav-dropdown { position: relative; }
+  .nav-dropdown-toggle {
+    background: none; border: none; color: #cbd5e1; font-size: .85rem; font-weight: 600; font-family: inherit;
+    padding: .45rem .9rem; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem;
+  }
+  .nav-dropdown-toggle:hover, .nav-dropdown-toggle.active { background: #1e293b; color: #fff; }
+  .nav-dropdown-toggle .caret { font-size: .6rem; transition: transform .15s; }
+  .nav-dropdown.abierto .nav-dropdown-toggle .caret { transform: rotate(180deg); }
+  .nav-dropdown-menu {
+    display: none; position: absolute; top: 100%; left: 0; margin-top: .4rem; background: var(--ink);
+    border: 1px solid #1e293b; border-radius: 8px; min-width: 200px; padding: .35rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 60;
+  }
+  .nav-dropdown-menu a { display: block; padding: .5rem .7rem; border-radius: 6px; white-space: nowrap; }
+  .nav-dropdown-menu a:hover { background: #1e293b; }
+  .nav-dropdown-menu a.active { background: #1e293b; color: #fff; }
+  .nav-dropdown.abierto .nav-dropdown-menu, .nav-dropdown:hover .nav-dropdown-menu { display: block; }
   .nav-user { display: flex; gap: 1rem; align-items: center; padding-left: 1.25rem; border-left: 1px solid rgba(255,255,255,.15); font-size: .85rem; }
   .nav-user a { color: #fff; }
   main { max-width: 880px; margin: 2.5rem auto; padding: 0 1.5rem; }
@@ -125,14 +142,38 @@
       <nav>
         <div class="nav-links">
           {% if session.get('es_admin') and not panel_scoped %}<a href="{{ url_for('dashboard') }}" class="{{ 'active' if active == 'dashboard' else '' }}">Actualización</a>{% endif %}
-          {% if puede_ver_ventas and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Venta Mensual</a>{% endif %}
-          {% if puede_ver_ventas and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('venta_diaria', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'venta_diaria' else '' }}">Venta Diaria</a>{% endif %}
-          {% if puede_ver_reportes and (panel_ventas or not panel_scoped) %}<a href="{{ url_for('reportes_graficas', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
-          {% if puede_comisiones and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
-          {% if session.get('es_admin') and (panel_admin or not panel_scoped) %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
-          {% if puede_ver_administracion and (panel_admin or not panel_scoped) %}<a href="{{ url_for('administracion_antiguedad_saldos', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'administracion_antiguedad_saldos' else '' }}">Administración</a>{% endif %}
-          {% if puede_ver_administracion and (panel_admin or not panel_scoped) %}<a href="{{ url_for('administracion_recibos_pago', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'administracion_recibos_pago' else '' }}">Recibos de Pago</a>{% endif %}
-          {% if puede_ver_antiguedad_saldos and (panel_admin or not panel_scoped) %}<a href="{{ url_for('antiguedad_saldos_egresos', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'antiguedad_saldos_egresos' else '' }}">Antigüedad de Saldos</a>{% endif %}
+          {% set ventas_activo = active in ('dashboard_plazas_vendedores', 'venta_diaria', 'reportes_graficas') %}
+          {% if (puede_ver_ventas or puede_ver_reportes) and (panel_ventas or not panel_scoped) %}
+          <div class="nav-dropdown">
+            <button type="button" class="nav-dropdown-toggle{{ ' active' if ventas_activo else '' }}">Ventas <span class="caret">▾</span></button>
+            <div class="nav-dropdown-menu">
+              {% if puede_ver_ventas %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Venta Mensual</a>{% endif %}
+              {% if puede_ver_ventas %}<a href="{{ url_for('venta_diaria', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'venta_diaria' else '' }}">Venta Diaria</a>{% endif %}
+              {% if puede_ver_reportes %}<a href="{{ url_for('reportes_graficas', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {% set comisiones_activo = active in ('comisiones', 'comisiones_acotadas') %}
+          {% if (puede_comisiones or session.get('es_admin')) and (panel_admin or not panel_scoped) %}
+          <div class="nav-dropdown">
+            <button type="button" class="nav-dropdown-toggle{{ ' active' if comisiones_activo else '' }}">Comisiones <span class="caret">▾</span></button>
+            <div class="nav-dropdown-menu">
+              {% if puede_comisiones %}<a href="{{ url_for('comisiones', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones' else '' }}">Comisiones</a>{% endif %}
+              {% if session.get('es_admin') %}<a href="{{ url_for('comisiones_acotadas', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'comisiones_acotadas' else '' }}">Comisiones Acotadas</a>{% endif %}
+            </div>
+          </div>
+          {% endif %}
+          {% set administracion_activo = active in ('administracion_antiguedad_saldos', 'administracion_recibos_pago', 'antiguedad_saldos_egresos') %}
+          {% if (puede_ver_administracion or puede_ver_antiguedad_saldos) and (panel_admin or not panel_scoped) %}
+          <div class="nav-dropdown">
+            <button type="button" class="nav-dropdown-toggle{{ ' active' if administracion_activo else '' }}">Administración <span class="caret">▾</span></button>
+            <div class="nav-dropdown-menu">
+              {% if puede_ver_administracion %}<a href="{{ url_for('administracion_antiguedad_saldos', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'administracion_antiguedad_saldos' else '' }}">Administración</a>{% endif %}
+              {% if puede_ver_administracion %}<a href="{{ url_for('administracion_recibos_pago', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'administracion_recibos_pago' else '' }}">Recibos de Pago</a>{% endif %}
+              {% if puede_ver_antiguedad_saldos %}<a href="{{ url_for('antiguedad_saldos_egresos', panel='admin' if panel_admin else none) }}" class="{{ 'active' if active == 'antiguedad_saldos_egresos' else '' }}">Antigüedad de Saldos</a>{% endif %}
+            </div>
+          </div>
+          {% endif %}
           {% if puede_ver_crm and not panel_scoped %}<a href="{{ url_for('crm') }}" class="{{ 'active' if active == 'crm' else '' }}">CRM</a>{% endif %}
           {% if puede_pricing and (panel_pricing or not panel_scoped) %}<a href="{{ url_for('pricing', panel='pricing' if panel_pricing else none) }}" class="{{ 'active' if active == 'pricing' else '' }}">Pricing Marítimo / Aéreo</a>{% endif %}
           {% if panel_pricing %}<a href="https://seguimiento-importaciones.vercel.app/reporte-pricing" target="_blank" rel="noopener noreferrer">Reportes</a>{% endif %}
@@ -160,6 +201,21 @@
   </main>
   <script>
     window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script>
+    (function () {
+      document.querySelectorAll(".nav-dropdown-toggle").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const dropdown = btn.closest(".nav-dropdown");
+          document.querySelectorAll(".nav-dropdown.abierto").forEach((d) => { if (d !== dropdown) d.classList.remove("abierto"); });
+          dropdown.classList.toggle("abierto");
+        });
+      });
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".nav-dropdown.abierto").forEach((d) => d.classList.remove("abierto"));
+      });
+    })();
   </script>
   <script defer src="/_vercel/insights/script.js"></script>
 </body>
