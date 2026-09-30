@@ -702,6 +702,44 @@ def init_db():
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_crm_solicitudes_maritimo_aereo_cotizacion ON crm_solicitudes_maritimo_aereo (cotizacion_id);")
     db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional (
+            id bigint generated always as identity primary key,
+            referencia text not null unique,
+            cotizacion_id bigint references crm_cotizaciones(id) on delete set null,
+            creado_por text,
+            direccion_origen text not null,
+            cp_origen text not null,
+            direccion_destino text not null,
+            cp_destino text not null,
+            tipo_servicio text,
+            tipo_ftl text,
+            unidad_dedicada text,
+            medidas_lineales text,
+            peso numeric,
+            peligroso text,
+            un text not null,
+            requisito_adicional text,
+            estado text not null default 'Solicitud',
+            respuesta_transporte_nacional text,
+            respondido_por text,
+            respondido_en timestamptz,
+            operativo_asignado_id bigint references catalogo_operativos(id) on delete set null,
+            visto_por_vendedor_en timestamptz,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_crm_solicitudes_transporte_nacional_cotizacion ON crm_solicitudes_transporte_nacional (cotizacion_id);")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional_respuestas (
+            id bigint generated always as identity primary key,
+            solicitud_id bigint references crm_solicitudes_transporte_nacional(id) on delete cascade,
+            respuesta text,
+            respondido_por text,
+            creado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_transporte_nacional boolean not null default false;")
+    db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
             nombre_firma text,
@@ -2221,6 +2259,7 @@ def agregar_cabeceras_seguridad(resp):
     if request.endpoint in (
         "pricing_pdf", "crm_cotizacion_detalle", "crm_cotizacion_editar",
         "crm_solicitud_maritimo_nueva", "crm_solicitud_transporte_terrestre_nueva",
+        "crm_solicitud_transporte_nacional_nueva",
     ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
@@ -2449,6 +2488,20 @@ def transporte_terrestre_required(view):
     return wrapped
 
 
+def transporte_nacional_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not sesion_activa():
+            return redirect(url_for("login"))
+        registrar_ingreso()
+        if not usuario_puede_transporte_nacional():
+            flash("No tienes permiso para ver Transporte Nacional.")
+            return redirect(url_for(primera_pagina_permitida()))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def permisos_frescos_usuario():
     """app_user_permissions del usuario en sesión, leído en vivo de la base
     en cada request (cacheado con flask.g para no repetir la consulta
@@ -2483,6 +2536,7 @@ def permisos_frescos_usuario():
             coalesce(puede_pricing, false) AS puede_pricing,
             coalesce(puede_operativos, false) AS puede_operativos,
             coalesce(puede_transporte_terrestre, false) AS puede_transporte_terrestre,
+            coalesce(puede_transporte_nacional, false) AS puede_transporte_nacional,
             coalesce(todas_las_plazas, false) AS todas_las_plazas,
             coalesce(puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(puede_ver_administracion, false) AS puede_ver_administracion,
@@ -2902,6 +2956,16 @@ def usuario_puede_transporte_terrestre():
     return bool(p.get("puede_transporte_terrestre"))
 
 
+def usuario_puede_transporte_nacional():
+    """Igual que usuario_puede_transporte_terrestre(), pero para la bandeja
+    de solicitudes de Transporte Nacional (app_user_permissions.
+    puede_transporte_nacional)."""
+    p = permisos_frescos_usuario()
+    if p.get("es_admin"):
+        return True
+    return bool(p.get("puede_transporte_nacional"))
+
+
 def usuario_puede_ver_ventas():
     """True = el usuario en sesión puede ver la pestaña Información de
     Ventas. Los administradores siempre pueden; para el resto se usa el
@@ -3035,6 +3099,8 @@ def primera_pagina_permitida():
         return "pricing"
     if usuario_puede_transporte_terrestre():
         return "transporte_terrestre"
+    if usuario_puede_transporte_nacional():
+        return "transporte_nacional"
     if usuario_puede_ver_catalogos():
         return "catalogos"
     return "login"
@@ -3052,6 +3118,7 @@ def inject_permisos():
         "puede_ver_crm": usuario_puede_ver_crm(),
         "puede_pricing": usuario_puede_pricing(),
         "puede_transporte_terrestre": usuario_puede_transporte_terrestre(),
+        "puede_transporte_nacional": usuario_puede_transporte_nacional(),
         "puede_autorizar_minutas": usuario_puede_autorizar_minutas(),
         "puede_ver_administracion": usuario_puede_ver_administracion(),
         "puede_ver_antiguedad_saldos": usuario_puede_ver_antiguedad_saldos(),
@@ -3082,6 +3149,7 @@ def autenticar_contra_catalogo_accesos(email, password):
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
+            coalesce(p.puede_transporte_nacional, false) AS puede_transporte_nacional,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_borrar, false) AS puede_borrar,
             coalesce(p.puede_operativos, false) AS puede_operativos,
@@ -3159,6 +3227,7 @@ def login():
             session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
             session["puede_pricing"] = bool(fila["puede_pricing"])
             session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
+            session["puede_transporte_nacional"] = bool(fila["puede_transporte_nacional"])
             session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
             session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
             session["puede_ver_administracion"] = bool(fila["puede_ver_administracion"])
@@ -3236,6 +3305,7 @@ def sso():
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
+            coalesce(p.puede_transporte_nacional, false) AS puede_transporte_nacional,
             coalesce(p.todas_las_plazas, false) AS todas_las_plazas,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
@@ -3269,6 +3339,7 @@ def sso():
     session["puede_ver_crm"] = bool(fila["puede_ver_crm"])
     session["puede_pricing"] = bool(fila["puede_pricing"])
     session["puede_transporte_terrestre"] = bool(fila["puede_transporte_terrestre"])
+    session["puede_transporte_nacional"] = bool(fila["puede_transporte_nacional"])
     session["todas_las_plazas"] = bool(fila["todas_las_plazas"])
     session["puede_autorizar_minutas"] = bool(fila["puede_autorizar_minutas"])
     session["puede_ver_administracion"] = bool(fila["puede_ver_administracion"])
@@ -6239,6 +6310,21 @@ def generar_referencia_solicitud_transporte_terrestre(db):
     return f"COTTI-{siguiente}"
 
 
+def generar_referencia_solicitud_transporte_nacional(db):
+    """Referencia 'TN-xxxxx' con 5 dígitos aleatorios (no secuencial, a
+    diferencia de Marítimo/Terrestre Internacional) para
+    crm_solicitudes_transporte_nacional — reintenta si el azar choca con
+    una ya existente (el campo es unique)."""
+    for _ in range(20):
+        referencia = f"TN-{secrets.randbelow(100000):05d}"
+        existe = db.execute(
+            "SELECT 1 FROM crm_solicitudes_transporte_nacional WHERE referencia = %s", (referencia,)
+        ).fetchone()
+        if not existe:
+            return referencia
+    raise RuntimeError("No se pudo generar una referencia única para la solicitud de Transporte Nacional.")
+
+
 def construir_cotizaciones_crm(
     plazas_permitidas=None, vendedor_forzado=None, creador_extra=None, desarrollador_forzado=None,
     solo_propias=False, usuario_id_actual=None, vendedores_permitidos=None, desarrolladores_permitidos=None,
@@ -8164,6 +8250,45 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         for s in solicitudes_transporte_terrestre if s["respuesta_transporte_terrestre"]
     ]
 
+    db = get_db()
+    solicitudes_transporte_nacional_raw = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_servicio, s.estado, s.creado_por,
+            s.creado_en AS solicitud_en, s.visto_por_vendedor_en,
+            s.respuesta_transporte_nacional, s.respondido_por, s.respondido_en
+        FROM crm_solicitudes_transporte_nacional s
+        WHERE s.cotizacion_id = %s
+        ORDER BY s.creado_en DESC
+    """, (cotizacion_id,)).fetchall()
+    db.close()
+
+    solicitudes_transporte_nacional = []
+    for s in solicitudes_transporte_nacional_raw:
+        s = dict(s)
+        ultima_respuesta_en = s["respondido_en"]
+        s["fecha_entrega"] = ultima_respuesta_en
+        s["diferencia"] = (
+            formatear_duracion(ultima_respuesta_en - s["solicitud_en"]) if ultima_respuesta_en else None
+        )
+        s["es_nuevo"] = bool(
+            ultima_respuesta_en
+            and (not s["visto_por_vendedor_en"] or s["visto_por_vendedor_en"] < ultima_respuesta_en)
+        )
+        solicitudes_transporte_nacional.append(s)
+
+    # Igual que pricing_respuestas, pero para las respuestas de Transporte
+    # Nacional.
+    transporte_nacional_respuestas = [
+        {
+            "referencia": s["referencia"],
+            "tipo_servicio": s["tipo_servicio"] or "",
+            "respuesta": s["respuesta_transporte_nacional"],
+            "respondido_por": nombre_desde_correo(s["respondido_por"]) or s["respondido_por"] or "",
+            "respondido_en": s["respondido_en"],
+        }
+        for s in solicitudes_transporte_nacional if s["respuesta_transporte_nacional"]
+    ]
+
     # El nombre de quien creó la cotización manda sobre el vendedor asignado
     # al cliente — mismo orden de prioridad que el resto del CRM (Inicio,
     # Resultados, Cotizaciones): primero el vendedor/desarrollador asociado
@@ -8281,6 +8406,14 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             for s in solicitudes_transporte_terrestre
         ],
         "transporte_terrestre_respuestas": transporte_terrestre_respuestas,
+        "solicitudes_transporte_nacional": [
+            {"id": s["id"], "referencia": s["referencia"], "tipo_servicio": s["tipo_servicio"] or "",
+             "estado": s["estado"], "fecha_creacion": s["solicitud_en"], "creado_por": s["creado_por"] or "",
+             "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
+             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
+            for s in solicitudes_transporte_nacional
+        ],
+        "transporte_nacional_respuestas": transporte_nacional_respuestas,
     }
 
 
@@ -9407,6 +9540,86 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
     )
 
 
+TRANSPORTE_NACIONAL_TIPOS_SERVICIO = ["FTL", "LTL"]
+TRANSPORTE_NACIONAL_TIPOS_FTL = ["Sencillo", "Full", "N/A", "53 Dry"]
+TRANSPORTE_NACIONAL_UNIDADES = ["3 Ton", "3.5 Ton", "Rabón", "Torton", "Caja de 52", "N/A"]
+TRANSPORTE_NACIONAL_PELIGROSO = ["SI", "NO", "N/A"]
+
+
+@app.route("/crm/cotizaciones/<int:cotizacion_id>/solicitud-transporte-nacional/nueva", methods=["GET", "POST"])
+@crm_required
+def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
+    db = get_db()
+    cotizacion = db.execute(
+        "SELECT id, id_cotizacion, nombre_cotizacion, cliente_folio FROM crm_cotizaciones WHERE id = %s", (cotizacion_id,)
+    ).fetchone()
+    if cotizacion is None:
+        db.close()
+        return "No encontrado", 404
+    if not usuario_puede_ver_cotizacion(db, cotizacion["cliente_folio"], cotizacion_id):
+        db.close()
+        return "No encontrado", 404
+
+    if request.method == "POST":
+        def campo(nombre, limite=100):
+            return (request.form.get(nombre, "") or "").strip()[:limite] or None
+
+        def campo_largo(nombre, limite=4000):
+            return (request.form.get(nombre, "") or "").strip()[:limite] or None
+
+        def opcion(nombre, opciones_validas):
+            v = (request.form.get(nombre, "") or "").strip()
+            return v if v in opciones_validas else None
+
+        peso_raw = (request.form.get("peso", "") or "").strip()
+        try:
+            peso = float(peso_raw) if peso_raw else None
+        except ValueError:
+            peso = None
+
+        direccion_origen = campo_largo("direccion_origen")
+        cp_origen = campo("cp_origen", limite=10)
+        direccion_destino = campo_largo("direccion_destino")
+        cp_destino = campo("cp_destino", limite=10)
+        un = campo("un", limite=50)
+        if not (direccion_origen and cp_origen and direccion_destino and cp_destino and un):
+            flash("Faltan campos obligatorios: dirección/CP de origen y destino, y UN#.")
+            return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
+
+        referencia = generar_referencia_solicitud_transporte_nacional(db)
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_nacional (
+                referencia, cotizacion_id, creado_por,
+                direccion_origen, cp_origen, direccion_destino, cp_destino,
+                tipo_servicio, tipo_ftl, unidad_dedicada, medidas_lineales, peso,
+                peligroso, un, requisito_adicional
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            referencia, cotizacion_id, session.get("usuario", ""),
+            direccion_origen, cp_origen, direccion_destino, cp_destino,
+            opcion("tipo_servicio", TRANSPORTE_NACIONAL_TIPOS_SERVICIO),
+            opcion("tipo_ftl", TRANSPORTE_NACIONAL_TIPOS_FTL),
+            opcion("unidad_dedicada", TRANSPORTE_NACIONAL_UNIDADES),
+            campo("medidas_lineales", limite=200), peso,
+            opcion("peligroso", TRANSPORTE_NACIONAL_PELIGROSO), un,
+            campo_largo("requisito_adicional"),
+        ))
+        db.commit()
+        db.close()
+        flash(f"Solicitud {referencia} enviada a Transporte Nacional.")
+        return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
+    db.close()
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "crm_solicitud_transporte_nacional_form.html", nav_groups=nav_groups,
+        titulo_pagina="Solicitud a Transporte Nacional",
+        cotizacion=cotizacion,
+        tipos_servicio=TRANSPORTE_NACIONAL_TIPOS_SERVICIO, tipos_ftl=TRANSPORTE_NACIONAL_TIPOS_FTL,
+        unidades=TRANSPORTE_NACIONAL_UNIDADES, opciones_peligroso=TRANSPORTE_NACIONAL_PELIGROSO,
+    )
+
+
 ESTADOS_SOLICITUD_PRICING = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
 # Al guardar una respuesta hay que llegar a una decisión final: no se puede
 # dejar la solicitud en "Solicitud" ni "En proceso" desde este formulario.
@@ -9877,6 +10090,187 @@ def transporte_terrestre_ver(solicitud_id):
     if idioma not in PRICING_IDIOMAS:
         idioma = "es"
     return render_template("transporte_terrestre_pdf_ver.html", fila=fila, idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma])
+
+
+ESTADOS_SOLICITUD_TRANSPORTE_NACIONAL = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
+ESTADOS_FINALES_TRANSPORTE_NACIONAL = ["Cotizado", "Rechazada"]
+
+
+@app.route("/transporte-nacional")
+@transporte_nacional_required
+def transporte_nacional():
+    db = get_db()
+    filas = db.execute("""
+        SELECT
+            s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado,
+            co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
+            co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
+            ac.razon_social AS cliente_nombre,
+            op.nombre_operativo AS operativo_asignado,
+            EXISTS (SELECT 1 FROM crm_cotizacion_bookings cb WHERE cb.cotizacion_id = co.id) AS cotizacion_tiene_booking
+        FROM crm_solicitudes_transporte_nacional s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
+        ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
+    """).fetchall()
+    db.close()
+    filas = agregar_estatus_cotizacion_solicitudes(filas)
+    return render_template("transporte_nacional.html", filas=filas)
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>")
+@transporte_nacional_required
+def transporte_nacional_detalle(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre
+        FROM crm_solicitudes_transporte_nacional s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None:
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for("transporte_nacional"))
+    operativos = db.execute("""
+        SELECT co.id, co.nombre_operativo
+        FROM catalogo_operativos co
+        LEFT JOIN app_user_permissions p ON p.user_id = co.user_id
+        WHERE co.activo = true
+          AND (coalesce(p.es_admin, false) OR coalesce(p.puede_transporte_nacional, false) OR co.id = %s)
+        ORDER BY co.nombre_operativo
+    """, (fila["operativo_asignado_id"],)).fetchall()
+    respuestas = db.execute("""
+        SELECT id, respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+    return render_template(
+        "transporte_nacional_detalle.html", fila=fila, estados=ESTADOS_FINALES_TRANSPORTE_NACIONAL,
+        operativos=operativos, respuestas=respuestas,
+    )
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>/responder", methods=["POST"])
+@transporte_nacional_required
+def transporte_nacional_responder(solicitud_id):
+    estado = request.form.get("estado", "").strip()
+    if estado not in ESTADOS_FINALES_TRANSPORTE_NACIONAL:
+        flash("Elige Cotizado o Rechazada para guardar la respuesta.")
+        return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
+    respuesta = (request.form.get("respuesta_transporte_nacional", "") or "").strip()[:4000] or None
+    operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()
+    operativo_id = int(operativo_raw) if operativo_raw.isdigit() else None
+    usuario = session.get("usuario", "")
+
+    db = get_db()
+    db.execute("""
+        UPDATE crm_solicitudes_transporte_nacional
+        SET estado = %s, respuesta_transporte_nacional = %s, respondido_por = %s, respondido_en = now(),
+            operativo_asignado_id = %s
+        WHERE id = %s
+    """, (estado, respuesta, usuario, operativo_id, solicitud_id))
+    if respuesta:
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_nacional_respuestas (solicitud_id, respuesta, respondido_por)
+            VALUES (%s, %s, %s)
+        """, (solicitud_id, respuesta, usuario))
+    db.commit()
+    db.close()
+    flash("Solicitud actualizada.")
+    return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
+
+
+def puede_ver_solicitud_transporte_nacional(db, fila):
+    """True si el usuario en sesión puede ver esta solicitud: es del
+    departamento de Transporte Nacional, o tiene acceso al CRM y puede ver
+    la cotización de la que salió. Calcado de puede_ver_solicitud_transporte_terrestre()."""
+    if usuario_puede_transporte_nacional():
+        return True
+    if not usuario_puede_ver_crm():
+        return False
+    if not fila["cotizacion_id"]:
+        return False
+    return cotizacion_visible_para_usuario(db, fila["cotizacion_id"])
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>/pdf")
+@login_required
+def transporte_nacional_pdf(solicitud_id):
+    db = get_db()
+    fila = db.execute("""
+        SELECT
+            s.*,
+            co.id AS cotizacion_id, co.id_cotizacion,
+            ac.razon_social AS cliente_nombre
+        FROM crm_solicitudes_transporte_nacional s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_nacional(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+    operativo = None
+    if fila["operativo_asignado_id"]:
+        operativo = db.execute(
+            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
+        ).fetchone()
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en ASC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+
+    html = render_template(
+        "transporte_nacional_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL),
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if resultado.err:
+        flash("No se pudo generar el PDF de la solicitud.")
+        return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
+    buffer.seek(0)
+    return send_file(
+        buffer, as_attachment=request.args.get("descargar") == "1",
+        download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
+    )
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>/ver")
+@login_required
+def transporte_nacional_ver(solicitud_id):
+    """Pantalla intermedia para revisar el PDF de una solicitud (visor +
+    botón de descarga explícito) antes de que el vendedor decida guardarlo.
+    Marca la solicitud como vista, lo que le quita el aviso de "Nuevo" que
+    ve el vendedor en la cotización cuando Transporte Nacional responde."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT id, referencia, cotizacion_id FROM crm_solicitudes_transporte_nacional WHERE id = %s",
+        (solicitud_id,),
+    ).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_nacional(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_nacional SET visto_por_vendedor_en = now() WHERE id = %s",
+        (solicitud_id,),
+    )
+    db.commit()
+    db.close()
+    return render_template("transporte_nacional_pdf_ver.html", fila=fila)
 
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/aplicar-booking", methods=["POST"])
@@ -10538,6 +10932,7 @@ PERMISOS_LISTA = [
     ("puede_ver_crm", "CRM"),
     ("puede_pricing", "Pricing"),
     ("puede_transporte_terrestre", "Transporte Terrestre Internacional"),
+    ("puede_transporte_nacional", "Transporte Nacional"),
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
@@ -10563,6 +10958,7 @@ def permisos_actualizar():
             coalesce(p.puede_ver_crm, false) AS puede_ver_crm,
             coalesce(p.puede_pricing, false) AS puede_pricing,
             coalesce(p.puede_transporte_terrestre, false) AS puede_transporte_terrestre,
+            coalesce(p.puede_transporte_nacional, false) AS puede_transporte_nacional,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
             coalesce(p.puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos
