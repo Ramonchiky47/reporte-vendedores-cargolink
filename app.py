@@ -10115,6 +10115,7 @@ def transporte_nacional():
     filas = db.execute("""
         SELECT
             s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado, s.creado_por,
+            s.proveedor, s.observaciones,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
