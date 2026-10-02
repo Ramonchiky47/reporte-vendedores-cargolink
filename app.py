@@ -743,6 +743,8 @@ def init_db():
     # el vendedor ni salen en el PDF).
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS proveedor text;")
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS observaciones text;")
+    # UN# solo es obligatorio cuando la carga es peligrosa.
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ALTER COLUMN un DROP NOT NULL;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
@@ -9593,9 +9595,16 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
         cp_origen = campo("cp_origen", limite=10)
         direccion_destino = campo_largo("direccion_destino")
         cp_destino = campo("cp_destino", limite=10)
-        un = campo("un", limite=50)
-        if not (direccion_origen and cp_origen and direccion_destino and cp_destino and un):
-            flash("Faltan campos obligatorios: dirección/CP de origen y destino, y UN#.")
+        tipo_servicio = opcion("tipo_servicio", TRANSPORTE_NACIONAL_TIPOS_SERVICIO)
+        peligroso = opcion("peligroso", TRANSPORTE_NACIONAL_PELIGROSO)
+        # Medidas lineales solo aplican a LTL; UN# solo a carga peligrosa.
+        medidas_lineales = None if tipo_servicio == "FTL" else campo("medidas_lineales", limite=200)
+        un = campo("un", limite=50) if peligroso == "SI" else None
+        if not (direccion_origen and cp_origen and direccion_destino and cp_destino):
+            flash("Faltan campos obligatorios: dirección y CP de origen y destino.")
+            return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
+        if peligroso == "SI" and not un:
+            flash("Si la carga es peligrosa, el UN# es obligatorio.")
             return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
 
         referencia = generar_referencia_solicitud_transporte_nacional(db)
@@ -9609,11 +9618,11 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
         """, (
             referencia, cotizacion_id, session.get("usuario", ""),
             direccion_origen, cp_origen, direccion_destino, cp_destino,
-            opcion("tipo_servicio", TRANSPORTE_NACIONAL_TIPOS_SERVICIO),
+            tipo_servicio,
             opcion("tipo_ftl", TRANSPORTE_NACIONAL_TIPOS_FTL),
             opcion("unidad_dedicada", TRANSPORTE_NACIONAL_UNIDADES),
-            campo("medidas_lineales", limite=200), peso,
-            opcion("peligroso", TRANSPORTE_NACIONAL_PELIGROSO), un,
+            medidas_lineales, peso,
+            peligroso, un,
             campo_largo("requisito_adicional"),
         ))
         db.commit()
