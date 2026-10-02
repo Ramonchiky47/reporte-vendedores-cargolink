@@ -739,6 +739,10 @@ def init_db():
         );
     """)
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_transporte_nacional boolean not null default false;")
+    # Datos internos que captura solo el operativo al contestar (no los ve
+    # el vendedor ni salen en el PDF).
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS proveedor text;")
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS observaciones text;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
@@ -2260,6 +2264,9 @@ def agregar_cabeceras_seguridad(resp):
         "pricing_pdf", "crm_cotizacion_detalle", "crm_cotizacion_editar",
         "crm_solicitud_maritimo_nueva", "crm_solicitud_transporte_terrestre_nueva",
         "crm_solicitud_transporte_nacional_nueva",
+        # Los visores de PDF (pantalla "ver") embeben el PDF en un <iframe>
+        # propio; sin esto el navegador lo bloquea y el visor sale en blanco.
+        "transporte_terrestre_pdf", "transporte_nacional_pdf", "crm_cotizacion_pdf",
     ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
@@ -10107,7 +10114,7 @@ def transporte_nacional():
     db = get_db()
     filas = db.execute("""
         SELECT
-            s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado,
+            s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado, s.creado_por,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
@@ -10173,15 +10180,17 @@ def transporte_nacional_responder(solicitud_id):
     respuesta = (request.form.get("respuesta_transporte_nacional", "") or "").strip()[:4000] or None
     operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()
     operativo_id = int(operativo_raw) if operativo_raw.isdigit() else None
+    proveedor = (request.form.get("proveedor", "") or "").strip()[:200] or None
+    observaciones = (request.form.get("observaciones", "") or "").strip()[:4000] or None
     usuario = session.get("usuario", "")
 
     db = get_db()
     db.execute("""
         UPDATE crm_solicitudes_transporte_nacional
         SET estado = %s, respuesta_transporte_nacional = %s, respondido_por = %s, respondido_en = now(),
-            operativo_asignado_id = %s
+            operativo_asignado_id = %s, proveedor = %s, observaciones = %s
         WHERE id = %s
-    """, (estado, respuesta, usuario, operativo_id, solicitud_id))
+    """, (estado, respuesta, usuario, operativo_id, proveedor, observaciones, solicitud_id))
     if respuesta:
         db.execute("""
             INSERT INTO crm_solicitudes_transporte_nacional_respuestas (solicitud_id, respuesta, respondido_por)

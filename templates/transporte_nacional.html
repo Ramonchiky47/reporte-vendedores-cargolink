@@ -45,6 +45,7 @@
         <tr>
           <th>Referencia</th>
           <th>Tipo de servicio</th>
+          <th>Solicitó</th>
           <th>Fecha</th>
           <th>Operativo asignado</th>
           <th>Cotización</th>
@@ -59,6 +60,7 @@
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
           </td>
           <td>{{ fila.tipo_servicio or '—' }}</td>
+          <td>{{ fila.creado_por or '—' }}</td>
           <td>{{ fila.creado_en|hora_mx }}</td>
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
           <td>

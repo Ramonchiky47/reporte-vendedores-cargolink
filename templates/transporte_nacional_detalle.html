@@ -104,6 +104,16 @@
             </div>
 
             <div class="campo">
+              <label>Proveedor <span style="font-weight:400; color:var(--ink-4);">(solo operativo)</span></label>
+              <input type="text" name="proveedor" maxlength="200" value="{{ fila.proveedor or '' }}">
+            </div>
+
+            <div class="campo">
+              <label>Observaciones <span style="font-weight:400; color:var(--ink-4);">(solo operativo)</span></label>
+              <textarea name="observaciones" rows="3" style="width:100%; padding:.5rem .6rem; border:1px solid var(--border-strong); border-radius:var(--radius-sm); font:inherit; font-size:.85rem;">{{ fila.observaciones or '' }}</textarea>
+            </div>
+
+            <div class="campo">
               <label>Estado</label>
               <select name="estado" id="pd-estado" required onchange="
                 document.getElementById('pd-enviar').disabled = !this.value;
