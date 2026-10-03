@@ -745,6 +745,19 @@ def init_db():
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS observaciones text;")
     # UN# solo es obligatorio cuando la carga es peligrosa.
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ALTER COLUMN un DROP NOT NULL;")
+    # Aviso de "nuevo" para Pricing: cuándo lo abrió por última vez el
+    # operativo, y cuándo el vendedor la regresó con comentarios nuevos.
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS visto_por_pricing_en timestamptz;")
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS reenviado_en timestamptz;")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional_comentarios (
+            id bigint generated always as identity primary key,
+            solicitud_id bigint references crm_solicitudes_transporte_nacional(id) on delete cascade,
+            comentario text not null,
+            creado_por text,
+            creado_en timestamptz not null default now()
+        );
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_firmas (
             user_id uuid primary key,
@@ -2269,6 +2282,7 @@ def agregar_cabeceras_seguridad(resp):
         # Los visores de PDF (pantalla "ver") embeben el PDF en un <iframe>
         # propio; sin esto el navegador lo bloquea y el visor sale en blanco.
         "transporte_terrestre_pdf", "transporte_nacional_pdf", "crm_cotizacion_pdf",
+        "transporte_nacional_reenviar",
     ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
@@ -3133,6 +3147,31 @@ def inject_permisos():
         "puede_ver_antiguedad_saldos": usuario_puede_ver_antiguedad_saldos(),
         "reporte_ventas_url": url_for(primera_pagina_permitida()) if session.get("logged_in") else None,
     }
+
+
+@app.context_processor
+def inject_notificaciones_pricing():
+    """Campana de notificaciones (arriba a la derecha) para quien atiende
+    Transporte Nacional: solicitudes nuevas o regresadas por el vendedor con
+    comentarios que el operativo todavía no ha abierto."""
+    if not session.get("logged_in") or not usuario_puede_transporte_nacional():
+        return {"notificaciones_pricing": None}
+    try:
+        db = get_db()
+        filas = db.execute("""
+            SELECT s.id, s.referencia, s.creado_por, s.reenviado_en, s.creado_en,
+                   ac.razon_social AS cliente_nombre
+            FROM crm_solicitudes_transporte_nacional s
+            LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+            LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+            WHERE """ + SQL_TN_NUEVA_PARA_PRICING + """
+            ORDER BY coalesce(s.reenviado_en, s.creado_en) DESC
+            LIMIT 30
+        """).fetchall()
+        db.close()
+    except Exception:
+        return {"notificaciones_pricing": None}
+    return {"notificaciones_pricing": filas}
 
 
 def autenticar_contra_catalogo_accesos(email, password):
@@ -9607,6 +9646,24 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
             flash("Si la carga es peligrosa, el UN# es obligatorio.")
             return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
 
+        # Evita duplicados por doble/triple clic en "Enviar": se serializan
+        # los envíos de la misma cotización y, si ya se guardó una solicitud
+        # igual hace menos de 2 minutos, no se crea otra.
+        db.execute("SELECT pg_advisory_xact_lock(hashtext('tn_nueva'), %s)", (cotizacion_id,))
+        duplicada = db.execute("""
+            SELECT referencia FROM crm_solicitudes_transporte_nacional
+            WHERE cotizacion_id = %s AND creado_por = %s
+              AND cp_origen = %s AND cp_destino = %s
+              AND direccion_origen = %s AND direccion_destino = %s
+              AND creado_en > now() - interval '2 minutes'
+            ORDER BY id DESC LIMIT 1
+        """, (cotizacion_id, session.get("usuario", ""), cp_origen, cp_destino, direccion_origen, direccion_destino)).fetchone()
+        if duplicada:
+            db.rollback()
+            db.close()
+            flash(f"Esa solicitud ya se había enviado ({duplicada['referencia']}); no se creó otra.")
+            return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
+
         referencia = generar_referencia_solicitud_transporte_nacional(db)
         db.execute("""
             INSERT INTO crm_solicitudes_transporte_nacional (
@@ -10116,6 +10173,14 @@ def transporte_terrestre_ver(solicitud_id):
 ESTADOS_SOLICITUD_TRANSPORTE_NACIONAL = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
 ESTADOS_FINALES_TRANSPORTE_NACIONAL = ["Cotizado", "Rechazada"]
 
+# "Nueva para Pricing": pendiente de contestar y el operativo no la ha
+# abierto desde que se creó o desde que el vendedor la regresó con
+# comentarios (alias de tabla "s").
+SQL_TN_NUEVA_PARA_PRICING = """(
+    s.estado IN ('Solicitud', 'En proceso')
+    AND (s.visto_por_pricing_en IS NULL OR s.visto_por_pricing_en < coalesce(s.reenviado_en, s.creado_en))
+)"""
+
 
 @app.route("/transporte-nacional")
 @transporte_nacional_required
@@ -10124,7 +10189,8 @@ def transporte_nacional():
     filas = db.execute("""
         SELECT
             s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado, s.creado_por,
-            s.proveedor, s.observaciones,
+            s.proveedor, s.observaciones, s.reenviado_en,
+            """ + SQL_TN_NUEVA_PARA_PRICING + """ AS nueva_para_pricing,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
@@ -10173,10 +10239,21 @@ def transporte_nacional_detalle(solicitud_id):
         WHERE solicitud_id = %s
         ORDER BY creado_en DESC
     """, (solicitud_id,)).fetchall()
+    comentarios = db.execute("""
+        SELECT comentario, creado_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_comentarios
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
+    # Abrirla desde la bandeja de Pricing apaga el aviso de "nueva/editada".
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_nacional SET visto_por_pricing_en = now() WHERE id = %s", (solicitud_id,)
+    )
+    db.commit()
     db.close()
     return render_template(
         "transporte_nacional_detalle.html", fila=fila, estados=ESTADOS_FINALES_TRANSPORTE_NACIONAL,
-        operativos=operativos, respuestas=respuestas,
+        operativos=operativos, respuestas=respuestas, comentarios=comentarios,
     )
 
 
@@ -10210,6 +10287,66 @@ def transporte_nacional_responder(solicitud_id):
     db.close()
     flash("Solicitud actualizada.")
     return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>/reenviar", methods=["GET", "POST"])
+@login_required
+def transporte_nacional_reenviar(solicitud_id):
+    """El vendedor regresa una solicitud a Pricing con comentarios nuevos:
+    vuelve a "Solicitud" y le aparece otra vez como nueva (editada) al
+    operativo, en la bandeja y en la campana de notificaciones."""
+    db = get_db()
+    fila = db.execute("""
+        SELECT s.*, co.id_cotizacion
+        FROM crm_solicitudes_transporte_nacional s
+        LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+        WHERE s.id = %s
+    """, (solicitud_id,)).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_nacional(db, fila):
+        db.close()
+        flash("Solicitud no encontrada.")
+        return redirect(url_for(primera_pagina_permitida()))
+
+    if request.method == "POST":
+        comentario = (request.form.get("comentario", "") or "").strip()[:4000]
+        if not comentario:
+            db.close()
+            flash("Escribe los comentarios para Pricing.")
+            return redirect(url_for("transporte_nacional_reenviar", solicitud_id=solicitud_id))
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_nacional_comentarios (solicitud_id, comentario, creado_por)
+            VALUES (%s, %s, %s)
+        """, (solicitud_id, comentario, session.get("usuario", "")))
+        db.execute(
+            "UPDATE crm_solicitudes_transporte_nacional SET estado = 'Solicitud', reenviado_en = now() WHERE id = %s",
+            (solicitud_id,),
+        )
+        db.commit()
+        db.close()
+        flash(f"Solicitud {fila['referencia']} regresada a Transporte Nacional con tus comentarios.")
+        if fila["cotizacion_id"]:
+            return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=fila["cotizacion_id"]))
+        return redirect(url_for(primera_pagina_permitida()))
+
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
+    comentarios = db.execute("""
+        SELECT comentario, creado_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_comentarios
+        WHERE solicitud_id = %s
+        ORDER BY creado_en DESC
+    """, (solicitud_id,)).fetchall()
+    db.close()
+    nav_groups = agrupar_nav_crm("cotizaciones")
+    return render_template(
+        "transporte_nacional_reenviar.html", nav_groups=nav_groups,
+        titulo_pagina=f"Editar solicitud {fila['referencia']}",
+        fila=fila, respuestas=respuestas, comentarios=comentarios,
+    )
 
 
 def puede_ver_solicitud_transporte_nacional(db, fila):

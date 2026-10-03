@@ -69,6 +69,22 @@
   .nav-dropdown-menu a:hover { background: #1e293b; }
   .nav-dropdown-menu a.active { background: #1e293b; color: #fff; }
   .nav-dropdown.abierto .nav-dropdown-menu, .nav-dropdown:hover .nav-dropdown-menu { display: block; }
+  .nav-notif-toggle { position: relative; padding: .4rem .55rem; }
+  .nav-notif-toggle.encendida { color: #fbbf24; }
+  .nav-notif-contador {
+    position: absolute; top: 0; right: 0; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+    background: var(--danger); color: #fff; font-size: .62rem; font-weight: 800; line-height: 17px; text-align: center;
+  }
+  .nav-dropdown-menu.nav-notif-menu { left: auto; right: 0; width: 320px; max-height: 420px; overflow-y: auto; }
+  .nav-notif:hover .nav-notif-menu { display: none; }
+  .nav-notif.abierto .nav-notif-menu { display: block; }
+  .nav-notif-titulo { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-4); padding: .35rem .7rem; }
+  .nav-notif-menu a { white-space: normal; display: grid; grid-template-columns: auto 1fr; gap: .1rem .5rem; align-items: center; }
+  .nav-notif-ref { font-weight: 700; color: #fff; }
+  .nav-notif-tipo { justify-self: start; font-size: .62rem; font-weight: 800; padding: .05rem .4rem; border-radius: 999px; background: var(--danger); color: #fff; }
+  .nav-notif-tipo.editada { background: #f59e0b; }
+  .nav-notif-detalle { grid-column: 1 / -1; font-size: .72rem; font-weight: 400; color: var(--ink-4); }
+  .nav-notif-vacio { padding: .6rem .7rem; font-size: .8rem; color: var(--ink-4); }
   .nav-user { display: flex; gap: 1rem; align-items: center; padding-left: 1.25rem; border-left: 1px solid rgba(255,255,255,.15); font-size: .85rem; }
   .nav-user a { color: #fff; }
   main { max-width: 880px; margin: 2.5rem auto; padding: 0 1.5rem; }
@@ -193,6 +209,26 @@
           {% if puede_ver_catalogos and not panel_scoped %}<a href="{{ url_for('catalogos') }}" class="{{ 'active' if active == 'catalogos' else '' }}">Catálogos</a>{% endif %}
         </div>
         <div class="nav-user">
+          {% if notificaciones_pricing is not none %}
+          <div class="nav-dropdown nav-notif">
+            <button type="button" class="nav-dropdown-toggle nav-notif-toggle{{ ' encendida' if notificaciones_pricing else '' }}" title="Notificaciones de Pricing">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              {% if notificaciones_pricing %}<span class="nav-notif-contador">{{ notificaciones_pricing|length }}</span>{% endif %}
+            </button>
+            <div class="nav-dropdown-menu nav-notif-menu">
+              <div class="nav-notif-titulo">Transporte Nacional</div>
+              {% for n in notificaciones_pricing %}
+              <a href="{{ url_for('transporte_nacional_detalle', solicitud_id=n.id) }}">
+                <span class="nav-notif-ref">{{ n.referencia }}</span>
+                <span class="nav-notif-tipo{{ ' editada' if n.reenviado_en else '' }}">{{ 'Editada' if n.reenviado_en else 'Nueva' }}</span>
+                <span class="nav-notif-detalle">{{ n.cliente_nombre or n.creado_por or '' }} · {{ (n.reenviado_en or n.creado_en)|hora_mx }}</span>
+              </a>
+              {% else %}
+              <div class="nav-notif-vacio">Sin solicitudes nuevas.</div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
           {% if panel_scoped %}
           <a href="{{ importaciones_url }}/inicio" onclick="try{window.close();}catch(e){}">← Regresar al menú</a>
           {% endif %}

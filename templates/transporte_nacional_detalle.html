@@ -49,6 +49,18 @@
 
     <div class="pd-grid">
       <div>
+        {% if comentarios %}
+        <div class="card pd-seccion" style="border-color:#fdba74; background:#fff7ed;">
+          <h2>Comentarios del vendedor{% if fila.reenviado_en %} <span style="font-size:.72rem; font-weight:700; color:#c2410c;">· regresada {{ fila.reenviado_en|hora_mx }}</span>{% endif %}</h2>
+          {% for c in comentarios %}
+          <div style="margin-bottom:.7rem; {{ '' if loop.first else 'opacity:.7;' }}">
+            <div style="font-size:.75rem; color:var(--ink-3); margin-bottom:.15rem;">{{ c.creado_por or '—' }} · {{ c.creado_en|hora_mx }}</div>
+            <div style="font-size:.85rem; white-space:pre-line;">{{ c.comentario }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
         <div class="card pd-seccion">
           <h2>Origen y destino</h2>
           <div class="pd-datos">

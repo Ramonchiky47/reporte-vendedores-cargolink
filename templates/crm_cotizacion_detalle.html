@@ -200,6 +200,7 @@
           <th>Fecha de entrega</th>
           <th>Diferencia</th>
           <th>Estado</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -213,6 +214,11 @@
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
           <td>{{ s.diferencia or '—' }}</td>
           <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+          <td onclick="event.stopPropagation();">
+            <a href="{{ url_for('transporte_nacional_reenviar', solicitud_id=s.id) }}"
+               style="font-size:.75rem; font-weight:600; padding:.25rem .6rem; border:1px solid #1565c0; color:#1565c0; border-radius:6px; text-decoration:none; white-space:nowrap;"
+               title="Regresar a Pricing con nuevos comentarios">Editar</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

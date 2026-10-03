@@ -34,6 +34,11 @@
   .fila-pricing.cotizada:hover td { background: #c7f0d8; }
   .fila-pricing .referencia { font-weight: 700; }
   .fila-pricing .cliente { color: var(--ink-3); font-size: .78rem; }
+  .badge-aviso {
+    display: inline-block; margin-left: .35rem; padding: .1rem .45rem; border-radius: 999px;
+    font-size: .62rem; font-weight: 800; letter-spacing: .03em; background: var(--danger); color: #fff; vertical-align: middle;
+  }
+  .fila-pricing.nueva td { background: #fff7ed; }
   .col-operativo { color: var(--ink-2); }
   .col-operativo.sin-asignar { color: var(--ink-4); font-style: italic; }
 </style>
@@ -59,9 +64,12 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
+        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
           <td>
-            <div class="referencia">{{ fila.referencia }}</div>
+            <div class="referencia">
+              {{ fila.referencia }}
+              {% if fila.nueva_para_pricing %}<span class="badge-aviso">{{ 'EDITADA' if fila.reenviado_en else 'NUEVA' }}</span>{% endif %}
+            </div>
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
           </td>
           <td>{{ fila.tipo_servicio or '—' }}</td>

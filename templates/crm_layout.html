@@ -165,6 +165,16 @@
     }
 
     document.querySelectorAll('table.tabla-ordenable').forEach(inicializarOrdenamiento);
+
+    // Solicitudes a Pricing: un solo envío por clic (antes un doble/triple
+    // clic en "Enviar" creaba la misma solicitud varias veces).
+    document.querySelectorAll('form.form-solicitud').forEach(function (form) {
+      form.addEventListener('submit', function () {
+        var btn = form.querySelector('button[type="submit"]');
+        if (!btn) return;
+        setTimeout(function () { btn.disabled = true; btn.textContent = 'Enviando…'; }, 0);
+      });
+    });
   </script>
   {% block extra_script %}{% endblock %}
   <script>
