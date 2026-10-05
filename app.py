@@ -12,6 +12,7 @@ import calendar
 import csv
 import difflib
 import hashlib
+import inspect
 import hmac
 import io
 import json
@@ -390,6 +391,19 @@ def init_db():
         );
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_registro_ingresos_fecha ON registro_ingresos (fecha_hora desc);")
+    # usuario_id venía de la tabla vieja "usuarios" (bigint), pero el login
+    # ahora usa auth.users (UUID): cada INSERT fallaba y la Actividad de
+    # Usuarios dejó de registrarse. Se pasa a texto una sola vez.
+    db.execute("""
+        DO $$
+        BEGIN
+            IF (SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'registro_ingresos' AND column_name = 'usuario_id') = 'bigint' THEN
+                ALTER TABLE registro_ingresos DROP CONSTRAINT IF EXISTS registro_ingresos_usuario_id_fkey;
+                ALTER TABLE registro_ingresos ALTER COLUMN usuario_id TYPE text USING usuario_id::text;
+            END IF;
+        END $$;
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS intentos_login (
             id bigint generated always as identity primary key,
@@ -2247,8 +2261,45 @@ def construir_datos_venta_diaria(plazas_permitidas=None, vendedor_forzado=None, 
     }
 
 
+def init_db_si_cambio():
+    """Corre init_db() solo si su código cambió desde la última vez que se
+    aplicó. Antes corría completo (más de 100 instrucciones, ~7 s) en cada
+    arranque en frío de Vercel, y dos arranques simultáneos se bloqueaban
+    entre sí (deadlock). La firma es un hash del código de init_db, así que
+    cualquier migración nueva se aplica sola en el siguiente arranque; el
+    candado transaccional evita que dos procesos la apliquen a la vez."""
+    firma = hashlib.sha256(inspect.getsource(init_db).encode()).hexdigest()[:16]
+    db = get_db()
+    try:
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS app_esquema_version (
+                id int primary key, firma text not null, aplicado_en timestamptz not null default now()
+            )
+        """)
+        db.commit()
+        fila = db.execute("SELECT firma FROM app_esquema_version WHERE id = 1").fetchone()
+        if fila and fila["firma"] == firma:
+            db.rollback()
+            return
+        if not db.execute("SELECT pg_try_advisory_xact_lock(hashtext('init_db')) AS ok").fetchone()["ok"]:
+            db.rollback()
+            return  # otro arranque la está aplicando
+        fila = db.execute("SELECT firma FROM app_esquema_version WHERE id = 1").fetchone()
+        if fila and fila["firma"] == firma:
+            db.rollback()
+            return
+        init_db()
+        db.execute("""
+            INSERT INTO app_esquema_version (id, firma) VALUES (1, %s)
+            ON CONFLICT (id) DO UPDATE SET firma = EXCLUDED.firma, aplicado_en = now()
+        """, (firma,))
+        db.commit()
+    finally:
+        db.close()
+
+
 try:
-    init_db()
+    init_db_si_cambio()
 except Exception as e:
     print(f"Aviso: no se pudo inicializar la base de datos al arrancar ({e}).")
 
@@ -3338,7 +3389,8 @@ def verificar_token_sso(token):
 def _siguiente_sso_valido(next_path):
     """Solo permite redirigir dentro de esta misma app tras el SSO — una
     ruta relativa, nunca una URL completa (evita usar /sso como open-redirect)."""
-    if not next_path or not next_path.startswith("/") or next_path.startswith("//"):
+    # "/\evil.com" lo interpretan algunos navegadores como "//evil.com".
+    if not next_path or not next_path.startswith("/") or next_path.startswith("//") or "\\" in next_path:
         return None
     return next_path
 
