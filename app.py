@@ -11241,7 +11241,6 @@ PERMISOS_LISTA = [
     ("puede_ver_administracion", "Administración"),
     ("puede_ver_antiguedad_saldos", "Antigüedad de Saldos"),
 ]
-PERMISOS_TOGGLEABLES = {campo for campo, _ in PERMISOS_LISTA}
 
 
 @app.route("/catalogos/permisos-actualizar")
@@ -11273,26 +11272,36 @@ def permisos_actualizar():
     return render_template("permisos_actualizar.html", filas=filas, permisos_lista=PERMISOS_LISTA)
 
 
-@app.route("/catalogos/permisos-actualizar/<uuid:user_id>/toggle", methods=["POST"])
+@app.route("/catalogos/permisos-actualizar/<uuid:user_id>/guardar", methods=["POST"])
 @admin_required
-def permisos_actualizar_toggle(user_id):
-    campo = request.form.get("campo") or "puede_actualizar"
-    if campo not in PERMISOS_TOGGLEABLES:
-        flash("Permiso inválido.")
-        return redirect(url_for("permisos_actualizar"))
+def permisos_actualizar_guardar(user_id):
+    """Guarda de una sola vez todos los permisos de un usuario, desde la
+    ventana de edición (antes cada círculo de la tabla cambiaba un permiso
+    al instante con un clic, y era fácil cambiar uno por error). Los nombres
+    de columna salen de PERMISOS_LISTA, nunca del formulario."""
+    marcados = set(request.form.getlist("permisos"))
+    campos = [campo for campo, _ in PERMISOS_LISTA]
+    valores = [campo in marcados for campo in campos]
 
-    nuevo_valor = request.form.get("valor") == "1"
     db = get_db()
+    usuario = db.execute("SELECT email FROM auth.users WHERE id = %s", (str(user_id),)).fetchone()
+    if usuario is None:
+        db.close()
+        flash("Usuario no encontrado.")
+        return redirect(url_for("permisos_actualizar"))
     db.execute(
         f"""
-        INSERT INTO app_user_permissions (user_id, {campo})
-        VALUES (%s, %s)
-        ON CONFLICT (user_id) DO UPDATE SET {campo} = EXCLUDED.{campo}, updated_at = now()
+        INSERT INTO app_user_permissions (user_id, {', '.join(campos)})
+        VALUES (%s, {', '.join(['%s'] * len(campos))})
+        ON CONFLICT (user_id) DO UPDATE SET
+            {', '.join(f'{c} = EXCLUDED.{c}' for c in campos)}, updated_at = now()
         """,
-        (str(user_id), nuevo_valor),
+        (str(user_id), *valores),
     )
     db.commit()
     db.close()
+    etiquetas = [etiqueta for (campo, etiqueta), v in zip(PERMISOS_LISTA, valores) if v]
+    flash(f"Permisos de {usuario['email']} actualizados: {', '.join(etiquetas) if etiquetas else 'sin acceso a ningún módulo'}.")
     return redirect(url_for("permisos_actualizar"))
 
 

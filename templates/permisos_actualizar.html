@@ -37,15 +37,45 @@
     background: #dbeafe; padding: .1rem .45rem; border-radius: 999px; vertical-align: middle;
   }
   .acceso-total { color: var(--ink-3); font-size: .8rem; font-style: italic; }
-  .permiso-toggle {
+  .permiso-marca {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 26px; height: 26px; border-radius: 999px; cursor: pointer;
-    font-size: .85rem; font-weight: 700; border: 1.5px solid var(--border-strong); color: var(--ink-4);
-    background: none;
+    width: 22px; height: 22px; border-radius: 999px; font-size: .8rem; font-weight: 700;
   }
-  .permiso-toggle.activo { background: var(--ok-wash); border-color: var(--ok); color: var(--ok); }
-  .permiso-toggle:hover { border-color: var(--accent); }
+  .permiso-marca.activo { background: var(--ok-wash); color: var(--ok); }
+  .permiso-marca.inactivo { color: var(--border-strong); }
+  .fila-editable { cursor: pointer; }
+  .fila-editable:hover td { background: #f8fafc; }
+  .btn-editar-permisos {
+    padding: .25rem .6rem; font-size: .75rem; font-weight: 600; border-radius: 6px;
+    background: #fff; color: var(--accent); border: 1px solid var(--accent); cursor: pointer;
+  }
+  .btn-editar-permisos:hover { background: #eff6ff; }
   .permisos-pie { margin: .9rem 0 0; font-size: .72rem; color: var(--ink-4); }
+
+  .pm-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 100;
+    align-items: flex-start; justify-content: center; padding: 8vh 1rem; overflow-y: auto;
+  }
+  .pm-overlay.abierto { display: flex; }
+  .pm-panel { background: #fff; border-radius: 12px; width: 100%; max-width: 520px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .pm-encabezado { padding: 1.2rem 1.5rem .8rem; border-bottom: 1px solid var(--border); }
+  .pm-encabezado h3 { margin: 0; font-size: 1rem; }
+  .pm-encabezado p { margin: .25rem 0 0; font-size: .8rem; color: var(--ink-3); word-break: break-all; }
+  .pm-cuerpo { padding: 1rem 1.5rem; }
+  .pm-atajos { display: flex; gap: .8rem; margin-bottom: .6rem; font-size: .75rem; }
+  .pm-atajos button { background: none; border: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; font-size: .75rem; }
+  .pm-lista { display: grid; grid-template-columns: 1fr 1fr; gap: .1rem 1rem; }
+  .pm-lista label {
+    display: flex; align-items: center; gap: .5rem; margin: 0; padding: .45rem .4rem; border-radius: 6px;
+    font-size: .85rem; font-weight: 500; color: var(--ink); cursor: pointer;
+  }
+  .pm-lista label:hover { background: #f8fafc; }
+  .pm-lista input { width: auto; margin: 0; accent-color: var(--accent); }
+  .pm-lista label.cambiado { background: #fef9c3; }
+  .pm-pie { display: flex; justify-content: space-between; align-items: center; gap: .6rem; padding: .9rem 1.5rem 1.2rem; border-top: 1px solid var(--border); }
+  .pm-cambios { font-size: .75rem; color: var(--ink-3); }
+  .pm-pie .acciones { display: flex; gap: .5rem; }
+  .pm-pie button:disabled { background: var(--ink-4); cursor: not-allowed; }
 </style>
 {% endblock %}
 {% block content %}
@@ -83,39 +113,64 @@
               {% for campo, etiqueta in permisos_lista %}
               <th>{{ etiqueta }}</th>
               {% endfor %}
+              <th></th>
             </tr>
           </thead>
           <tbody id="cuerpo-permisos">
             {% for fila in filas %}
-            <tr class="{{ 'fila-admin' if fila.es_admin else '' }}" data-email="{{ fila.email|lower }}">
+            <tr class="{{ 'fila-admin' if fila.es_admin else 'fila-editable' }}" data-email="{{ fila.email|lower }}"
+                {% if not fila.es_admin %}
+                data-user-id="{{ fila.id }}" data-correo="{{ fila.email }}"
+                data-permisos="{% for campo, _ in permisos_lista %}{% if fila[campo] %}{{ campo }} {% endif %}{% endfor %}"
+                {% endif %}>
               <td class="col-usuario">
                 {{ fila.email }}{% if fila.es_admin %}<span class="badge-admin">ADMIN</span>{% endif %}
               </td>
               {% if fila.es_admin %}
-              <td colspan="{{ permisos_lista|length }}" class="acceso-total">Acceso total (administrador)</td>
+              <td colspan="{{ permisos_lista|length + 1 }}" class="acceso-total">Acceso total (administrador)</td>
               {% else %}
                 {% for campo, etiqueta in permisos_lista %}
-                <td>
-                  <form class="inline" method="post" action="{{ url_for('permisos_actualizar_toggle', user_id=fila.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="campo" value="{{ campo }}">
-                    <input type="hidden" name="valor" value="{{ '0' if fila[campo] else '1' }}">
-                    <button class="permiso-toggle{{ ' activo' if fila[campo] else '' }}" type="submit" title="{{ etiqueta }}">
-                      {{ "✓" if fila[campo] else "＋" }}
-                    </button>
-                  </form>
-                </td>
+                <td><span class="permiso-marca {{ 'activo' if fila[campo] else 'inactivo' }}" title="{{ etiqueta }}">{{ "✓" if fila[campo] else "•" }}</span></td>
                 {% endfor %}
+                <td><button type="button" class="btn-editar-permisos">Editar</button></td>
               {% endif %}
             </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
-      <p class="permisos-pie" id="permisos-contador">{{ filas|length }} usuarios · clic en un círculo para activar o desactivar ese permiso</p>
+      <p class="permisos-pie" id="permisos-contador">{{ filas|length }} usuarios · clic en un usuario para editar sus módulos</p>
       {% else %}
       <p class="empty">Todavía no hay usuarios registrados en el catálogo de accesos.</p>
       {% endif %}
+    </div>
+
+    <div class="pm-overlay" id="pm-overlay">
+      <form class="pm-panel" id="pm-form" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="pm-encabezado">
+          <h3>Módulos con acceso</h3>
+          <p id="pm-correo"></p>
+        </div>
+        <div class="pm-cuerpo">
+          <div class="pm-atajos">
+            <button type="button" id="pm-todos">Seleccionar todos</button>
+            <button type="button" id="pm-ninguno">Quitar todos</button>
+          </div>
+          <div class="pm-lista">
+            {% for campo, etiqueta in permisos_lista %}
+            <label data-campo="{{ campo }}"><input type="checkbox" name="permisos" value="{{ campo }}"> {{ etiqueta }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="pm-pie">
+          <span class="pm-cambios" id="pm-cambios">Sin cambios</span>
+          <div class="acciones">
+            <button type="button" class="btn secondary" id="pm-cancelar">Cancelar</button>
+            <button type="submit" class="btn" id="pm-aplicar" disabled>Aplicar</button>
+          </div>
+        </div>
+      </form>
     </div>
 
     <script>
@@ -134,8 +189,58 @@
             if (coincide) visibles++;
           });
           if (contador) {
-            contador.textContent = (q ? visibles + ' de ' + total : total) + ' usuarios · clic en un círculo para activar o desactivar ese permiso';
+            contador.textContent = (q ? visibles + ' de ' + total : total) + ' usuarios · clic en un usuario para editar sus módulos';
           }
+        });
+      })();
+
+      (function () {
+        var overlay = document.getElementById('pm-overlay');
+        var form = document.getElementById('pm-form');
+        var correo = document.getElementById('pm-correo');
+        var cambios = document.getElementById('pm-cambios');
+        var aplicar = document.getElementById('pm-aplicar');
+        var checks = form.querySelectorAll('input[name="permisos"]');
+        var urlBase = "{{ url_for('permisos_actualizar_guardar', user_id='00000000-0000-0000-0000-000000000000') }}";
+        var originales = new Set();
+
+        function actualizarCambios() {
+          var n = 0;
+          checks.forEach(function (cb) {
+            var distinto = cb.checked !== originales.has(cb.value);
+            cb.parentElement.classList.toggle('cambiado', distinto);
+            if (distinto) n++;
+          });
+          aplicar.disabled = n === 0;
+          cambios.textContent = n === 0 ? 'Sin cambios' : (n === 1 ? '1 cambio por aplicar' : n + ' cambios por aplicar');
+        }
+
+        function abrir(fila) {
+          originales = new Set((fila.dataset.permisos || '').trim().split(/\s+/).filter(Boolean));
+          checks.forEach(function (cb) { cb.checked = originales.has(cb.value); });
+          correo.textContent = fila.dataset.correo;
+          form.action = urlBase.replace('00000000-0000-0000-0000-000000000000', fila.dataset.userId);
+          actualizarCambios();
+          overlay.classList.add('abierto');
+        }
+
+        function cerrar() { overlay.classList.remove('abierto'); }
+
+        document.querySelectorAll('#cuerpo-permisos tr.fila-editable').forEach(function (fila) {
+          fila.addEventListener('click', function () { abrir(fila); });
+        });
+        checks.forEach(function (cb) { cb.addEventListener('change', actualizarCambios); });
+        document.getElementById('pm-todos').addEventListener('click', function () {
+          checks.forEach(function (cb) { cb.checked = true; }); actualizarCambios();
+        });
+        document.getElementById('pm-ninguno').addEventListener('click', function () {
+          checks.forEach(function (cb) { cb.checked = false; }); actualizarCambios();
+        });
+        document.getElementById('pm-cancelar').addEventListener('click', cerrar);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) cerrar(); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') cerrar(); });
+        form.addEventListener('submit', function () {
+          setTimeout(function () { aplicar.disabled = true; aplicar.textContent = 'Aplicando…'; }, 0);
         });
       })();
     </script>
