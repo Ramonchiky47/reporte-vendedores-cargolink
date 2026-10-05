@@ -58,6 +58,7 @@
           <th>Operativo asignado</th>
           <th>Proveedor</th>
           <th>Observaciones</th>
+          <th>Archivos</th>
           <th>Cotización</th>
           <th>Estado</th>
         </tr>
@@ -78,6 +79,7 @@
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
           <td>{{ fila.proveedor or '—' }}</td>
           <td class="col-observaciones">{{ fila.observaciones or '—' }}</td>
+          <td class="nowrap">{% if fila.num_archivos %}📎 {{ fila.num_archivos }}{% else %}—{% endif %}</td>
           <td>
             {% if fila.cotizacion_estatus_actual %}
             <span class="badge-estatus {{ fila.cotizacion_estatus_actual }}">

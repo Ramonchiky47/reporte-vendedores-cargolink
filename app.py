@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import io
 import json
+import mimetypes
 import os
 import random
 import re
@@ -36,6 +37,7 @@ from flask import Flask, flash, g, redirect, render_template, request, send_file
 from flask_wtf import CSRFProtect
 from markupsafe import Markup, escape
 from psycopg.rows import dict_row
+from werkzeug.utils import secure_filename
 from xhtml2pdf import pisa
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -749,6 +751,17 @@ def init_db():
     # operativo, y cuándo el vendedor la regresó con comentarios nuevos.
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS visto_por_pricing_en timestamptz;")
     db.execute("ALTER TABLE crm_solicitudes_transporte_nacional ADD COLUMN IF NOT EXISTS reenviado_en timestamptz;")
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional_archivos (
+            id bigint generated always as identity primary key,
+            solicitud_id bigint references crm_solicitudes_transporte_nacional(id) on delete cascade,
+            nombre_archivo text not null,
+            tipo_mime text not null,
+            contenido bytea not null,
+            subido_por text,
+            creado_en timestamptz not null default now()
+        );
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional_comentarios (
             id bigint generated always as identity primary key,
@@ -9598,6 +9611,48 @@ TRANSPORTE_NACIONAL_TIPOS_FTL = ["Sencillo", "Full", "N/A", "53 Dry"]
 TRANSPORTE_NACIONAL_UNIDADES = ["3 Ton", "3.5 Ton", "Rabón", "Torton", "Caja de 52", "N/A"]
 TRANSPORTE_NACIONAL_PELIGROSO = ["SI", "NO", "N/A"]
 
+# Adjuntos de solicitudes de Transporte Nacional. Vercel no acepta peticiones
+# de más de ~4.5 MB, así que el tope por envío es 4 MB.
+TN_ARCHIVO_MAX_BYTES = 4 * 1024 * 1024
+TN_ARCHIVO_EXTENSIONES = {"pdf", "png", "jpg", "jpeg", "xlsx", "xls", "docx", "doc", "csv", "txt"}
+
+
+def guardar_archivos_transporte_nacional(db, solicitud_id, archivos):
+    """Guarda los adjuntos de una solicitud de Transporte Nacional. Regresa
+    (guardados, errores) — los inválidos se saltan sin bloquear el resto."""
+    guardados, errores, total = 0, [], 0
+    for archivo in archivos:
+        if not archivo or not archivo.filename:
+            continue
+        nombre = secure_filename(archivo.filename) or "archivo"
+        extension = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
+        if extension not in TN_ARCHIVO_EXTENSIONES:
+            errores.append(f"{archivo.filename}: tipo de archivo no permitido")
+            continue
+        contenido = archivo.read()
+        total += len(contenido)
+        if not contenido:
+            continue
+        if total > TN_ARCHIVO_MAX_BYTES:
+            errores.append(f"{archivo.filename}: supera el límite de 4 MB por envío")
+            continue
+        tipo_mime = archivo.mimetype or mimetypes.guess_type(nombre)[0] or "application/octet-stream"
+        db.execute("""
+            INSERT INTO crm_solicitudes_transporte_nacional_archivos (solicitud_id, nombre_archivo, tipo_mime, contenido, subido_por)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (solicitud_id, nombre, tipo_mime, contenido, session.get("usuario", "")))
+        guardados += 1
+    return guardados, errores
+
+
+def archivos_transporte_nacional(db, solicitud_id):
+    return db.execute("""
+        SELECT id, nombre_archivo, subido_por, creado_en, octet_length(contenido) AS tamano
+        FROM crm_solicitudes_transporte_nacional_archivos
+        WHERE solicitud_id = %s
+        ORDER BY creado_en
+    """, (solicitud_id,)).fetchall()
+
 
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/solicitud-transporte-nacional/nueva", methods=["GET", "POST"])
 @crm_required
@@ -9665,13 +9720,14 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
             return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
         referencia = generar_referencia_solicitud_transporte_nacional(db)
-        db.execute("""
+        solicitud_id = db.execute("""
             INSERT INTO crm_solicitudes_transporte_nacional (
                 referencia, cotizacion_id, creado_por,
                 direccion_origen, cp_origen, direccion_destino, cp_destino,
                 tipo_servicio, tipo_ftl, unidad_dedicada, medidas_lineales, peso,
                 peligroso, un, requisito_adicional
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
         """, (
             referencia, cotizacion_id, session.get("usuario", ""),
             direccion_origen, cp_origen, direccion_destino, cp_destino,
@@ -9681,10 +9737,13 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
             medidas_lineales, peso,
             peligroso, un,
             campo_largo("requisito_adicional"),
-        ))
+        )).fetchone()["id"]
+        _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"))
         db.commit()
         db.close()
         flash(f"Solicitud {referencia} enviada a Transporte Nacional.")
+        for error in errores_archivos:
+            flash(f"Archivo no adjuntado — {error}.")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db.close()
@@ -10190,6 +10249,7 @@ def transporte_nacional():
         SELECT
             s.id, s.referencia, s.tipo_servicio, s.creado_en, s.estado, s.creado_por,
             s.proveedor, s.observaciones, s.reenviado_en,
+            (SELECT count(*) FROM crm_solicitudes_transporte_nacional_archivos a WHERE a.solicitud_id = s.id) AS num_archivos,
             """ + SQL_TN_NUEVA_PARA_PRICING + """ AS nueva_para_pricing,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
@@ -10245,6 +10305,7 @@ def transporte_nacional_detalle(solicitud_id):
         WHERE solicitud_id = %s
         ORDER BY creado_en DESC
     """, (solicitud_id,)).fetchall()
+    archivos = archivos_transporte_nacional(db, solicitud_id)
     # Abrirla desde la bandeja de Pricing apaga el aviso de "nueva/editada".
     db.execute(
         "UPDATE crm_solicitudes_transporte_nacional SET visto_por_pricing_en = now() WHERE id = %s", (solicitud_id,)
@@ -10253,7 +10314,28 @@ def transporte_nacional_detalle(solicitud_id):
     db.close()
     return render_template(
         "transporte_nacional_detalle.html", fila=fila, estados=ESTADOS_FINALES_TRANSPORTE_NACIONAL,
-        operativos=operativos, respuestas=respuestas, comentarios=comentarios,
+        operativos=operativos, respuestas=respuestas, comentarios=comentarios, archivos=archivos,
+    )
+
+
+@app.route("/transporte-nacional/archivo/<int:archivo_id>")
+@login_required
+def transporte_nacional_archivo(archivo_id):
+    db = get_db()
+    archivo = db.execute("""
+        SELECT a.nombre_archivo, a.tipo_mime, a.contenido, s.cotizacion_id
+        FROM crm_solicitudes_transporte_nacional_archivos a
+        JOIN crm_solicitudes_transporte_nacional s ON s.id = a.solicitud_id
+        WHERE a.id = %s
+    """, (archivo_id,)).fetchone()
+    if archivo is None or not puede_ver_solicitud_transporte_nacional(db, archivo):
+        db.close()
+        flash("Archivo no encontrado.")
+        return redirect(url_for(primera_pagina_permitida()))
+    db.close()
+    return send_file(
+        io.BytesIO(bytes(archivo["contenido"])), mimetype=archivo["tipo_mime"],
+        as_attachment=True, download_name=archivo["nombre_archivo"],
     )
 
 
@@ -10283,9 +10365,12 @@ def transporte_nacional_responder(solicitud_id):
             INSERT INTO crm_solicitudes_transporte_nacional_respuestas (solicitud_id, respuesta, respondido_por)
             VALUES (%s, %s, %s)
         """, (solicitud_id, respuesta, usuario))
+    _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"))
     db.commit()
     db.close()
     flash("Solicitud actualizada.")
+    for error in errores_archivos:
+        flash(f"Archivo no adjuntado — {error}.")
     return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
 
 
@@ -10321,9 +10406,12 @@ def transporte_nacional_reenviar(solicitud_id):
             "UPDATE crm_solicitudes_transporte_nacional SET estado = 'Solicitud', reenviado_en = now() WHERE id = %s",
             (solicitud_id,),
         )
+        _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"))
         db.commit()
         db.close()
         flash(f"Solicitud {fila['referencia']} regresada a Transporte Nacional con tus comentarios.")
+        for error in errores_archivos:
+            flash(f"Archivo no adjuntado — {error}.")
         if fila["cotizacion_id"]:
             return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=fila["cotizacion_id"]))
         return redirect(url_for(primera_pagina_permitida()))
@@ -10340,12 +10428,13 @@ def transporte_nacional_reenviar(solicitud_id):
         WHERE solicitud_id = %s
         ORDER BY creado_en DESC
     """, (solicitud_id,)).fetchall()
+    archivos = archivos_transporte_nacional(db, solicitud_id)
     db.close()
     nav_groups = agrupar_nav_crm("cotizaciones")
     return render_template(
         "transporte_nacional_reenviar.html", nav_groups=nav_groups,
         titulo_pagina=f"Editar solicitud {fila['referencia']}",
-        fila=fila, respuestas=respuestas, comentarios=comentarios,
+        fila=fila, respuestas=respuestas, comentarios=comentarios, archivos=archivos,
     )
 
 

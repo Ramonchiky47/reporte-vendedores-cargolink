@@ -62,6 +62,20 @@
         {% endif %}
 
         <div class="card pd-seccion">
+          <h2>Archivos de complemento</h2>
+          {% if archivos %}
+          {% for a in archivos %}
+          <div style="display:flex; justify-content:space-between; gap:1rem; padding:.45rem 0; border-bottom:1px solid var(--border); font-size:.85rem;">
+            <a href="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener">📎 {{ a.nombre_archivo }}</a>
+            <span style="color:var(--ink-3); font-size:.75rem; white-space:nowrap;">{{ a.subido_por or '—' }} · {{ a.creado_en|hora_mx }} · {{ (a.tamano / 1024)|round(0)|int }} KB</span>
+          </div>
+          {% endfor %}
+          {% else %}
+          <p style="margin:0; font-size:.85rem; color:var(--ink-3); font-style:italic;">Sin archivos adjuntos.</p>
+          {% endif %}
+        </div>
+
+        <div class="card pd-seccion">
           <h2>Origen y destino</h2>
           <div class="pd-datos">
             <div class="campo"><div class="label">CP Origen</div><div>{{ fila.cp_origen or '—' }}</div></div>
@@ -102,7 +116,7 @@
       <div class="pd-panel">
         <div class="card">
           <h2 style="margin: 0 0 1rem; font-size: .95rem;">Responder</h2>
-          <form method="post" action="{{ url_for('transporte_nacional_responder', solicitud_id=fila.id) }}">
+          <form method="post" action="{{ url_for('transporte_nacional_responder', solicitud_id=fila.id) }}" enctype="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
             <div class="campo">
@@ -143,6 +157,11 @@
             <div class="campo">
               <label>Nueva respuesta para el vendedor</label>
               <textarea name="respuesta_transporte_nacional" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, condiciones o motivo de rechazo..."></textarea>
+            </div>
+
+            <div class="campo">
+              <label>Adjuntar archivos</label>
+              <input type="file" name="archivos" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.docx,.doc,.csv,.txt" style="font-size:.8rem;">
             </div>
 
             <button type="submit" id="pd-enviar" style="width: 100%;" {{ '' if fila.estado in estados else 'disabled' }}>Enviar</button>

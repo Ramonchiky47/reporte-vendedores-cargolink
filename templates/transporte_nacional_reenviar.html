@@ -39,10 +39,13 @@
     <div><div class="etq">Unidad</div>{{ fila.unidad_dedicada or '—' }}</div>
   </div>
 
-  <form class="form-solicitud" method="post">
+  <form class="form-solicitud" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="comentario">Nuevos comentarios para Pricing *</label>
     <textarea id="comentario" name="comentario" required placeholder="Ej. el cliente cambió el destino, necesita unidad dedicada, ajustar tarifa..."></textarea>
+    <label for="archivos">Agregar archivos de complemento</label>
+    <input type="file" id="archivos" name="archivos" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.docx,.doc,.csv,.txt">
+    <p style="font-size:.75rem; color:#999; margin:.3rem 0 0;">Máximo 4 MB en total.</p>
     <div class="acciones-form-cotizacion">
       <button type="submit" class="btn-guardar">Regresar a Pricing</button>
       {% if fila.cotizacion_id %}
@@ -52,6 +55,15 @@
   </form>
 
   <div class="historial">
+    {% if archivos %}
+    <h3>Archivos adjuntos</h3>
+    {% for a in archivos %}
+    <div class="caja-hist">
+      <a href="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener">📎 {{ a.nombre_archivo }}</a>
+      <div class="quien" style="margin:.2rem 0 0;">{{ a.subido_por or '—' }} · {{ a.creado_en|hora_mx }} · {{ (a.tamano / 1024)|round(0)|int }} KB</div>
+    </div>
+    {% endfor %}
+    {% endif %}
     {% if respuestas %}
     <h3>Respuestas de Pricing</h3>
     {% for r in respuestas %}

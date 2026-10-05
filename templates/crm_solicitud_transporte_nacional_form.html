@@ -29,7 +29,7 @@
   <h2>Solicitud a Transporte Nacional</h2>
   <p class="id-cotizacion">Cotización asociada: <strong>{{ cotizacion.id_cotizacion }}</strong>{{ ' · ' + cotizacion.nombre_cotizacion if cotizacion.nombre_cotizacion else '' }}. La referencia de la solicitud (TN-xxxxx) se genera automáticamente al guardar.</p>
 
-  <form class="form-solicitud" method="post">
+  <form class="form-solicitud" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="separador-seccion">Origen y destino</div>
@@ -109,6 +109,10 @@
     <div class="separador-seccion">Requisitos</div>
     <label for="requisito_adicional">Requisito adicional</label>
     <textarea id="requisito_adicional" name="requisito_adicional"></textarea>
+
+    <label for="archivos">Archivos de complemento</label>
+    <input type="file" id="archivos" name="archivos" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.docx,.doc,.csv,.txt">
+    <p style="font-size:.75rem; color:#999; margin:.3rem 0 0;">PDF, imágenes, Excel, Word, CSV o texto. Máximo 4 MB en total.</p>
 
     <div class="acciones-form-cotizacion">
       <button type="submit" class="btn-guardar">Enviar a Transporte Nacional</button>
