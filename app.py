@@ -10982,6 +10982,7 @@ def crm_tareas():
         return redirect(url_for(
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        plaza=request.form.get("plaza", ""),
         ))
 
     hoy = datetime.now(TZ_LOCAL).date()
@@ -11035,6 +11036,16 @@ def crm_tareas():
         if (plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas)
         and (not vendedor_forzado or normalizar(f["vendedor"]) == normalizar(vendedor_forzado))
     ]
+    # Filtro por plaza (la plaza es la del vendedor en catalogo_vendedores).
+    plazas_opciones = sorted({
+        p for p in plaza_por_vendedor.values()
+        if p and (plazas_permitidas is None or p in plazas_permitidas)
+    })
+    plaza_seleccionada = request.args.get("plaza", "").strip()
+    if plaza_seleccionada not in plazas_opciones:
+        plaza_seleccionada = ""
+    if plaza_seleccionada:
+        tareas_todas = [t for t in tareas_todas if plaza_por_vendedor.get(normalizar(t["vendedor"])) == plaza_seleccionada]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
 
@@ -11058,7 +11069,7 @@ def crm_tareas():
         puede_autorizar_minutas=usuario_puede_autorizar_minutas(),
         tareas_editar_json=json_para_js(tareas_editar),
         mostrar_autorizadas=mostrar_autorizadas, autorizadas_ocultas=autorizadas_ocultas,
-        tareas=tareas,
+        tareas=tareas, plazas_opciones=plazas_opciones, plaza_seleccionada=plaza_seleccionada,
     )
 
 
@@ -11074,6 +11085,7 @@ def crm_tarea_eliminar(tarea_id):
     return redirect(url_for(
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        plaza=request.form.get("plaza", ""),
     ))
 
 
@@ -11088,6 +11100,7 @@ def crm_tarea_editar(tarea_id):
         return redirect(url_for(
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        plaza=request.form.get("plaza", ""),
         ))
     datos, error = _leer_formulario_tarea(db)
     if error:
@@ -11109,6 +11122,7 @@ def crm_tarea_editar(tarea_id):
     return redirect(url_for(
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
+        plaza=request.form.get("plaza", ""),
     ))
 
 
