@@ -10983,6 +10983,7 @@ def crm_tareas():
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        vendedor=request.form.get("vendedor_filtro", ""),
         ))
 
     hoy = datetime.now(TZ_LOCAL).date()
@@ -11046,6 +11047,20 @@ def crm_tareas():
         plaza_seleccionada = ""
     if plaza_seleccionada:
         tareas_todas = [t for t in tareas_todas if plaza_por_vendedor.get(normalizar(t["vendedor"])) == plaza_seleccionada]
+    # Filtro por vendedor: los del catálogo (dentro de la plaza elegida)
+    # más cualquiera con tareas este mes aunque no esté en el catálogo.
+    vendedores_filtro = {
+        normalizar(v): v for v in vendedores_opciones
+        if not plaza_seleccionada or plaza_por_vendedor.get(normalizar(v)) == plaza_seleccionada
+    }
+    for t in tareas_todas:
+        vendedores_filtro.setdefault(normalizar(t["vendedor"]), t["vendedor"])
+    vendedores_filtro = sorted(vendedores_filtro.values(), key=normalizar)
+    vendedor_seleccionado = request.args.get("vendedor", "").strip()
+    if normalizar(vendedor_seleccionado) not in {normalizar(v) for v in vendedores_filtro}:
+        vendedor_seleccionado = ""
+    if vendedor_seleccionado:
+        tareas_todas = [t for t in tareas_todas if normalizar(t["vendedor"]) == normalizar(vendedor_seleccionado)]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
 
@@ -11070,6 +11085,7 @@ def crm_tareas():
         tareas_editar_json=json_para_js(tareas_editar),
         mostrar_autorizadas=mostrar_autorizadas, autorizadas_ocultas=autorizadas_ocultas,
         tareas=tareas, plazas_opciones=plazas_opciones, plaza_seleccionada=plaza_seleccionada,
+        vendedores_filtro=vendedores_filtro, vendedor_seleccionado=vendedor_seleccionado,
     )
 
 
@@ -11086,6 +11102,7 @@ def crm_tarea_eliminar(tarea_id):
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        vendedor=request.form.get("vendedor_filtro", ""),
     ))
 
 
@@ -11101,6 +11118,7 @@ def crm_tarea_editar(tarea_id):
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        vendedor=request.form.get("vendedor_filtro", ""),
         ))
     datos, error = _leer_formulario_tarea(db)
     if error:
@@ -11123,6 +11141,7 @@ def crm_tarea_editar(tarea_id):
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        vendedor=request.form.get("vendedor_filtro", ""),
     ))
 
 

@@ -58,14 +58,23 @@
     </select>
     {% if plazas_opciones|length > 1 %}
     <label for="filtro-plaza-tareas">Plaza:</label>
-    <select id="filtro-plaza-tareas" name="plaza" onchange="this.form.submit()">
+    <select id="filtro-plaza-tareas" name="plaza" onchange="var v=document.getElementById('filtro-vendedor-tareas'); if (v) v.value=''; this.form.submit()">
       <option value="">Todas</option>
       {% for p in plazas_opciones %}
       <option value="{{ p }}" {% if p == plaza_seleccionada %}selected{% endif %}>{{ p }}</option>
       {% endfor %}
     </select>
     {% elif plaza_seleccionada %}
-    <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}">
+    <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}" >
+    {% endif %}
+    {% if vendedores_filtro|length > 1 %}
+    <label for="filtro-vendedor-tareas">Vendedor:</label>
+    <select id="filtro-vendedor-tareas" name="vendedor" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for v in vendedores_filtro %}
+      <option value="{{ v }}" {% if v == vendedor_seleccionado %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
     {% endif %}
     <label class="filtro-check">
       <input type="checkbox" name="mostrar_autorizadas" value="1" {% if mostrar_autorizadas %}checked{% endif %} onchange="this.form.submit()">
@@ -85,6 +94,7 @@
     <input type="hidden" name="mes" value="{{ mes_seleccionado }}">
     <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
     <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}">
+    <input type="hidden" name="vendedor_filtro" value="{{ vendedor_seleccionado }}">
     <h3 id="panel-titulo" class="panel-titulo">Nueva tarea</h3>
     <div class="campos-grid">
       <div class="campo">
@@ -206,6 +216,7 @@
               <input type="hidden" name="mes" value="{{ mes_seleccionado }}">
               <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
     <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}">
+    <input type="hidden" name="vendedor_filtro" value="{{ vendedor_seleccionado }}">
               <button type="submit" class="btn-borrar">Borrar</button>
             </form>
           </td>
