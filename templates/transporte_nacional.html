@@ -41,6 +41,13 @@
   .fila-pricing.nueva td { background: #fff7ed; }
   .col-operativo { color: var(--ink-2); }
   .col-operativo.sin-asignar { color: var(--ink-4); font-style: italic; }
+  .btn-ver-obs { display: inline; background: none; border: none; padding: 0; margin-left: .2rem; color: var(--accent-dark); font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; text-decoration: underline; }
+  #dlg-obs { border: none; border-radius: 12px; padding: 0; max-width: 560px; width: calc(100% - 32px); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  #dlg-obs::backdrop { background: rgba(15,23,42,.45); }
+  #dlg-obs .dlg-cab { display: flex; justify-content: space-between; align-items: center; padding: .9rem 1.2rem; border-bottom: 1px solid var(--border); }
+  #dlg-obs .dlg-cab h3 { margin: 0; font-size: .95rem; }
+  #dlg-obs .dlg-cerrar { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--ink-3); padding: 0 .2rem; }
+  #dlg-obs .dlg-cuerpo { padding: 1rem 1.2rem 1.3rem; font-size: .88rem; line-height: 1.5; white-space: pre-line; max-height: 60vh; overflow-y: auto; }
 </style>
 {% endblock %}
 {% block content %}
@@ -78,7 +85,14 @@
           <td class="nowrap">{{ fila.creado_en|hora_mx }}</td>
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
           <td>{{ fila.proveedor or '—' }}</td>
-          <td class="col-observaciones">{{ fila.observaciones or '—' }}</td>
+          <td class="col-observaciones">
+            {% if fila.observaciones and fila.observaciones|length > 50 %}
+            {{ fila.observaciones[:50] }}…
+            <button type="button" class="btn-ver-obs" data-ref="{{ fila.referencia }}" data-obs="{{ fila.observaciones }}" onclick="event.stopPropagation(); abrirObservacion(this);">Ver más</button>
+            {% else %}
+            {{ fila.observaciones or '—' }}
+            {% endif %}
+          </td>
           <td class="nowrap">{% if fila.num_archivos %}📎 {{ fila.num_archivos }}{% else %}—{% endif %}</td>
           <td>
             {% if fila.cotizacion_estatus_actual %}
@@ -97,4 +111,16 @@
     {% else %}
     <p class="empty">Todavía no hay solicitudes a Transporte Nacional.</p>
     {% endif %}
+
+    <dialog id="dlg-obs" onclick="if (event.target === this) this.close();">
+      <div class="dlg-cab"><h3 id="dlg-obs-titulo">Observaciones</h3><button type="button" class="dlg-cerrar" onclick="document.getElementById('dlg-obs').close();" aria-label="Cerrar">&times;</button></div>
+      <div class="dlg-cuerpo" id="dlg-obs-texto"></div>
+    </dialog>
+    <script>
+      function abrirObservacion(btn) {
+        document.getElementById('dlg-obs-titulo').textContent = 'Observaciones · ' + btn.dataset.ref;
+        document.getElementById('dlg-obs-texto').textContent = btn.dataset.obs;
+        document.getElementById('dlg-obs').showModal();
+      }
+    </script>
 {% endblock %}
