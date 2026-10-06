@@ -7487,7 +7487,8 @@ def construir_inicio_crm(
         mes_ant = fecha_inicio.month - 1 if fecha_inicio.month > 1 else 12
         ultimo_dia_mes_ant = calendar.monthrange(anio_ant, mes_ant)[1]
         fecha_inicio_anterior = date(anio_ant, mes_ant, 1)
-        fecha_fin_anterior = date(anio_ant, mes_ant, min(fecha_fin.day, ultimo_dia_mes_ant))
+        mes_completo = fecha_fin.day == calendar.monthrange(fecha_fin.year, fecha_fin.month)[1]
+        fecha_fin_anterior = date(anio_ant, mes_ant, ultimo_dia_mes_ant if mes_completo else min(fecha_fin.day, ultimo_dia_mes_ant))
     elif periodo in ("hoy", "semana"):
         # Se compara contra el mismo tramo de la semana pasada (exactamente
         # 7 días antes), no contra los días inmediatamente anteriores: así
@@ -9006,16 +9007,17 @@ def crm_seccion(slug):
     nav_groups = agrupar_nav_crm(slug)
     if slug == "inicio":
         hoy = datetime.now(TZ_LOCAL).date()
-        periodo = request.args.get("periodo", "semana")
-        if periodo not in ("hoy", "semana", "mes", "personalizado"):
-            periodo = "semana"
-        fecha_inicio_custom = fecha_valida_o_vacia(request.args.get("fecha_inicio", ""))
-        fecha_fin_custom = fecha_valida_o_vacia(request.args.get("fecha_fin", ""))
-        fecha_inicio, fecha_fin = rango_periodo_crm(
-            periodo, hoy,
-            date.fromisoformat(fecha_inicio_custom) if fecha_inicio_custom else None,
-            date.fromisoformat(fecha_fin_custom) if fecha_fin_custom else None,
-        )
+        # Inicio se filtra siempre por mes (default: mes en curso). El mes en
+        # curso va del día 1 a hoy; un mes pasado, completo.
+        periodo = "mes"
+        mes_actual_inicio = hoy.strftime("%Y-%m")
+        meses_inicio_opciones = [o for o in opciones_mes() if o["value"] <= mes_actual_inicio][::-1]
+        mes_inicio = request.args.get("mes", "").strip()
+        if mes_inicio not in {o["value"] for o in meses_inicio_opciones}:
+            mes_inicio = mes_actual_inicio
+        anio_ini, mes_num_ini = (int(x) for x in mes_inicio.split("-"))
+        fecha_inicio = date(anio_ini, mes_num_ini, 1)
+        fecha_fin = hoy if mes_inicio == mes_actual_inicio else date(anio_ini, mes_num_ini, calendar.monthrange(anio_ini, mes_num_ini)[1])
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         desarrollador_forzado = desarrollador_forzado_usuario()
@@ -9041,6 +9043,7 @@ def crm_seccion(slug):
         return render_template(
             "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
+            mes_inicio=mes_inicio, meses_inicio_opciones=meses_inicio_opciones,
             plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro, desarrollador_filtro=desarrollador_filtro,
             serie_json=json_para_js(datos["serie"]), **datos,
         )

@@ -21,6 +21,7 @@
     border: 1px solid var(--borde); background: #fff; color: #222;
     border-radius: 7px; padding: 0.42rem 0.7rem; font: inherit; font-size: 0.8rem; cursor: pointer;
   }
+  .etq-mes { font-size: 0.8rem; font-weight: 600; color: #555; }
   .caja-personalizado { display: flex; align-items: center; gap: 0.4rem; }
   .caja-personalizado input { border: 1px solid var(--borde); border-radius: 7px; padding: 0.38rem 0.5rem; font: inherit; font-size: 0.8rem; }
   .caja-personalizado button { border: none; border-radius: 7px; padding: 0.4rem 0.8rem; background: var(--peligro); color: #fff; font: inherit; font-size: 0.8rem; cursor: pointer; }
@@ -121,13 +122,10 @@
   <p class="pista">Pulso diario del embudo: actividad de cotización y cierre, por usuario y por plaza.</p>
 
   <form class="barra-filtros" method="get" id="form-filtros">
-    <input type="hidden" name="periodo" id="input-periodo" value="{{ periodo }}">
-    <div class="segmentado">
-      <button type="button" data-periodo="hoy" class="{{ 'activo' if periodo == 'hoy' else '' }}">Hoy</button>
-      <button type="button" data-periodo="semana" class="{{ 'activo' if periodo == 'semana' else '' }}">Semana</button>
-      <button type="button" data-periodo="mes" class="{{ 'activo' if periodo == 'mes' else '' }}">Mes</button>
-      <button type="button" data-periodo="personalizado" class="{{ 'activo' if periodo == 'personalizado' else '' }}">Personalizado</button>
-    </div>
+    <label class="etq-mes" for="filtro-mes-inicio">Mes:</label>
+    <select id="filtro-mes-inicio" name="mes" onchange="this.form.submit()">
+      {% for op in meses_inicio_opciones %}<option value="{{ op.value }}" {{ 'selected' if op.value == mes_inicio else '' }}>{{ op.label }}</option>{% endfor %}
+    </select>
     <select name="plaza" onchange="this.form.submit()">
       <option value="">Todas las plazas</option>
       {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
@@ -142,11 +140,6 @@
       <option value="">Todos los desarrolladores</option>
       {% for d in desarrolladores_opciones %}<option value="{{ d }}" {{ 'selected' if desarrollador_filtro == d else '' }}>{{ d }}</option>{% endfor %}
     </select>
-    <div class="caja-personalizado" id="caja-personalizado" {{ 'hidden' if periodo != 'personalizado' else '' }}>
-      <input type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
-      <input type="date" name="fecha_fin" value="{{ fecha_fin }}">
-      <button type="submit">Aplicar</button>
-    </div>
     <div class="filtro-spacer"></div>
     <div class="filtro-nota">Del {{ fecha_inicio_larga }} al {{ fecha_fin_larga }}, vs. {{ etiqueta_anterior }} ({{ fecha_inicio_anterior_larga }}–{{ fecha_fin_anterior_larga }})</div>
   </form>
@@ -399,17 +392,6 @@
 {% endblock %}
 {% block extra_script %}
   <script>
-    document.querySelectorAll('[data-periodo]').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        document.getElementById('input-periodo').value = btn.dataset.periodo;
-        if (btn.dataset.periodo === 'personalizado') {
-          document.getElementById('caja-personalizado').hidden = false;
-        } else {
-          document.getElementById('form-filtros').submit();
-        }
-      });
-    });
-
     var serieDiaria = {{ serie_json|safe }};
 
     function money(n) { return "$" + Math.round(n).toLocaleString("es-MX"); }
