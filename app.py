@@ -10369,6 +10369,17 @@ SQL_TN_NUEVA_PARA_PRICING = """(
 @app.route("/transporte-nacional")
 @transporte_nacional_required
 def transporte_nacional():
+    # Filtro de Mes (por fecha de creación, hora del centro de México);
+    # default: mes en curso.
+    hoy = datetime.now(TZ_LOCAL).date()
+    mes_actual = hoy.strftime("%Y-%m")
+    meses_opciones = [o for o in opciones_mes() if o["value"] <= mes_actual][::-1]
+    mes_seleccionado = request.args.get("mes", "").strip()
+    if mes_seleccionado not in {o["value"] for o in meses_opciones}:
+        mes_seleccionado = mes_actual
+    anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
+    fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
+    fecha_fin_mes_excl = date(anio_sel + (mes_num_sel == 12), mes_num_sel % 12 + 1, 1)
     db = get_db()
     filas = db.execute("""
         SELECT
@@ -10385,11 +10396,34 @@ def transporte_nacional():
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
+        WHERE (s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
+          AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
-    """).fetchall()
+    """, (fecha_inicio_mes, fecha_fin_mes_excl)).fetchall()
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
-    return render_template("transporte_nacional.html", filas=filas)
+
+    solicitantes = sorted({f["creado_por"] for f in filas if f["creado_por"]}, key=str.lower)
+    solicitante = request.args.get("solicitante", "").strip()
+    if solicitante not in solicitantes:
+        solicitante = ""
+    if solicitante:
+        filas = [f for f in filas if f["creado_por"] == solicitante]
+
+    kpis = {
+        "total": len(filas),
+        "por_cotizar": sum(1 for f in filas if f["estado"] in ("Solicitud", "En proceso")),
+        "cotizadas": sum(1 for f in filas if f["estado"] == "Cotizado"),
+        "ftl": sum(1 for f in filas if f["tipo_servicio"] == "FTL"),
+        "ltl": sum(1 for f in filas if f["tipo_servicio"] == "LTL"),
+        "ganadas": sum(1 for f in filas if f.get("cotizacion_estatus_actual") == "ganada"),
+        "perdidas": sum(1 for f in filas if f.get("cotizacion_estatus_actual") == "perdida"),
+    }
+    return render_template(
+        "transporte_nacional.html", filas=filas, kpis=kpis,
+        meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
+        solicitantes=solicitantes, solicitante=solicitante,
+    )
 
 
 @app.route("/transporte-nacional/<int:solicitud_id>")

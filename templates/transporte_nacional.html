@@ -48,11 +48,63 @@
   #dlg-obs .dlg-cab h3 { margin: 0; font-size: .95rem; }
   #dlg-obs .dlg-cerrar { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--ink-3); padding: 0 .2rem; }
   #dlg-obs .dlg-cuerpo { padding: 1rem 1.2rem 1.3rem; font-size: .88rem; line-height: 1.5; white-space: pre-line; max-height: 60vh; overflow-y: auto; }
+  .tn-filtros { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin: 0 0 1rem; }
+  .tn-filtros label { font-size: .8rem; font-weight: 600; color: var(--ink-2); }
+  .tn-filtros select { padding: .38rem .55rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .85rem; background: #fff; }
+  .tn-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin: 0 0 1.2rem; }
+  .tn-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; cursor: pointer; text-align: left; font: inherit; display: flex; flex-direction: column; gap: .3rem; transition: box-shadow .15s, border-color .15s; }
+  .tn-kpi:hover { box-shadow: 0 4px 12px rgba(15,23,42,.08); }
+  .tn-kpi.activo { border-color: var(--accent-dark); box-shadow: 0 0 0 2px rgba(29,78,216,.18); }
+  .tn-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .tn-kpi .val { font-size: 1.5rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tn-kpi.pendiente { background: linear-gradient(180deg, #fef3de, #fff 70%); border-color: #f5c58a; }
+  .tn-kpi.cotizada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #86efac; }
+  .tn-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #4ade80; }
+  .tn-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
+  .tn-aviso-filtro { font-size: .8rem; color: var(--ink-3); margin: -.6rem 0 .8rem; }
+  .tn-aviso-filtro button { background: none; border: none; color: var(--accent-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
 </style>
 {% endblock %}
 {% block content %}
     <h2 style="margin: 0 0 .2rem;">Transporte Nacional</h2>
-    <p class="hint" style="margin: 0 0 1.5rem;">Solicitudes de Transporte Nacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+    <p class="hint" style="margin: 0 0 1rem;">Solicitudes de Transporte Nacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+
+    <form class="tn-filtros" method="get">
+      <label for="tn-mes">Mes:</label>
+      <select id="tn-mes" name="mes" onchange="this.form.submit()">
+        {% for op in meses_opciones %}<option value="{{ op.value }}" {{ 'selected' if op.value == mes_seleccionado else '' }}>{{ op.label }}</option>{% endfor %}
+      </select>
+      <label for="tn-solicitante">Solicitada por:</label>
+      <select id="tn-solicitante" name="solicitante" onchange="this.form.submit()">
+        <option value="">Todos</option>
+        {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
+      </select>
+    </form>
+
+    <div class="tn-kpis">
+      <button type="button" class="tn-kpi" data-filtro="">
+        <span class="etq">Solicitudes</span><span class="val">{{ kpis.total }}</span>
+      </button>
+      <button type="button" class="tn-kpi pendiente" data-filtro="grupo:por_cotizar">
+        <span class="etq">Por cotizar</span><span class="val">{{ kpis.por_cotizar }}</span>
+      </button>
+      <button type="button" class="tn-kpi cotizada" data-filtro="grupo:cotizada">
+        <span class="etq">Cotizadas</span><span class="val">{{ kpis.cotizadas }}</span>
+      </button>
+      <button type="button" class="tn-kpi" data-filtro="tipo:FTL">
+        <span class="etq">FTL</span><span class="val">{{ kpis.ftl }}</span>
+      </button>
+      <button type="button" class="tn-kpi" data-filtro="tipo:LTL">
+        <span class="etq">LTL</span><span class="val">{{ kpis.ltl }}</span>
+      </button>
+      <button type="button" class="tn-kpi ganada" data-filtro="resultado:ganada" title="La cotización de la que salió la solicitud está Ganada">
+        <span class="etq">Ganadas</span><span class="val">{{ kpis.ganadas }}</span>
+      </button>
+      <button type="button" class="tn-kpi perdida" data-filtro="resultado:perdida" title="La cotización de la que salió la solicitud está Perdida">
+        <span class="etq">Perdidas</span><span class="val">{{ kpis.perdidas }}</span>
+      </button>
+    </div>
+    <p class="tn-aviso-filtro" id="tn-aviso-filtro" hidden>Mostrando: <b id="tn-aviso-texto"></b> · <button type="button" onclick="filtrarTN('')">Ver todas</button></p>
 
     {% if filas %}
     <table class="tabla-pricing">
@@ -72,7 +124,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
+        <tr data-grupo="{{ 'por_cotizar' if fila.estado in ['Solicitud', 'En proceso'] else ('cotizada' if fila.estado == 'Cotizado' else 'otro') }}" data-tipo="{{ fila.tipo_servicio or '' }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">
               {{ fila.referencia }}
@@ -109,7 +161,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="empty">Todavía no hay solicitudes a Transporte Nacional.</p>
+    <p class="empty">No hay solicitudes a Transporte Nacional en este mes{{ ' para ese solicitante' if solicitante else '' }}.</p>
     {% endif %}
 
     <dialog id="dlg-obs" onclick="if (event.target === this) this.close();">
@@ -117,6 +169,24 @@
       <div class="dlg-cuerpo" id="dlg-obs-texto"></div>
     </dialog>
     <script>
+      var etiquetasFiltroTN = {
+        'grupo:por_cotizar': 'Por cotizar', 'grupo:cotizada': 'Cotizadas', 'tipo:FTL': 'FTL', 'tipo:LTL': 'LTL',
+        'resultado:ganada': 'Ganadas', 'resultado:perdida': 'Perdidas'
+      };
+      function filtrarTN(filtro) {
+        var partes = filtro ? filtro.split(':') : null;
+        document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
+          tr.hidden = partes ? tr.dataset[partes[0]] !== partes[1] : false;
+        });
+        document.querySelectorAll('.tn-kpi').forEach(function (b) { b.classList.toggle('activo', !!filtro && b.dataset.filtro === filtro); });
+        document.getElementById('tn-aviso-filtro').hidden = !filtro;
+        document.getElementById('tn-aviso-texto').textContent = etiquetasFiltroTN[filtro] || '';
+      }
+      document.querySelectorAll('.tn-kpi').forEach(function (b) {
+        b.addEventListener('click', function () {
+          filtrarTN(b.classList.contains('activo') ? '' : b.dataset.filtro);
+        });
+      });
       function abrirObservacion(btn) {
         document.getElementById('dlg-obs-titulo').textContent = 'Observaciones · ' + btn.dataset.ref;
         document.getElementById('dlg-obs-texto').textContent = btn.dataset.obs;
