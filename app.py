@@ -10946,7 +10946,27 @@ def crm_tareas():
         if error:
             flash(error)
         else:
-            db.execute("""
+            # Evita duplicados por doble clic / reenvío: serializa los
+            # guardados del mismo vendedor y no inserta si ya existe una
+            # tarea idéntica en todos sus campos.
+            db.execute("SELECT pg_advisory_xact_lock(hashtext('crm_tarea_nueva'), hashtext(%s))", (normalizar(datos["vendedor"]),))
+            duplicada = db.execute("""
+                SELECT 1 FROM crm_tareas
+                WHERE vendedor = %(vendedor)s AND actividad_id = %(actividad_id)s AND fecha = %(fecha)s
+                  AND tipo_contacto = %(tipo_contacto)s
+                  AND cliente_folio IS NOT DISTINCT FROM %(cliente_folio)s
+                  AND prospecto_nombre IS NOT DISTINCT FROM %(prospecto_nombre)s
+                  AND asistentes = %(asistentes)s AND asunto IS NOT DISTINCT FROM %(asunto)s
+                  AND acuerdos IS NOT DISTINCT FROM %(acuerdos)s
+                  AND responsables IS NOT DISTINCT FROM %(responsables)s
+                  AND fecha_compromiso IS NOT DISTINCT FROM %(fecha_compromiso)s::date
+                LIMIT 1
+            """, datos).fetchone()
+            if duplicada:
+                db.rollback()
+                flash("Esta tarea ya estaba registrada; no se guardó de nuevo.")
+            else:
+                db.execute("""
                 INSERT INTO crm_tareas (
                     actividad_id, vendedor, fecha, tipo_contacto, cliente_folio, prospecto_nombre,
                     asistentes, asunto, acuerdos, responsables, fecha_compromiso, creado_por_user_id
@@ -10955,7 +10975,7 @@ def crm_tareas():
                     %(asistentes)s, %(asunto)s, %(acuerdos)s, %(responsables)s, %(fecha_compromiso)s, %(creado_por_user_id)s
                 )
             """, {**datos, "creado_por_user_id": session.get("usuario_id") or None})
-            db.commit()
+                db.commit()
         db.close()
         return redirect(url_for(
             "crm_tareas", mes=request.form.get("mes", ""),

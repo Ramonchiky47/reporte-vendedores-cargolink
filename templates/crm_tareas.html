@@ -69,7 +69,7 @@
     <button type="button" id="btn-nueva-tarea">+ Nueva tarea</button>
   </div>
 
-  <form class="panel-nueva-tarea" id="panel-nueva-tarea" method="post" action="{{ url_for('crm_tareas') }}">
+  <form class="panel-nueva-tarea form-solicitud" id="panel-nueva-tarea" method="post" action="{{ url_for('crm_tareas') }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="mes" value="{{ mes_seleccionado }}">
     <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
