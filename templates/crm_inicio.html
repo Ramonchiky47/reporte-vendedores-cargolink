@@ -33,6 +33,8 @@
   .kpi.destacado { border-color: var(--peligro); background: linear-gradient(180deg, #fbe3e2, #fff 65%); }
   .kpi.kpi-ganada { border-color: var(--exito); background: linear-gradient(180deg, #e8f5e9, #fff 65%); }
   .kpi.kpi-perdida { border-color: var(--peligro); background: linear-gradient(180deg, #fdecea, #fff 65%); }
+  a.kpi-link { color: inherit; text-decoration: none; border-color: #f59e0b; background: linear-gradient(180deg, #fef3c7, #fff 65%); }
+  a.kpi-link:hover { box-shadow: 0 4px 12px rgba(20,16,10,0.08); }
   .kpi__etiqueta { font-size: 0.7rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .kpi__valor { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .kpi__delta { font-size: 0.75rem; font-weight: 600; }
@@ -193,6 +195,11 @@
       <div class="kpi__valor">{{ kpis.clientes_nuevos }}</div>
       {{ delta(kpis.clientes_nuevos_delta, kpis.clientes_nuevos_anterior, etiqueta_anterior) }}
     </div>
+    <a class="kpi kpi-link" href="{{ url_for('crm_tareas') }}" title="Customer Facing Visit + Virtual Meeting capturadas en el periodo que aún no autoriza el Autorizador de Minutas">
+      <div class="kpi__etiqueta">Tareas por aprobar</div>
+      <div class="kpi__valor">{{ kpis.tareas_por_aprobar or 0 }}</div>
+      <div class="kpi__delta neutro">{{ kpis.tareas_por_aprobar_anterior or 0 }} {{ etiqueta_anterior }}</div>
+    </a>
     <div class="kpi">
       <div class="kpi__etiqueta">Customer Facing Visit</div>
       <div class="kpi__valor">{{ kpis.customer_facing_visit or 0 }}</div>

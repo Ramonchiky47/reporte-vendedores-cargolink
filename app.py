@@ -7577,8 +7577,8 @@ def construir_inicio_crm(
         "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL", db=db,
     )
     tareas_autorizadas = consulta_sql_cacheada(
-        "tareas_autorizadas_todas_v2", 30, """
-            SELECT t.fecha, t.vendedor, a.nombre AS actividad, t.creado_por_user_id,
+        "tareas_todas_v3", 30, """
+            SELECT t.fecha, t.vendedor, a.nombre AS actividad, t.creado_por_user_id, t.autorizada,
                    f.nombre_firma, cu.email AS creador_correo,
                    crp.vendedor_asociado AS creador_vendedor_asociado,
                    crp.desarrollador_asociado AS creador_desarrollador_asociado
@@ -7587,7 +7587,6 @@ def construir_inicio_crm(
             LEFT JOIN crm_firmas f ON f.user_id = t.creado_por_user_id
             LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
             LEFT JOIN app_user_permissions crp ON crp.user_id = t.creado_por_user_id
-            WHERE t.autorizada = true
         """, db=db,
     )
     if db_propia:
@@ -7659,6 +7658,7 @@ def construir_inicio_crm(
     # autorizar no suma todavía.
     usuario_id_actual = session.get("usuario_id")
     filas_tarea = []
+    filas_tarea_pendiente = []
     for r in tareas_autorizadas:
         if r["fecha"] is None:
             continue
@@ -7691,7 +7691,10 @@ def construir_inicio_crm(
                 or (desarrolladores_permitidos_norm is not None and identidad in desarrolladores_permitidos_norm)
             ):
                 continue
-        filas_tarea.append({"d": d, "vendedor": identidad_mostrar, "plaza": plaza, "actividad": normalizar(r["actividad"])})
+        fila_t = {"d": d, "vendedor": identidad_mostrar, "plaza": plaza, "actividad": normalizar(r["actividad"])}
+        # Solo las autorizadas suman al Scorecard; las demás se cuentan
+        # aparte en la tarjeta "Tareas por aprobar" de Inicio.
+        (filas_tarea if r["autorizada"] else filas_tarea_pendiente).append(fila_t)
 
     creador_extra_lower = creador_extra_cotizaciones.lower() if creador_extra_cotizaciones else None
     filas_cot = []
@@ -7788,6 +7791,9 @@ def construir_inicio_crm(
         return sum(1 for f in filas if f["actividad"] == normalizar(nombre))
     cfv_periodo, cfv_anterior = contar_actividad(tareas_periodo, "CUSTOMER FACING VISIT"), contar_actividad(tareas_anterior, "CUSTOMER FACING VISIT")
     vm_periodo, vm_anterior = contar_actividad(tareas_periodo, "VIRTUAL MEETING"), contar_actividad(tareas_anterior, "VIRTUAL MEETING")
+    actividades_bitacora = {normalizar("CUSTOMER FACING VISIT"), normalizar("VIRTUAL MEETING")}
+    pend_periodo = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio, fecha_fin) if f["actividad"] in actividades_bitacora)
+    pend_anterior = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio_anterior, fecha_fin_anterior) if f["actividad"] in actividades_bitacora)
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
     # aplicado / cuándo se marcó perdida), no por cuándo se creó la
@@ -7826,6 +7832,8 @@ def construir_inicio_crm(
         "customer_facing_visit_anterior": cfv_anterior,
         "virtual_meeting": vm_periodo, "virtual_meeting_delta": delta_pct(vm_periodo, vm_anterior),
         "virtual_meeting_anterior": vm_anterior,
+        "tareas_por_aprobar": pend_periodo, "tareas_por_aprobar_delta": delta_pct(pend_periodo, pend_anterior),
+        "tareas_por_aprobar_anterior": pend_anterior,
     }
 
     dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
