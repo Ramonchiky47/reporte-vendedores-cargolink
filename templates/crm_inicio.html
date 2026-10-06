@@ -21,6 +21,7 @@
     border: 1px solid var(--borde); background: #fff; color: #222;
     border-radius: 7px; padding: 0.42rem 0.7rem; font: inherit; font-size: 0.8rem; cursor: pointer;
   }
+  .segmentado.deshabilitado button { cursor: not-allowed; opacity: 0.55; }
   .etq-mes { font-size: 0.8rem; font-weight: 600; color: #555; }
   .caja-personalizado { display: flex; align-items: center; gap: 0.4rem; }
   .caja-personalizado input { border: 1px solid var(--borde); border-radius: 7px; padding: 0.38rem 0.5rem; font: inherit; font-size: 0.8rem; }
@@ -123,9 +124,15 @@
 
   <form class="barra-filtros" method="get" id="form-filtros">
     <label class="etq-mes" for="filtro-mes-inicio">Mes:</label>
-    <select id="filtro-mes-inicio" name="mes" onchange="this.form.submit()">
+    <select id="filtro-mes-inicio" name="mes" onchange="document.getElementById('input-periodo').value = ''; this.form.submit()">
       {% for op in meses_inicio_opciones %}<option value="{{ op.value }}" {{ 'selected' if op.value == mes_inicio else '' }}>{{ op.label }}</option>{% endfor %}
     </select>
+    <input type="hidden" name="periodo" id="input-periodo" value="{{ periodo }}">
+    <div class="segmentado{{ '' if es_mes_en_curso else ' deshabilitado' }}" title="{{ '' if es_mes_en_curso else 'Hoy/Semana solo aplican al mes en curso; un mes anterior se muestra completo' }}">
+      <button type="button" data-periodo="hoy" class="{{ 'activo' if es_mes_en_curso and periodo == 'hoy' else '' }}" {{ '' if es_mes_en_curso else 'disabled' }}>Hoy</button>
+      <button type="button" data-periodo="semana" class="{{ 'activo' if es_mes_en_curso and periodo == 'semana' else '' }}" {{ '' if es_mes_en_curso else 'disabled' }}>Semana</button>
+      <button type="button" data-periodo="mes" class="{{ 'activo' if periodo == 'mes' else '' }}" {{ '' if es_mes_en_curso else 'disabled' }}>Mes</button>
+    </div>
     <select name="plaza" onchange="this.form.submit()">
       <option value="">Todas las plazas</option>
       {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if plaza_filtro == p else '' }}>{{ p }}</option>{% endfor %}
@@ -392,6 +399,14 @@
 {% endblock %}
 {% block extra_script %}
   <script>
+    document.querySelectorAll('[data-periodo]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        document.getElementById('input-periodo').value = btn.dataset.periodo;
+        document.getElementById('form-filtros').submit();
+      });
+    });
+
     var serieDiaria = {{ serie_json|safe }};
 
     function money(n) { return "$" + Math.round(n).toLocaleString("es-MX"); }

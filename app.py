@@ -9007,17 +9007,24 @@ def crm_seccion(slug):
     nav_groups = agrupar_nav_crm(slug)
     if slug == "inicio":
         hoy = datetime.now(TZ_LOCAL).date()
-        # Inicio se filtra siempre por mes (default: mes en curso). El mes en
-        # curso va del día 1 a hoy; un mes pasado, completo.
-        periodo = "mes"
+        # Filtro de Mes (default: mes en curso). En el mes en curso se usan
+        # los botones Hoy/Semana/Mes (default Semana); en un mes anterior se
+        # deshabilitan y se muestra el mes completo.
         mes_actual_inicio = hoy.strftime("%Y-%m")
         meses_inicio_opciones = [o for o in opciones_mes() if o["value"] <= mes_actual_inicio][::-1]
         mes_inicio = request.args.get("mes", "").strip()
         if mes_inicio not in {o["value"] for o in meses_inicio_opciones}:
             mes_inicio = mes_actual_inicio
-        anio_ini, mes_num_ini = (int(x) for x in mes_inicio.split("-"))
-        fecha_inicio = date(anio_ini, mes_num_ini, 1)
-        fecha_fin = hoy if mes_inicio == mes_actual_inicio else date(anio_ini, mes_num_ini, calendar.monthrange(anio_ini, mes_num_ini)[1])
+        if mes_inicio == mes_actual_inicio:
+            periodo = request.args.get("periodo", "semana")
+            if periodo not in ("hoy", "semana", "mes"):
+                periodo = "semana"
+            fecha_inicio, fecha_fin = rango_periodo_crm(periodo, hoy)
+        else:
+            periodo = "mes"
+            anio_ini, mes_num_ini = (int(x) for x in mes_inicio.split("-"))
+            fecha_inicio = date(anio_ini, mes_num_ini, 1)
+            fecha_fin = date(anio_ini, mes_num_ini, calendar.monthrange(anio_ini, mes_num_ini)[1])
         plaza_filtro = request.args.get("plaza", "").strip()
         vendedor_forzado = vendedor_forzado_usuario()
         desarrollador_forzado = desarrollador_forzado_usuario()
@@ -9043,7 +9050,7 @@ def crm_seccion(slug):
         return render_template(
             "crm_inicio.html", nav_groups=nav_groups, titulo_pagina=item["texto"],
             periodo=periodo, fecha_inicio=fecha_inicio.isoformat(), fecha_fin=fecha_fin.isoformat(),
-            mes_inicio=mes_inicio, meses_inicio_opciones=meses_inicio_opciones,
+            mes_inicio=mes_inicio, meses_inicio_opciones=meses_inicio_opciones, es_mes_en_curso=(mes_inicio == mes_actual_inicio),
             plaza_filtro=plaza_filtro, vendedor_filtro=vendedor_filtro, desarrollador_filtro=desarrollador_filtro,
             serie_json=json_para_js(datos["serie"]), **datos,
         )
