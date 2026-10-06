@@ -101,6 +101,8 @@
     .hoja { box-shadow: none; margin: 0; max-width: none; }
     .barra-acciones { display: none; }
   }
+  .pie-terminos { margin-top: 1.4rem; padding: 0.7rem 0 0.6rem; border-top: 1px solid #d0d0d0; border-bottom: 6px solid #a51c24; font-size: 0.78rem; line-height: 1.45; color: #222; text-align: justify; }
+  .pie-terminos a { color: #1a8fd6; text-decoration: none; }
 </style>
 </head>
 <body>
@@ -256,6 +258,10 @@
       {% if doc.firma_puesto %}<p>{{ doc.firma_puesto }}</p>{% endif %}
       {% if doc.firma_telefono %}<p>{{ t.tel }} {{ doc.firma_telefono }}</p>{% endif %}
       <p>{{ t.correo }}: {{ doc.firma_correo }}</p>
+    </div>
+
+    <div class="pie-terminos">
+      {{ t.pie_terminos }} <a href="https://av2logistics.com/terminos-y-condiciones" target="_blank" rel="noopener">https://av2logistics.com/terminos-y-condiciones</a>.
     </div>
   </div>
 </body>

@@ -84,6 +84,10 @@
   .firma { margin: 12px 0 4px; font-size: 7pt; color: #333333; }
   .firma p { margin: 2px 0; color: #444444; }
   .firma .nombre { font-weight: bold; color: #222222; }
+  table.pie-terminos { margin-top: 14px; }
+  table.pie-terminos td { border: none; border-top: 1px solid #d0d0d0; padding: 6px 0 4px; font-size: 6.5pt; line-height: 1.35; color: #222222; text-align: justify; }
+  table.pie-terminos a { color: #1a8fd6; text-decoration: none; }
+  table.pie-terminos-barra td { background-color: #a51c24; padding: 0; height: 6px; font-size: 1px; line-height: 1px; border: none; }
 </style>
 </head>
 <body>
@@ -239,5 +243,9 @@
     {% if doc.firma_telefono %}<p>{{ t.tel }} {{ doc.firma_telefono }}</p>{% endif %}
     <p>{{ t.correo }}: {{ doc.firma_correo }}</p>
   </div>
+  <table class="pie-terminos">
+    <tr><td>{{ t.pie_terminos }} <a href="https://av2logistics.com/terminos-y-condiciones">https://av2logistics.com/terminos-y-condiciones</a>.</td></tr>
+  </table>
+  <table class="pie-terminos-barra"><tr><td>&nbsp;</td></tr></table>
 </body>
 </html>
