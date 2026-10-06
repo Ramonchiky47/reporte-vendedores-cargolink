@@ -1,5 +1,6 @@
 {% extends "crm_layout.html" %}
 {% block extra_style %}
+  .par-filtro { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
   .filtro-mes { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
   .filtro-mes select { padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
   .filtro-check { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; margin-left: 0.5rem; cursor: pointer; }
@@ -51,41 +52,54 @@
   <h2>Tareas</h2>
   <p class="pista">Bitácora de actividades (Virtual Meeting / Customer Facing Visit) de cada vendedor. Alimenta las categorías "Activities" del Scorecard en CRM → Resultados.</p>
 
+  <script>
+    function limpiarFiltros(ids) {
+      ids.forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ''; });
+    }
+  </script>
   <form class="filtro-mes" method="get">
+    <span class="par-filtro">
     <label for="filtro-mes-tareas">Mes:</label>
     <select id="filtro-mes-tareas" name="mes" onchange="this.form.submit()">
       {% for op in opciones_mes %}
       <option value="{{ op.value }}" {% if op.value == mes_seleccionado %}selected{% endif %}>{{ op.label }}</option>
       {% endfor %}
     </select>
-    {% if plazas_opciones|length > 1 %}
-    <label for="filtro-plaza-tareas">Plaza:</label>
-    <select id="filtro-plaza-tareas" name="plaza" onchange="var v=document.getElementById('filtro-vendedor-tareas'); if (v) v.value=''; this.form.submit()">
-      <option value="">Todas</option>
-      {% for p in plazas_opciones %}
-      <option value="{{ p }}" {% if p == plaza_seleccionada %}selected{% endif %}>{{ p }}</option>
-      {% endfor %}
-    </select>
-    {% elif plaza_seleccionada %}
-    <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}" >
-    {% endif %}
-    {% if vendedores_filtro|length > 1 %}
-    <label for="filtro-vendedor-tareas">Vendedor:</label>
-    <select id="filtro-vendedor-tareas" name="vendedor" onchange="this.form.submit()">
-      <option value="">Todos</option>
-      {% for v in vendedores_filtro %}
-      <option value="{{ v }}" {% if v == vendedor_seleccionado %}selected{% endif %}>{{ v }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
+    </span>
     {% if creadores_filtro %}
+    <span class="par-filtro">
     <label for="filtro-creador-tareas">Creada por:</label>
-    <select id="filtro-creador-tareas" name="creador" onchange="this.form.submit()">
+    <select id="filtro-creador-tareas" name="creador" onchange="limpiarFiltros(['filtro-plaza-tareas', 'filtro-vendedor-tareas']); this.form.submit()">
       <option value="">Todos</option>
       {% for c in creadores_filtro %}
       <option value="{{ c }}" {% if c == creador_seleccionado %}selected{% endif %}>{{ c }}</option>
       {% endfor %}
     </select>
+    </span>
+    {% endif %}
+    {% if plazas_opciones|length > 1 %}
+    <span class="par-filtro">
+    <label for="filtro-plaza-tareas">Plaza:</label>
+    <select id="filtro-plaza-tareas" name="plaza" onchange="limpiarFiltros(['filtro-vendedor-tareas', 'filtro-creador-tareas']); this.form.submit()">
+      <option value="">Todas</option>
+      {% for p in plazas_opciones %}
+      <option value="{{ p }}" {% if p == plaza_seleccionada %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+    </span>
+    {% elif plaza_seleccionada %}
+    <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}" >
+    {% endif %}
+    {% if vendedores_filtro|length > 1 %}
+    <span class="par-filtro">
+    <label for="filtro-vendedor-tareas">Vendedor:</label>
+    <select id="filtro-vendedor-tareas" name="vendedor" onchange="limpiarFiltros(['filtro-creador-tareas']); this.form.submit()">
+      <option value="">Todos</option>
+      {% for v in vendedores_filtro %}
+      <option value="{{ v }}" {% if v == vendedor_seleccionado %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+    </span>
     {% endif %}
     <label class="filtro-check">
       <input type="checkbox" name="mostrar_autorizadas" value="1" {% if mostrar_autorizadas %}checked{% endif %} onchange="this.form.submit()">
