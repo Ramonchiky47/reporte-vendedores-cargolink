@@ -11115,10 +11115,6 @@ def crm_tareas():
         if (plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas)
         and (not vendedor_forzado or normalizar(f["vendedor"]) == normalizar(vendedor_forzado))
     ]
-    # Creadores: se calculan con TODAS las tareas visibles del mes (antes de
-    # Plaza/Vendedor) para que "Creada por" funcione de inmediato y sin
-    # depender de los otros filtros.
-    creadores_filtro = sorted({t["creador_nombre"] for t in tareas_todas if t["creador_nombre"]}, key=normalizar)
     # Filtro por plaza (la plaza es la del vendedor en catalogo_vendedores).
     plazas_opciones = sorted({
         p for p in plaza_por_vendedor.values()
@@ -11145,6 +11141,10 @@ def crm_tareas():
         tareas_todas = [t for t in tareas_todas if normalizar(t["vendedor"]) == normalizar(vendedor_seleccionado)]
     # Filtro por quién creó la tarea (es a quien se le contabiliza en el
     # Scorecard de CRM → Resultados).
+    # Las opciones salen de las tareas ya filtradas por Plaza/Vendedor: sin
+    # esos filtros son todos los creadores del mes (se puede elegir solo);
+    # con ellos, solo los que crearon tareas de esa plaza/vendedor.
+    creadores_filtro = sorted({t["creador_nombre"] for t in tareas_todas if t["creador_nombre"]}, key=normalizar)
     creador_seleccionado = request.args.get("creador", "").strip()
     creador_match = next((c for c in creadores_filtro if normalizar(c) == normalizar(creador_seleccionado)), "")
     if creador_seleccionado and not creador_match:

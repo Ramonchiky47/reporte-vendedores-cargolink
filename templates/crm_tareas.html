@@ -66,17 +66,6 @@
       {% endfor %}
     </select>
     </span>
-    {% if creadores_filtro %}
-    <span class="par-filtro">
-    <label for="filtro-creador-tareas">Creada por:</label>
-    <select id="filtro-creador-tareas" name="creador" onchange="limpiarFiltros(['filtro-plaza-tareas', 'filtro-vendedor-tareas']); this.form.submit()">
-      <option value="">Todos</option>
-      {% for c in creadores_filtro %}
-      <option value="{{ c }}" {% if c == creador_seleccionado %}selected{% endif %}>{{ c }}</option>
-      {% endfor %}
-    </select>
-    </span>
-    {% endif %}
     {% if plazas_opciones|length > 1 %}
     <span class="par-filtro">
     <label for="filtro-plaza-tareas">Plaza:</label>
@@ -97,6 +86,17 @@
       <option value="">Todos</option>
       {% for v in vendedores_filtro %}
       <option value="{{ v }}" {% if v == vendedor_seleccionado %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+    </span>
+    {% endif %}
+    {% if creadores_filtro %}
+    <span class="par-filtro">
+    <label for="filtro-creador-tareas">Creada por:</label>
+    <select id="filtro-creador-tareas" name="creador" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for c in creadores_filtro %}
+      <option value="{{ c }}" {% if c == creador_seleccionado %}selected{% endif %}>{{ c }}</option>
       {% endfor %}
     </select>
     </span>
