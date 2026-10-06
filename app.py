@@ -11017,12 +11017,17 @@ def crm_tareas():
                t.prospecto_nombre, t.asistentes,
                t.asunto, t.acuerdos, t.responsables, t.fecha_compromiso, t.autorizada, t.autorizado_en,
                a.nombre AS actividad, ac.razon_social AS cliente_nombre,
-               af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo
+               af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo,
+               cf.nombre_firma AS creador_firma, cu.email AS creador_correo,
+               coalesce(nullif(trim(cp.desarrollador_asociado), ''), nullif(trim(cp.vendedor_asociado), '')) AS creador_asociado
         FROM crm_tareas t
         JOIN crm_actividades a ON a.id = t.actividad_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = t.cliente_folio
         LEFT JOIN crm_firmas af ON af.user_id = t.autorizado_por_user_id
         LEFT JOIN auth.users au ON au.id = t.autorizado_por_user_id
+        LEFT JOIN crm_firmas cf ON cf.user_id = t.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
+        LEFT JOIN app_user_permissions cp ON cp.user_id = t.creado_por_user_id
         WHERE t.fecha >= %s AND t.fecha <= %s
         ORDER BY t.fecha DESC, t.id DESC
     """, (fecha_inicio_mes.isoformat(), fecha_fin_mes.isoformat())).fetchall()
@@ -11032,6 +11037,7 @@ def crm_tareas():
         {
             **f, "asistentes": json.loads(f["asistentes"] or "[]"),
             "autorizador_nombre": (f["autorizador_firma"] or nombre_desde_correo(f["autorizador_correo"])) if f["autorizada"] else None,
+            "creador_nombre": f["creador_firma"] or f["creador_asociado"] or (nombre_desde_correo(f["creador_correo"]) if f["creador_correo"] else None),
         }
         for f in filas
         if (plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas)

@@ -44,6 +44,8 @@
   .btn-editar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: var(--editar); }
   .btn-borrar { padding: 0.3rem 0.6rem; font-size: 0.78rem; border: none; border-radius: 4px; cursor: pointer; color: #fff; background: var(--peligro); }
   .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+  .col-creador { font-size: 0.8rem; }
+  .creador-correo { font-size: 0.7rem; color: #888; word-break: break-all; }
 {% endblock %}
 {% block crm_content %}
   <h2>Tareas</h2>
@@ -180,7 +182,7 @@
     <table>
       <thead>
         <tr>
-          <th>Fecha</th><th>Vendedor</th><th>Actividad</th><th>Cliente / Prospecto</th>
+          <th>Fecha</th><th>Vendedor</th><th>Creada por</th><th>Actividad</th><th>Cliente / Prospecto</th>
           <th>Asunto</th><th>Asistentes / Compañía</th><th>Acuerdos</th><th>Compromiso</th><th>Estatus</th><th>Acciones</th>
         </tr>
       </thead>
@@ -189,6 +191,7 @@
         <tr>
           <td>{{ t.fecha }}</td>
           <td>{{ t.vendedor }}</td>
+          <td class="col-creador">{% if t.creador_correo %}{{ t.creador_nombre }}<div class="creador-correo">{{ t.creador_correo }}</div>{% else %}—{% endif %}</td>
           <td>{{ t.actividad }}</td>
           <td class="col-contacto">{{ t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre }}</td>
           <td>{{ t.asunto }}</td>
