@@ -193,6 +193,16 @@
       <div class="kpi__valor">{{ kpis.clientes_nuevos }}</div>
       {{ delta(kpis.clientes_nuevos_delta, kpis.clientes_nuevos_anterior, etiqueta_anterior) }}
     </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Customer Facing Visit</div>
+      <div class="kpi__valor">{{ kpis.customer_facing_visit or 0 }}</div>
+      {{ delta(kpis.customer_facing_visit_delta, kpis.customer_facing_visit_anterior or 0, etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Virtual Meeting</div>
+      <div class="kpi__valor">{{ kpis.virtual_meeting or 0 }}</div>
+      {{ delta(kpis.virtual_meeting_delta, kpis.virtual_meeting_anterior or 0, etiqueta_anterior) }}
+    </div>
   </div>
 
   <div class="fila-tendencias">
@@ -235,7 +245,7 @@
       </div>
       {% if ranking %}
       <table class="ranking">
-        <thead><tr><th>Vendedor</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th></tr></thead>
+        <thead><tr><th>Vendedor</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th><th class="num">Tareas</th></tr></thead>
         <tbody>
           {% set profit_max = ranking|map(attribute='profit')|max %}
           {% for r in ranking %}
@@ -249,6 +259,14 @@
             <td class="num">
               {% if r.cotizaciones > 0 %}
               <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              {% else %}
+              <span class="chip-cot sin-datos">—</span>
+              {% endif %}
+            </td>
+            {% set n_tareas = (r.customer_facing_visit or 0) + (r.virtual_meeting or 0) %}
+            <td class="num">
+              {% if n_tareas > 0 %}
+              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}
@@ -271,7 +289,7 @@
       </div>
       {% if ranking_desarrolladores %}
       <table class="ranking">
-        <thead><tr><th>Desarrollador</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th></tr></thead>
+        <thead><tr><th>Desarrollador</th><th class="num">Bookings</th><th class="num">Profit</th><th class="num">Cotizaciones</th><th class="num">Tareas</th></tr></thead>
         <tbody>
           {% set profit_max_d = ranking_desarrolladores|map(attribute='profit')|max %}
           {% for r in ranking_desarrolladores %}
@@ -285,6 +303,14 @@
             <td class="num">
               {% if r.cotizaciones > 0 %}
               <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              {% else %}
+              <span class="chip-cot sin-datos">—</span>
+              {% endif %}
+            </td>
+            {% set n_tareas = (r.customer_facing_visit or 0) + (r.virtual_meeting or 0) %}
+            <td class="num">
+              {% if n_tareas > 0 %}
+              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}

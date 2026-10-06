@@ -78,6 +78,15 @@
       {% endfor %}
     </select>
     {% endif %}
+    {% if creadores_filtro %}
+    <label for="filtro-creador-tareas">Creada por:</label>
+    <select id="filtro-creador-tareas" name="creador" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for c in creadores_filtro %}
+      <option value="{{ c }}" {% if c == creador_seleccionado %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
     <label class="filtro-check">
       <input type="checkbox" name="mostrar_autorizadas" value="1" {% if mostrar_autorizadas %}checked{% endif %} onchange="this.form.submit()">
       Mostrar autorizadas
@@ -97,6 +106,7 @@
     <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
     <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}">
     <input type="hidden" name="vendedor_filtro" value="{{ vendedor_seleccionado }}">
+    <input type="hidden" name="creador_filtro" value="{{ creador_seleccionado }}">
     <h3 id="panel-titulo" class="panel-titulo">Nueva tarea</h3>
     <div class="campos-grid">
       <div class="campo">
@@ -220,6 +230,7 @@
               <input type="hidden" name="mostrar_autorizadas" value="{{ '1' if mostrar_autorizadas else '' }}">
     <input type="hidden" name="plaza" value="{{ plaza_seleccionada }}">
     <input type="hidden" name="vendedor_filtro" value="{{ vendedor_seleccionado }}">
+    <input type="hidden" name="creador_filtro" value="{{ creador_seleccionado }}">
               <button type="submit" class="btn-borrar">Borrar</button>
             </form>
           </td>

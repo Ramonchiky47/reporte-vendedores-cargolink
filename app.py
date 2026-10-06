@@ -6847,7 +6847,7 @@ def construir_resultados_acumulado(
     meses_ordenados = sorted(meses_lista)
     db = get_db()
 
-    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0}
+    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0, "customer_facing_visit": 0, "virtual_meeting": 0}
     resumen_vendedor = {}
     ranking_desarrolladores_map = {}
     plazas_opciones = set()
@@ -6872,7 +6872,7 @@ def construir_resultados_acumulado(
             vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         k = datos_mes["kpis"]
-        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos"):
+        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting"):
             kpis[campo] += k[campo]
 
         for key, fila in datos_mes["resumen_vendedor"].items():
@@ -7577,10 +7577,16 @@ def construir_inicio_crm(
         "SELECT mes, vendedor, presupuesto FROM catalogo_presupuesto WHERE vendedor IS NOT NULL", db=db,
     )
     tareas_autorizadas = consulta_sql_cacheada(
-        "tareas_autorizadas_todas", 30, """
-            SELECT t.fecha, t.vendedor, a.nombre AS actividad
+        "tareas_autorizadas_todas_v2", 30, """
+            SELECT t.fecha, t.vendedor, a.nombre AS actividad, t.creado_por_user_id,
+                   f.nombre_firma, cu.email AS creador_correo,
+                   crp.vendedor_asociado AS creador_vendedor_asociado,
+                   crp.desarrollador_asociado AS creador_desarrollador_asociado
             FROM crm_tareas t
             JOIN crm_actividades a ON a.id = t.actividad_id
+            LEFT JOIN crm_firmas f ON f.user_id = t.creado_por_user_id
+            LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
+            LEFT JOIN app_user_permissions crp ON crp.user_id = t.creado_por_user_id
             WHERE t.autorizada = true
         """, db=db,
     )
@@ -7651,25 +7657,43 @@ def construir_inicio_crm(
     # Facing Visit / Virtual Meeting): solo cuentan las tareas ya
     # autorizadas (ver crm_tarea_autorizar) — una tarea capturada pero sin
     # autorizar no suma todavía.
+    usuario_id_actual = session.get("usuario_id")
     filas_tarea = []
     for r in tareas_autorizadas:
         if r["fecha"] is None:
             continue
         d = r["fecha"]
-        vendedor = r["vendedor"] or "#N/D"
-        plaza = plaza_por_vendedor.get(normalizar(vendedor), "#N/D")
-        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+        # La tarea cuenta para QUIEN LA CREÓ (no para el vendedor al que se
+        # le registró): misma identidad que las cotizaciones — vendedor o
+        # desarrollador asociado a la cuenta creadora, luego firma/correo.
+        identidad_mostrar = (
+            r["creador_vendedor_asociado"] or r["creador_desarrollador_asociado"]
+            or quitar_titulo(r["nombre_firma"]) or (nombre_desde_correo(r["creador_correo"]) if r["creador_correo"] else None)
+            or r["vendedor"] or "#N/D"
+        )
+        identidad = normalizar(identidad_mostrar)
+        # Plaza: la del creador si es vendedor catalogado; si no (p. ej. un
+        # desarrollador), la del vendedor de la tarea.
+        plaza = plaza_por_vendedor.get(identidad) or plaza_por_vendedor.get(normalizar(r["vendedor"] or ""), "#N/D")
+        es_creacion_propia = bool(usuario_id_actual and str(r["creado_por_user_id"] or "") == str(usuario_id_actual))
+        if not es_creacion_propia:
+            if plazas_permitidas is not None and plaza not in plazas_permitidas:
+                continue
+            if plaza_filtro and plaza != plaza_filtro:
+                continue
+        if vendedor_filtro_norm and identidad != vendedor_filtro_norm:
             continue
-        if plaza_filtro and plaza != plaza_filtro:
+        if desarrollador_filtro_norm and identidad != desarrollador_filtro_norm:
             continue
-        if vendedor_filtro_norm and normalizar(vendedor) != vendedor_filtro_norm:
-            continue
-        if vendedores_permitidos_norm is not None and normalizar(vendedor) not in vendedores_permitidos_norm:
-            continue
-        filas_tarea.append({"d": d, "vendedor": vendedor, "actividad": normalizar(r["actividad"])})
+        if vendedores_permitidos_norm is not None or desarrolladores_permitidos_norm is not None:
+            if not (
+                (vendedores_permitidos_norm is not None and identidad in vendedores_permitidos_norm)
+                or (desarrolladores_permitidos_norm is not None and identidad in desarrolladores_permitidos_norm)
+            ):
+                continue
+        filas_tarea.append({"d": d, "vendedor": identidad_mostrar, "plaza": plaza, "actividad": normalizar(r["actividad"])})
 
     creador_extra_lower = creador_extra_cotizaciones.lower() if creador_extra_cotizaciones else None
-    usuario_id_actual = session.get("usuario_id")
     filas_cot = []
     for r in cotizaciones:
         d = r["fecha_creacion"]
@@ -7758,6 +7782,12 @@ def construir_inicio_crm(
         key=lambda f: f["fecha"], reverse=True,
     )
     tareas_periodo = en_rango(filas_tarea, fecha_inicio, fecha_fin)
+    tareas_anterior = en_rango(filas_tarea, fecha_inicio_anterior, fecha_fin_anterior)
+
+    def contar_actividad(filas, nombre):
+        return sum(1 for f in filas if f["actividad"] == normalizar(nombre))
+    cfv_periodo, cfv_anterior = contar_actividad(tareas_periodo, "CUSTOMER FACING VISIT"), contar_actividad(tareas_anterior, "CUSTOMER FACING VISIT")
+    vm_periodo, vm_anterior = contar_actividad(tareas_periodo, "VIRTUAL MEETING"), contar_actividad(tareas_anterior, "VIRTUAL MEETING")
 
     # Ganadas/Perdidas se cuentan por cuándo pasó eso (primer booking
     # aplicado / cuándo se marcó perdida), no por cuándo se creó la
@@ -7792,6 +7822,10 @@ def construir_inicio_crm(
         "clientes_nuevos": len(clientes_nuevos_periodo),
         "clientes_nuevos_delta": delta_pct(len(clientes_nuevos_periodo), len(clientes_nuevos_anterior)),
         "clientes_nuevos_anterior": len(clientes_nuevos_anterior),
+        "customer_facing_visit": cfv_periodo, "customer_facing_visit_delta": delta_pct(cfv_periodo, cfv_anterior),
+        "customer_facing_visit_anterior": cfv_anterior,
+        "virtual_meeting": vm_periodo, "virtual_meeting_delta": delta_pct(vm_periodo, vm_anterior),
+        "virtual_meeting_anterior": vm_anterior,
     }
 
     dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
@@ -7851,10 +7885,17 @@ def construir_inicio_crm(
             }
         resumen_vendedor[key]["clientes_nuevos"] += 1
 
+    tareas_desarrollador = []
     for f in tareas_periodo:
         key = normalizar(f["vendedor"])
+        # Tareas creadas por un desarrollador (catalogado como tal y no como
+        # vendedor) van a su fila de "Actividad por desarrollador" — se
+        # agregan más abajo, una vez armado resumen_desarrollador.
+        if key in plaza_por_desarrollador and key not in plaza_por_vendedor:
+            tareas_desarrollador.append(f)
+            continue
         if key not in resumen_vendedor:
-            plaza = plaza_por_vendedor.get(key, "#N/D")
+            plaza = plaza_por_vendedor.get(key) or f.get("plaza", "#N/D")
             resumen_vendedor[key] = {
                 "nombre": f["vendedor"], "plaza": plaza, "bookings": 0, "venta": 0.0, "profit": 0.0,
                 "cotizaciones": 0, "presupuesto": 0.0, "clientes_nuevos": 0,
@@ -7895,6 +7936,18 @@ def construir_inicio_crm(
         fila["bookings"] += 1
         fila["venta"] += f["venta"]
         fila["profit"] += f["profit"]
+    for f in tareas_desarrollador:
+        key = normalizar(f["vendedor"])
+        fila = resumen_desarrollador.setdefault(key, {
+            "nombre": f["vendedor"], "plaza": plaza_por_desarrollador.get(key, "#N/D"),
+            "bookings": 0, "venta": 0.0, "profit": 0.0, "cotizaciones": 0,
+        })
+        fila.setdefault("customer_facing_visit", 0)
+        fila.setdefault("virtual_meeting", 0)
+        if f["actividad"] == normalizar("CUSTOMER FACING VISIT"):
+            fila["customer_facing_visit"] += 1
+        elif f["actividad"] == normalizar("VIRTUAL MEETING"):
+            fila["virtual_meeting"] += 1
 
     # Las cotizaciones se cruzan por nombre contra quien ya aparece en Vendedor
     # o en Desarrollador (para no duplicar a la misma persona en las dos
@@ -9028,7 +9081,7 @@ def crm_seccion(slug):
             )
             datos = resultado
             kpis = dict(resultado["kpis"])
-            for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos"):
+            for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting"):
                 kpis[f"{campo}_delta"] = None
                 kpis[f"{campo}_anterior"] = 0
             etiqueta_meses = {opt["value"]: opt["label"].split(" - ")[0] for opt in opciones_mes()}
@@ -10984,6 +11037,7 @@ def crm_tareas():
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
         vendedor=request.form.get("vendedor_filtro", ""),
+        creador=request.form.get("creador_filtro", ""),
         ))
 
     hoy = datetime.now(TZ_LOCAL).date()
@@ -11067,6 +11121,17 @@ def crm_tareas():
         vendedor_seleccionado = ""
     if vendedor_seleccionado:
         tareas_todas = [t for t in tareas_todas if normalizar(t["vendedor"]) == normalizar(vendedor_seleccionado)]
+    # Filtro por quién creó la tarea (es a quien se le contabiliza en el
+    # Scorecard de CRM → Resultados).
+    creadores_filtro = sorted({t["creador_nombre"] for t in tareas_todas if t["creador_nombre"]}, key=normalizar)
+    creador_seleccionado = request.args.get("creador", "").strip()
+    creador_match = next((c for c in creadores_filtro if normalizar(c) == normalizar(creador_seleccionado)), "")
+    if creador_seleccionado and not creador_match:
+        creadores_filtro = sorted(creadores_filtro + [creador_seleccionado], key=normalizar)
+        creador_match = creador_seleccionado
+    creador_seleccionado = creador_match
+    if creador_seleccionado:
+        tareas_todas = [t for t in tareas_todas if normalizar(t["creador_nombre"] or "") == normalizar(creador_seleccionado)]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
 
@@ -11092,6 +11157,7 @@ def crm_tareas():
         mostrar_autorizadas=mostrar_autorizadas, autorizadas_ocultas=autorizadas_ocultas,
         tareas=tareas, plazas_opciones=plazas_opciones, plaza_seleccionada=plaza_seleccionada,
         vendedores_filtro=vendedores_filtro, vendedor_seleccionado=vendedor_seleccionado,
+        creadores_filtro=creadores_filtro, creador_seleccionado=creador_seleccionado,
     )
 
 
@@ -11109,6 +11175,7 @@ def crm_tarea_eliminar(tarea_id):
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
         vendedor=request.form.get("vendedor_filtro", ""),
+        creador=request.form.get("creador_filtro", ""),
     ))
 
 
@@ -11125,6 +11192,7 @@ def crm_tarea_editar(tarea_id):
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
         vendedor=request.form.get("vendedor_filtro", ""),
+        creador=request.form.get("creador_filtro", ""),
         ))
     datos, error = _leer_formulario_tarea(db)
     if error:
@@ -11148,6 +11216,7 @@ def crm_tarea_editar(tarea_id):
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
         vendedor=request.form.get("vendedor_filtro", ""),
+        creador=request.form.get("creador_filtro", ""),
     ))
 
 
