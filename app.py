@@ -6847,7 +6847,7 @@ def construir_resultados_acumulado(
     meses_ordenados = sorted(meses_lista)
     db = get_db()
 
-    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0, "customer_facing_visit": 0, "virtual_meeting": 0}
+    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0, "customer_facing_visit": 0, "virtual_meeting": 0, "calls": 0}
     resumen_vendedor = {}
     ranking_desarrolladores_map = {}
     plazas_opciones = set()
@@ -6872,7 +6872,7 @@ def construir_resultados_acumulado(
             vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         k = datos_mes["kpis"]
-        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting"):
+        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting", "calls"):
             kpis[campo] += k[campo]
 
         for key, fila in datos_mes["resumen_vendedor"].items():
@@ -7792,6 +7792,7 @@ def construir_inicio_crm(
         return sum(1 for f in filas if f["actividad"] == normalizar(nombre))
     cfv_periodo, cfv_anterior = contar_actividad(tareas_periodo, "CUSTOMER FACING VISIT"), contar_actividad(tareas_anterior, "CUSTOMER FACING VISIT")
     vm_periodo, vm_anterior = contar_actividad(tareas_periodo, "VIRTUAL MEETING"), contar_actividad(tareas_anterior, "VIRTUAL MEETING")
+    calls_periodo, calls_anterior = contar_actividad(tareas_periodo, "CALLS"), contar_actividad(tareas_anterior, "CALLS")
     actividades_bitacora = {normalizar("CUSTOMER FACING VISIT"), normalizar("VIRTUAL MEETING")}
     pend_periodo = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio, fecha_fin) if f["actividad"] in actividades_bitacora)
     pend_anterior = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio_anterior, fecha_fin_anterior) if f["actividad"] in actividades_bitacora)
@@ -7833,6 +7834,7 @@ def construir_inicio_crm(
         "customer_facing_visit_anterior": cfv_anterior,
         "virtual_meeting": vm_periodo, "virtual_meeting_delta": delta_pct(vm_periodo, vm_anterior),
         "virtual_meeting_anterior": vm_anterior,
+        "calls": calls_periodo, "calls_delta": delta_pct(calls_periodo, calls_anterior), "calls_anterior": calls_anterior,
         "tareas_por_aprobar": pend_periodo, "tareas_por_aprobar_delta": delta_pct(pend_periodo, pend_anterior),
         "tareas_por_aprobar_anterior": pend_anterior,
     }
@@ -9099,7 +9101,7 @@ def crm_seccion(slug):
             )
             datos = resultado
             kpis = dict(resultado["kpis"])
-            for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting"):
+            for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting", "calls"):
                 kpis[f"{campo}_delta"] = None
                 kpis[f"{campo}_anterior"] = 0
             etiqueta_meses = {opt["value"]: opt["label"].split(" - ")[0] for opt in opciones_mes()}

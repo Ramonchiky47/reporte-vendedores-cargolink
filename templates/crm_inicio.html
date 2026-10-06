@@ -181,11 +181,6 @@
       {{ delta(kpis.bookings_delta, kpis.bookings_anterior, etiqueta_anterior) }}
     </div>
     <div class="kpi">
-      <div class="kpi__etiqueta">Venta cerrada</div>
-      <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.venta) }}</div>
-      {{ delta(kpis.venta_delta, '${:,.0f}'.format(kpis.venta_anterior), etiqueta_anterior) }}
-    </div>
-    <div class="kpi">
       <div class="kpi__etiqueta">Profit</div>
       <div class="kpi__valor">${{ '{:,.0f}'.format(kpis.profit) }}</div>
       {{ delta(kpis.profit_delta, '${:,.0f}'.format(kpis.profit_anterior), etiqueta_anterior) }}
@@ -209,6 +204,11 @@
       <div class="kpi__etiqueta">Virtual Meeting</div>
       <div class="kpi__valor">{{ kpis.virtual_meeting or 0 }}</div>
       {{ delta(kpis.virtual_meeting_delta, kpis.virtual_meeting_anterior or 0, etiqueta_anterior) }}
+    </div>
+    <div class="kpi">
+      <div class="kpi__etiqueta">Calls</div>
+      <div class="kpi__valor">{{ kpis.calls or 0 }}</div>
+      {{ delta(kpis.calls_delta, kpis.calls_anterior or 0, etiqueta_anterior) }}
     </div>
   </div>
 
