@@ -190,7 +190,7 @@
       <div class="kpi__valor">{{ kpis.clientes_nuevos }}</div>
       {{ delta(kpis.clientes_nuevos_delta, kpis.clientes_nuevos_anterior, etiqueta_anterior) }}
     </div>
-    <a class="kpi kpi-link" href="{{ url_for('crm_tareas') }}" title="Customer Facing Visit + Virtual Meeting capturadas en el periodo que aún no autoriza el Autorizador de Minutas">
+    <a class="kpi kpi-link" href="{{ url_for('crm_tareas', mes=mes_inicio) }}" title="Customer Facing Visit + Virtual Meeting capturadas en el periodo que aún no autoriza el Autorizador de Minutas">
       <div class="kpi__etiqueta">Tareas por aprobar</div>
       <div class="kpi__valor">{{ kpis.tareas_por_aprobar or 0 }}</div>
       <div class="kpi__delta neutro">{{ kpis.tareas_por_aprobar_anterior or 0 }} {{ etiqueta_anterior }}</div>
@@ -265,7 +265,7 @@
             <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max * 100) if profit_max else 0 }}%"></i></div></td>
             <td class="num">
               {% if r.cotizaciones > 0 %}
-              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}&desde={{ fecha_inicio }}&hasta={{ fecha_fin }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}
@@ -273,7 +273,7 @@
             {% set n_tareas = (r.customer_facing_visit or 0) + (r.virtual_meeting or 0) %}
             <td class="num">
               {% if n_tareas > 0 %}
-              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
+              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1&mes={{ mes_inicio }}" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}
@@ -309,7 +309,7 @@
             <td class="num">${{ '{:,.0f}'.format(r.profit) }}<div class="barra-mini"><i style="width:{{ (r.profit / profit_max_d * 100) if profit_max_d else 0 }}%"></i></div></td>
             <td class="num">
               {% if r.cotizaciones > 0 %}
-              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
+              <a class="chip-cot con-datos" href="{{ url_for('crm_seccion', slug='cotizaciones') }}?persona={{ r.nombre | urlencode }}&desde={{ fecha_inicio }}&hasta={{ fecha_fin }}" target="_blank" rel="noopener" title="Ver sus cotizaciones" onclick="event.stopPropagation();">{{ r.cotizaciones }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}
@@ -317,7 +317,7 @@
             {% set n_tareas = (r.customer_facing_visit or 0) + (r.virtual_meeting or 0) %}
             <td class="num">
               {% if n_tareas > 0 %}
-              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
+              <a class="chip-cot con-datos" href="{{ url_for('crm_tareas') }}?creador={{ r.nombre | urlencode }}&mostrar_autorizadas=1&mes={{ mes_inicio }}" target="_blank" rel="noopener" title="Tareas autorizadas creadas por esta persona · Customer Facing Visit: {{ r.customer_facing_visit or 0 }} · Virtual Meeting: {{ r.virtual_meeting or 0 }}" onclick="event.stopPropagation();">{{ n_tareas }}</a>
               {% else %}
               <span class="chip-cot sin-datos">—</span>
               {% endif %}

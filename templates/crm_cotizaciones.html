@@ -40,6 +40,7 @@
   }
   .filtro-estatus-cot input { margin: 0; }
   .filtro-plaza-vendedor { display: flex; align-items: center; gap: 0.5rem; }
+  .aviso-rango-cot { font-size: 0.8rem; color: #555; background: #eef4fc; border: 1px solid #c5d6ee; border-radius: 6px; padding: 0.4rem 0.7rem; margin: 0 0 0.8rem; }
   .filtro-plaza-vendedor select {
     padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.82rem; color: #333; background: #fff;
   }
@@ -91,6 +92,7 @@
       </select>
     </div>
   </div>
+  <p class="aviso-rango-cot" id="aviso-rango-cot" hidden>Creadas del <b id="rango-cot-desde"></b> al <b id="rango-cot-hasta"></b> (desde Inicio) · <a href="#" id="rango-cot-quitar">Quitar fechas</a></p>
 
   {% if cotizaciones %}
   <p class="pista"><span id="contador-cotizaciones-visibles">{{ cotizaciones|length }}</span> de {{ cotizaciones|length }} cotización(es).</p>
@@ -119,7 +121,7 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" onclick="abrirModalCotizacion('{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}')">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" data-fecha="{{ (c.fecha_creacion|string)[:10] }}" onclick="abrirModalCotizacion('{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}')">
           <td>
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
@@ -271,6 +273,26 @@
       if (personaUrl && Array.from(selectVendedor.options).some((o) => o.value === personaUrl)) {
         selectVendedor.value = personaUrl;
       }
+      // Rango de fechas de creación (?desde=YYYY-MM-DD&hasta=YYYY-MM-DD),
+      // que manda el chip de Inicio para respetar el periodo elegido allá.
+      // Con rango se marcan todos los estatus: el conteo de Inicio incluye
+      // ganadas y perdidas.
+      const paramsUrl = new URLSearchParams(window.location.search);
+      let rangoDesde = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('desde') || '') ? paramsUrl.get('desde') : '';
+      let rangoHasta = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('hasta') || '') ? paramsUrl.get('hasta') : '';
+      const avisoRango = document.getElementById('aviso-rango-cot');
+      if (rangoDesde && rangoHasta) {
+        checksEstatus.forEach((c) => { c.checked = true; });
+        document.getElementById('rango-cot-desde').textContent = rangoDesde;
+        document.getElementById('rango-cot-hasta').textContent = rangoHasta;
+        avisoRango.hidden = false;
+        document.getElementById('rango-cot-quitar').addEventListener('click', (e) => {
+          e.preventDefault();
+          rangoDesde = ''; rangoHasta = '';
+          avisoRango.hidden = true;
+          aplicarFiltros();
+        });
+      }
 
       function aplicarFiltros() {
         const termino = input.value.trim().toLowerCase();
@@ -283,7 +305,9 @@
           const coincideEstatus = estatusActivos.has(fila.dataset.estatus);
           const coincidePlaza = !plaza || fila.dataset.plaza === plaza;
           const coincideVendedor = !vendedor || fila.dataset.vendedor === vendedor;
-          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor;
+          const fecha = fila.dataset.fecha || '';
+          const coincideRango = !rangoDesde || (fecha >= rangoDesde && fecha <= rangoHasta);
+          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor && coincideRango;
           fila.hidden = !coincide;
           if (coincide) visibles += 1;
         });
