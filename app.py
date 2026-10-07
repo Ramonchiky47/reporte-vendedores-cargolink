@@ -148,6 +148,12 @@ def init_db():
     # Tareas sin autorización: las tareas que crea este usuario cuentan de
     # inmediato (se guardan ya autorizadas), sin pasar por el Autorizador.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS tareas_sin_autorizacion boolean not null default false;")
+    # Ver seguimientos de todos: gerentes/dirección que deben ver los
+    # Seguimientos (CRM → Seguimientos) de todos los usuarios.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS ver_seguimientos_todos boolean not null default false;")
+    # Ver seguimientos de su plaza: líderes de plaza (ven los Seguimientos
+    # de los vendedores de sus plazas permitidas).
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS ver_seguimientos_plaza boolean not null default false;")
     # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
     # correos de cobranza), antes exclusivo de es_admin.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
@@ -11420,6 +11426,16 @@ def crm_tareas():
     )
 
 
+def permisos_seguimientos(usuario_id):
+    """(ver_todos, ver_plaza) para CRM → Seguimientos."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT ver_seguimientos_todos, ver_seguimientos_plaza FROM app_user_permissions WHERE user_id = %s", (usuario_id,)
+    ).fetchone()
+    db.close()
+    return (bool(fila and fila["ver_seguimientos_todos"]), bool(fila and fila["ver_seguimientos_plaza"]))
+
+
 @app.route("/crm/seguimientos")
 @crm_required
 def crm_seguimientos():
@@ -11458,8 +11474,12 @@ def crm_seguimientos():
     # quien tiene gente a su cargo (Vendedores / Desarrolladores permitidos
     # en Catálogos → Visualización de Plazas) ve además los de su equipo; los
     # administradores ven todo.
-    es_admin = bool(permisos_frescos_usuario().get("es_admin"))
     usuario_id_actual = str(session.get("usuario_id") or "")
+    ver_todos, ver_plaza = permisos_seguimientos(usuario_id_actual) if usuario_id_actual else (False, False)
+    es_admin = bool(permisos_frescos_usuario().get("es_admin")) or ver_todos
+    # "Ver seguimientos de su plaza": la plaza del vendedor de la tarea o la
+    # del creador debe estar entre sus plazas permitidas.
+    plazas_equipo = set(plazas_permitidas or []) if ver_plaza else set()
     equipo = {normalizar(x) for x in (vendedores_permitidos_usuario() or [])} | {
         normalizar(x) for x in (desarrolladores_permitidos_usuario() or [])
     }
@@ -11469,6 +11489,11 @@ def crm_seguimientos():
         es_propia = bool(usuario_id_actual and str(f["creado_por_user_id"] or "") == usuario_id_actual)
         if not es_propia:
             if es_admin:
+                pass
+            elif plazas_equipo and (
+                plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_equipo
+                or plaza_por_vendedor.get(normalizar(creador_nombre)) in plazas_equipo
+            ):
                 pass
             elif not equipo or (normalizar(creador_nombre) not in equipo and normalizar(f["vendedor"]) not in equipo):
                 continue
@@ -11753,6 +11778,8 @@ PERMISOS_LISTA = [
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
     ("tareas_sin_autorizacion", "Tareas sin autorización"),
+    ("ver_seguimientos_todos", "Ver seguimientos de todos"),
+    ("ver_seguimientos_plaza", "Ver seguimientos de su plaza"),
     ("puede_ver_administracion", "Administración"),
     ("puede_ver_antiguedad_saldos", "Antigüedad de Saldos"),
 ]
@@ -11778,7 +11805,9 @@ def permisos_actualizar():
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
             coalesce(p.puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos,
-            coalesce(p.tareas_sin_autorizacion, false) AS tareas_sin_autorizacion
+            coalesce(p.tareas_sin_autorizacion, false) AS tareas_sin_autorizacion,
+            coalesce(p.ver_seguimientos_todos, false) AS ver_seguimientos_todos,
+            coalesce(p.ver_seguimientos_plaza, false) AS ver_seguimientos_plaza
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
