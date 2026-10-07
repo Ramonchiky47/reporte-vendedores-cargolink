@@ -11424,7 +11424,7 @@ def crm_seguimientos():
         normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
     }
     filas = db.execute("""
-        SELECT t.id, t.fecha, t.vendedor, t.tipo_contacto, t.prospecto_nombre, t.asunto, t.acuerdos,
+        SELECT t.id, t.fecha, t.vendedor, t.tipo_contacto, t.prospecto_nombre, t.asunto, t.acuerdos, t.creado_por_user_id,
                t.llamada_persona, t.llamada_telefono, t.autorizada,
                coalesce(t.fecha_proxima_llamada, t.fecha_compromiso) AS fecha_seguimiento,
                (t.fecha_proxima_llamada IS NOT NULL) AS es_llamada,
@@ -11443,16 +11443,30 @@ def crm_seguimientos():
     """).fetchall()
     db.close()
 
+    # Visibilidad: cada quien ve los seguimientos de las tareas que ÉL creó;
+    # quien tiene gente a su cargo (Vendedores / Desarrolladores permitidos
+    # en Catálogos → Visualización de Plazas) ve además los de su equipo; los
+    # administradores ven todo.
+    es_admin = bool(permisos_frescos_usuario().get("es_admin"))
+    usuario_id_actual = str(session.get("usuario_id") or "")
+    equipo = {normalizar(x) for x in (vendedores_permitidos_usuario() or [])} | {
+        normalizar(x) for x in (desarrolladores_permitidos_usuario() or [])
+    }
     pendientes = []
     for f in filas:
-        if plazas_permitidas is not None and plaza_por_vendedor.get(normalizar(f["vendedor"])) not in plazas_permitidas:
-            continue
-        if vendedor_forzado and normalizar(f["vendedor"]) != normalizar(vendedor_forzado):
-            continue
+        creador_nombre = f["creador_firma"] or f["creador_asociado"] or (nombre_desde_correo(f["creador_correo"]) if f["creador_correo"] else "Sin creador")
+        es_propia = bool(usuario_id_actual and str(f["creado_por_user_id"] or "") == usuario_id_actual)
+        if not es_propia:
+            if es_admin:
+                pass
+            elif not equipo or (normalizar(creador_nombre) not in equipo and normalizar(f["vendedor"]) not in equipo):
+                continue
+            elif plazas_permitidas is not None and plaza_por_vendedor.get(normalizar(f["vendedor"])) not in plazas_permitidas:
+                continue
         dias = (f["fecha_seguimiento"] - hoy).days
         pendientes.append({
             **f,
-            "creador_nombre": f["creador_firma"] or f["creador_asociado"] or (nombre_desde_correo(f["creador_correo"]) if f["creador_correo"] else "Sin creador"),
+            "creador_nombre": creador_nombre,
             "plaza": plaza_por_vendedor.get(normalizar(f["vendedor"])) or "",
             "contacto": f["llamada_persona"] or f["cliente_nombre"] or f["prospecto_nombre"] or "—",
             "dias": dias,
