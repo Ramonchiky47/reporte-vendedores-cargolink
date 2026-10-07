@@ -34,7 +34,7 @@ import psycopg
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from flask import Flask, flash, g, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 from flask_wtf import CSRFProtect
 from markupsafe import Markup, escape
 from psycopg.rows import dict_row
@@ -775,6 +775,19 @@ def init_db():
             subido_por text,
             creado_en timestamptz not null default now()
         );
+    """)
+    # Origen del adjunto: 'vendedor' (al crear/editar la solicitud) o
+    # 'pricing' (al responder). Los existentes se infieren por quién lo subió.
+    db.execute("ALTER TABLE crm_solicitudes_transporte_nacional_archivos ADD COLUMN IF NOT EXISTS origen text;")
+    db.execute("""
+        UPDATE crm_solicitudes_transporte_nacional_archivos a
+        SET origen = CASE
+            WHEN EXISTS (SELECT 1 FROM crm_solicitudes_transporte_nacional_respuestas r
+                         WHERE r.solicitud_id = a.solicitud_id AND r.creado_en = a.creado_en) THEN 'pricing'
+            WHEN lower(coalesce(a.subido_por, '')) = lower(coalesce(s.creado_por, '')) THEN 'vendedor'
+            ELSE 'pricing' END
+        FROM crm_solicitudes_transporte_nacional s
+        WHERE s.id = a.solicitud_id AND a.origen IS NULL;
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_nacional_comentarios (
@@ -8446,7 +8459,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     """, (cotizacion_id,)).fetchall()
     archivos_tn_por_solicitud = {}
     for a in db.execute("""
-        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por
+        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por, a.origen, a.creado_en
         FROM crm_solicitudes_transporte_nacional_archivos a
         JOIN crm_solicitudes_transporte_nacional s ON s.id = a.solicitud_id
         WHERE s.cotizacion_id = %s
@@ -8454,6 +8467,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     """, (cotizacion_id,)).fetchall():
         archivos_tn_por_solicitud.setdefault(a["solicitud_id"], []).append({
             "id": a["id"], "nombre": a["nombre_archivo"], "subido_por": a["subido_por"] or "",
+            "origen": a["origen"] or "vendedor", "creado_en": a["creado_en"],
             "es_imagen": a["nombre_archivo"].lower().endswith((".png", ".jpg", ".jpeg")),
         })
     db.close()
@@ -9757,7 +9771,7 @@ TN_ARCHIVO_MAX_BYTES = 4 * 1024 * 1024
 TN_ARCHIVO_EXTENSIONES = {"pdf", "png", "jpg", "jpeg", "xlsx", "xls", "docx", "doc", "csv", "txt"}
 
 
-def guardar_archivos_transporte_nacional(db, solicitud_id, archivos):
+def guardar_archivos_transporte_nacional(db, solicitud_id, archivos, origen="vendedor"):
     """Guarda los adjuntos de una solicitud de Transporte Nacional. Regresa
     (guardados, errores) — los inválidos se saltan sin bloquear el resto."""
     guardados, errores, total = 0, [], 0
@@ -9778,9 +9792,9 @@ def guardar_archivos_transporte_nacional(db, solicitud_id, archivos):
             continue
         tipo_mime = archivo.mimetype or mimetypes.guess_type(nombre)[0] or "application/octet-stream"
         db.execute("""
-            INSERT INTO crm_solicitudes_transporte_nacional_archivos (solicitud_id, nombre_archivo, tipo_mime, contenido, subido_por)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (solicitud_id, nombre, tipo_mime, contenido, session.get("usuario", "")))
+            INSERT INTO crm_solicitudes_transporte_nacional_archivos (solicitud_id, nombre_archivo, tipo_mime, contenido, subido_por, origen)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (solicitud_id, nombre, tipo_mime, contenido, session.get("usuario", ""), origen))
         guardados += 1
     return guardados, errores
 
@@ -10549,7 +10563,7 @@ def transporte_nacional_responder(solicitud_id):
             INSERT INTO crm_solicitudes_transporte_nacional_respuestas (solicitud_id, respuesta, respondido_por)
             VALUES (%s, %s, %s)
         """, (solicitud_id, respuesta, usuario))
-    _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"))
+    _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"), origen="pricing")
     db.commit()
     db.close()
     flash("Solicitud actualizada.")
@@ -10680,6 +10694,28 @@ def transporte_nacional_pdf(solicitud_id):
         buffer, as_attachment=request.args.get("descargar") == "1",
         download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
     )
+
+
+@app.route("/transporte-nacional/<int:solicitud_id>/visto", methods=["POST"])
+@login_required
+def transporte_nacional_marcar_visto(solicitud_id):
+    """Lo llama la ventana de archivos de la cotización al abrirse: quita el
+    aviso de "Nuevo" igual que abrir el PDF (transporte_nacional_ver)."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT id, referencia, cotizacion_id FROM crm_solicitudes_transporte_nacional WHERE id = %s",
+        (solicitud_id,),
+    ).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_nacional(db, fila):
+        db.close()
+        return jsonify({"ok": False}), 404
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_nacional SET visto_por_vendedor_en = now() WHERE id = %s",
+        (solicitud_id,),
+    )
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/transporte-nacional/<int:solicitud_id>/ver")
