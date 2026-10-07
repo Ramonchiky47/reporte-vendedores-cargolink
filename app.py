@@ -11200,6 +11200,20 @@ def crm_tareas():
             """, {**datos, "creado_por_user_id": creador_id, "autorizada": sin_autorizacion,
                   "autorizado_por_user_id": creador_id if sin_autorizacion else None})
                 db.commit()
+                # Confirmación visible y que la tarea recién guardada se vea:
+                # se regresa al mes de la tarea y, si quedó autorizada sola
+                # (Tareas sin autorización), con "Mostrar autorizadas".
+                flash("Tarea guardada" + (" y autorizada automáticamente." if sin_autorizacion else "; queda pendiente de autorizar."))
+                mes_redirect = datos["fecha"][:7] if datos.get("fecha") else request.form.get("mes", "")
+                db.close()
+                return redirect(url_for(
+                    "crm_tareas", mes=mes_redirect,
+                    mostrar_autorizadas="1" if sin_autorizacion else request.form.get("mostrar_autorizadas", ""),
+                    plaza=request.form.get("plaza", ""),
+                    actividad=request.form.getlist("actividad_filtro"),
+                    vendedor=request.form.get("vendedor_filtro", ""),
+                    creador=request.form.get("creador_filtro", ""),
+                ))
         db.close()
         return redirect(url_for(
             "crm_tareas", mes=request.form.get("mes", ""),
