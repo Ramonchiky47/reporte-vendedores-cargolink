@@ -145,6 +145,9 @@ def init_db():
     # solo se le agrega esta columna (aditivo, no rompe su propio código) para
     # el nuevo permiso de Autorizador de Minutas (CRM → Tareas).
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_autorizar_minutas boolean not null default false;")
+    # Tareas sin autorización: las tareas que crea este usuario cuentan de
+    # inmediato (se guardan ya autorizadas), sin pasar por el Autorizador.
+    db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS tareas_sin_autorizacion boolean not null default false;")
     # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
     # correos de cobranza), antes exclusivo de es_admin.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
@@ -11134,15 +11137,22 @@ def crm_tareas():
                 db.rollback()
                 flash("Esta tarea ya estaba registrada; no se guardó de nuevo.")
             else:
+                creador_id = session.get("usuario_id") or None
+                sin_autorizacion = bool(creador_id and db.execute(
+                    "SELECT 1 FROM app_user_permissions WHERE user_id = %s AND tareas_sin_autorizacion", (creador_id,)
+                ).fetchone())
                 db.execute("""
                 INSERT INTO crm_tareas (
                     actividad_id, vendedor, fecha, tipo_contacto, cliente_folio, prospecto_nombre,
-                    asistentes, asunto, acuerdos, responsables, fecha_compromiso, creado_por_user_id
+                    asistentes, asunto, acuerdos, responsables, fecha_compromiso, creado_por_user_id,
+                    autorizada, autorizado_por_user_id, autorizado_en
                 ) VALUES (
                     %(actividad_id)s, %(vendedor)s, %(fecha)s, %(tipo_contacto)s, %(cliente_folio)s, %(prospecto_nombre)s,
-                    %(asistentes)s, %(asunto)s, %(acuerdos)s, %(responsables)s, %(fecha_compromiso)s, %(creado_por_user_id)s
+                    %(asistentes)s, %(asunto)s, %(acuerdos)s, %(responsables)s, %(fecha_compromiso)s, %(creado_por_user_id)s,
+                    %(autorizada)s, %(autorizado_por_user_id)s, CASE WHEN %(autorizada)s THEN now() END
                 )
-            """, {**datos, "creado_por_user_id": session.get("usuario_id") or None})
+            """, {**datos, "creado_por_user_id": creador_id, "autorizada": sin_autorizacion,
+                  "autorizado_por_user_id": creador_id if sin_autorizacion else None})
                 db.commit()
         db.close()
         return redirect(url_for(
@@ -11528,6 +11538,7 @@ PERMISOS_LISTA = [
     ("puede_ver_catalogos", "Catálogos"),
     ("puede_actualizar", "Actualizar"),
     ("puede_autorizar_minutas", "Autorizador de Minutas"),
+    ("tareas_sin_autorizacion", "Tareas sin autorización"),
     ("puede_ver_administracion", "Administración"),
     ("puede_ver_antiguedad_saldos", "Antigüedad de Saldos"),
 ]
@@ -11552,7 +11563,8 @@ def permisos_actualizar():
             coalesce(p.puede_transporte_nacional, false) AS puede_transporte_nacional,
             coalesce(p.puede_autorizar_minutas, false) AS puede_autorizar_minutas,
             coalesce(p.puede_ver_administracion, false) AS puede_ver_administracion,
-            coalesce(p.puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos
+            coalesce(p.puede_ver_antiguedad_saldos, false) AS puede_ver_antiguedad_saldos,
+            coalesce(p.tareas_sin_autorizacion, false) AS tareas_sin_autorizacion
         FROM auth.users u
         LEFT JOIN public.app_user_permissions p ON p.user_id = u.id
         ORDER BY u.email
