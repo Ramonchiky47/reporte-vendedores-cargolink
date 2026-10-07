@@ -11104,7 +11104,7 @@ def _leer_formulario_tarea(db):
         error = "Captura el asunto / observaciones de la llamada."
     elif vendedor_forzado_usuario() and normalizar(vendedor) != normalizar(vendedor_forzado_usuario()):
         error = "Solo puedes registrar tareas a tu propio nombre."
-    elif not es_bitacora:
+    elif not (es_bitacora or es_llamada):
         pass
     elif tipo_contacto not in ("cliente", "prospecto"):
         error = "Indica si es Cliente o Prospecto."
@@ -11112,7 +11112,7 @@ def _leer_formulario_tarea(db):
         error = "Elige un cliente del catálogo."
     elif tipo_contacto == "prospecto" and not prospecto_nombre:
         error = "Captura el nombre del prospecto (máx. 100 caracteres)."
-    elif not asunto:
+    elif es_bitacora and not asunto:
         error = "Captura el asunto."
     elif vendedor_forzado_usuario() and normalizar(vendedor) != normalizar(vendedor_forzado_usuario()):
         error = "Solo puedes registrar tareas a tu propio nombre."
@@ -11128,8 +11128,11 @@ def _leer_formulario_tarea(db):
         }
     else:
         datos = {
-            "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": None,
-            "cliente_folio": None, "prospecto_nombre": None, "asistentes": "[]",
+            "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha,
+            "tipo_contacto": tipo_contacto if es_llamada else None,
+            "cliente_folio": cliente_folio if es_llamada and tipo_contacto == "cliente" else None,
+            "prospecto_nombre": prospecto_nombre if es_llamada and tipo_contacto == "prospecto" else None,
+            "asistentes": "[]",
             "asunto": (llamada_asunto or None) if es_llamada else None, "acuerdos": None,
             "responsables": None, "fecha_compromiso": None,
             "llamada_persona": llamada_persona or None if es_llamada else None,
@@ -11468,7 +11471,7 @@ def crm_seguimientos():
             **f,
             "creador_nombre": creador_nombre,
             "plaza": plaza_por_vendedor.get(normalizar(f["vendedor"])) or "",
-            "contacto": f["llamada_persona"] or f["cliente_nombre"] or f["prospecto_nombre"] or "—",
+            "contacto": f["cliente_nombre"] or f["prospecto_nombre"] or f["llamada_persona"] or "—",
             "dias": dias,
             "urgencia": "vencido" if dias < 0 else ("hoy" if dias == 0 else ("semana" if dias <= 7 else "despues")),
         })

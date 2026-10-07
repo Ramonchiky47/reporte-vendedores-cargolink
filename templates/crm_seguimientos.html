@@ -85,7 +85,7 @@
         <td class="seg-tipo">{{ '📞 Próxima llamada' if p.es_llamada else 'Compromiso · ' ~ (p.actividad|title) }}</td>
         <td>
           {{ p.contacto }}
-          {% if p.llamada_telefono %}<div class="seg-sub">{{ p.llamada_telefono }}</div>{% endif %}
+          {% if p.llamada_persona and p.llamada_persona != p.contacto %}<div class="seg-sub">📞 {{ p.llamada_persona }}{% if p.llamada_telefono %} · {{ p.llamada_telefono }}{% endif %}</div>{% elif p.llamada_telefono %}<div class="seg-sub">{{ p.llamada_telefono }}</div>{% endif %}
           <div class="seg-sub">Vendedor: {{ p.vendedor }}{% if p.plaza %} · {{ p.plaza }}{% endif %}</div>
         </td>
         <td class="seg-asunto">{{ p.asunto or '—' }}{% if p.acuerdos %}<div class="seg-sub">{{ p.acuerdos|truncate(140) }}</div>{% endif %}</td>

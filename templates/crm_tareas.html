@@ -195,7 +195,7 @@
         <input type="date" id="fecha" name="fecha" value="{{ hoy_iso }}" required>
       </div>
 
-      <div class="bloque-bitacora" id="bloque-bitacora">
+      <div class="bloque-bitacora" id="bloque-contacto">
         <div class="campo campo--ancho">
           <label>¿Cliente o Prospecto?</label>
           <div class="campo-radio">
@@ -213,6 +213,8 @@
           <label for="prospecto_nombre">Prospecto</label>
           <input type="text" id="prospecto_nombre" name="prospecto_nombre" maxlength="100" placeholder="Nombre del prospecto (máx. 100 caracteres)">
         </div>
+      </div>
+      <div class="bloque-bitacora" id="bloque-bitacora">
         <div class="campo campo--ancho">
           <label>Asistentes y Compañía</label>
           <div id="lista-asistentes">
@@ -284,7 +286,7 @@
           <td>{{ t.vendedor }}</td>
           <td class="col-creador">{% if t.creador_correo %}{{ t.creador_nombre }}<div class="creador-correo">{{ t.creador_correo }}</div>{% else %}—{% endif %}</td>
           <td>{{ t.actividad }}</td>
-          <td class="col-contacto">{% if t.llamada_persona %}📞 {{ t.llamada_persona }}{% if t.llamada_telefono %}<div class="creador-correo">{{ t.llamada_telefono }}</div>{% endif %}{% else %}{{ (t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre) or '—' }}{% endif %}</td>
+          <td class="col-contacto">{{ (t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre) or ('' if t.llamada_persona else '—') }}{% if t.llamada_persona %}<div class="creador-correo">📞 {{ t.llamada_persona }}{% if t.llamada_telefono %} · {{ t.llamada_telefono }}{% endif %}</div>{% endif %}</td>
           <td>{{ t.asunto }}</td>
           <td>
             {% if t.asistentes %}
@@ -353,6 +355,7 @@
       const requiereBitacora = ACTIVIDADES_CON_BITACORA.includes(nombre);
       const esLlamada = nombre === 'CALLS';
       bloqueBitacora.classList.toggle('visible', requiereBitacora);
+      document.getElementById('bloque-contacto').classList.toggle('visible', requiereBitacora || esLlamada);
       document.getElementById('bloque-llamada').classList.toggle('visible', esLlamada);
       avisoSinBitacora.style.display = (requiereBitacora || esLlamada || !nombre) ? 'none' : '';
       document.getElementById('asunto').required = requiereBitacora;
@@ -406,8 +409,9 @@
       const esCliente = document.querySelector('input[name="tipo_contacto"]:checked').value === 'cliente';
       campoCliente.style.display = esCliente ? '' : 'none';
       campoProspecto.style.display = esCliente ? 'none' : '';
-      selCliente.required = esCliente && bloqueBitacora.classList.contains('visible');
-      document.getElementById('prospecto_nombre').required = !esCliente && bloqueBitacora.classList.contains('visible');
+      const conContacto = document.getElementById('bloque-contacto').classList.contains('visible');
+      selCliente.required = esCliente && conContacto;
+      document.getElementById('prospecto_nombre').required = !esCliente && conContacto;
     }
     radiosContacto.forEach(r => r.addEventListener('change', actualizarTipoContacto));
     actualizarTipoContacto();
