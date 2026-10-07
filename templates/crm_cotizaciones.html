@@ -92,7 +92,7 @@
       </select>
     </div>
   </div>
-  <p class="aviso-rango-cot" id="aviso-rango-cot" hidden>Creadas del <b id="rango-cot-desde"></b> al <b id="rango-cot-hasta"></b> (desde Inicio) · <a href="#" id="rango-cot-quitar">Quitar fechas</a></p>
+  <p class="aviso-rango-cot" id="aviso-rango-cot" hidden><b id="rango-cot-creador"></b><span id="rango-cot-fechas"> del <b id="rango-cot-desde"></b> al <b id="rango-cot-hasta"></b></span> (desde Inicio) · <a href="#" id="rango-cot-quitar">Quitar filtro</a></p>
 
   {% if cotizaciones %}
   <p class="pista"><span id="contador-cotizaciones-visibles">{{ cotizaciones|length }}</span> de {{ cotizaciones|length }} cotización(es).</p>
@@ -121,7 +121,7 @@
       </thead>
       <tbody id="tabla-cotizaciones-cuerpo">
         {% for c in cotizaciones %}
-        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" data-fecha="{{ (c.fecha_creacion|string)[:10] }}" onclick="abrirModalCotizacion('{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}')">
+        <tr class="{{ 'fila-ganada' if c.estatus == 'ganada' else '' }}" data-estatus="{{ c.estatus }}" data-plaza="{{ c.plaza }}" data-vendedor="{{ c.vendedor }}" data-fecha="{{ (c.fecha_creacion|string)[:10] }}" data-creador="{{ c.creador }}" onclick="abrirModalCotizacion('{{ url_for('crm_cotizacion_detalle', cotizacion_id=c.id) }}')">
           <td>
             <span class="badge-estatus {{ c.estatus }}">
               {{ {"vigente": "Vigente", "vencido": "Vencido", "ganada": "Ganada", "perdida": "Perdida"}[c.estatus] }}
@@ -269,10 +269,11 @@
       // desarrollador, porque data-vendedor ya trae la identidad del
       // creador en cotizaciones de prospecto (mismo criterio que usa el
       // ranking de Inicio).
-      const personaUrl = new URLSearchParams(window.location.search).get('persona');
-      if (personaUrl && Array.from(selectVendedor.options).some((o) => o.value === personaUrl)) {
-        selectVendedor.value = personaUrl;
-      }
+      // El chip de Inicio cuenta por QUIÉN CREÓ la cotización, así que con
+      // ?persona= se filtra por creador (data-creador), no por el vendedor
+      // del cliente.
+      let creadorFiltro = (new URLSearchParams(window.location.search).get('persona') || '').trim();
+      const normalizarTexto = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
       // Rango de fechas de creación (?desde=YYYY-MM-DD&hasta=YYYY-MM-DD),
       // que manda el chip de Inicio para respetar el periodo elegido allá.
       // Con rango se marcan todos los estatus: el conteo de Inicio incluye
@@ -281,14 +282,16 @@
       let rangoDesde = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('desde') || '') ? paramsUrl.get('desde') : '';
       let rangoHasta = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('hasta') || '') ? paramsUrl.get('hasta') : '';
       const avisoRango = document.getElementById('aviso-rango-cot');
-      if (rangoDesde && rangoHasta) {
-        checksEstatus.forEach((c) => { c.checked = true; });
+      if ((rangoDesde && rangoHasta) || creadorFiltro) {
+        if (rangoDesde && rangoHasta) checksEstatus.forEach((c) => { c.checked = true; });
+        document.getElementById('rango-cot-creador').textContent = creadorFiltro ? 'Creadas por ' + creadorFiltro : 'Creadas';
+        document.getElementById('rango-cot-fechas').hidden = !(rangoDesde && rangoHasta);
         document.getElementById('rango-cot-desde').textContent = rangoDesde;
         document.getElementById('rango-cot-hasta').textContent = rangoHasta;
         avisoRango.hidden = false;
         document.getElementById('rango-cot-quitar').addEventListener('click', (e) => {
           e.preventDefault();
-          rangoDesde = ''; rangoHasta = '';
+          rangoDesde = ''; rangoHasta = ''; creadorFiltro = '';
           avisoRango.hidden = true;
           aplicarFiltros();
         });
@@ -307,7 +310,8 @@
           const coincideVendedor = !vendedor || fila.dataset.vendedor === vendedor;
           const fecha = fila.dataset.fecha || '';
           const coincideRango = !rangoDesde || (fecha >= rangoDesde && fecha <= rangoHasta);
-          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor && coincideRango;
+          const coincideCreador = !creadorFiltro || normalizarTexto(fila.dataset.creador) === normalizarTexto(creadorFiltro);
+          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor && coincideRango && coincideCreador;
           fila.hidden = !coincide;
           if (coincide) visibles += 1;
         });

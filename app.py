@@ -6664,8 +6664,16 @@ def construir_cotizaciones_crm(
             else "pendiente" if r["pricing_estado_mas_reciente"]
             else None
         )
+        # Quién creó la cotización, con la misma identidad que usa CRM →
+        # Inicio para contarla (vendedor/desarrollador asociado a la cuenta,
+        # luego firma/correo) — para que el chip de Inicio filtre lo mismo.
+        creador_identidad = (
+            r["creador_vendedor_asociado"] or r["creador_desarrollador_asociado"]
+            or quitar_titulo(r["nombre_firma"]) or nombre_desde_correo(r["creador_correo"]) or ""
+        )
         resultado.append({
             "id": r["id"],
+            "creador": creador_identidad,
             "pricing_estado": pricing_estado,
             "id_cotizacion": r["id_cotizacion"],
             "nombre_cotizacion": r["nombre_cotizacion"] or "",
