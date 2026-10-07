@@ -232,6 +232,24 @@
           <input type="date" id="fecha_compromiso" name="fecha_compromiso">
         </div>
       </div>
+      <div class="bloque-bitacora" id="bloque-llamada">
+        <div class="campo campo--ancho">
+          <label for="llamada_persona">Persona a la que se llamó</label>
+          <textarea id="llamada_persona" name="llamada_persona" rows="2" placeholder="Nombre, puesto, empresa..."></textarea>
+        </div>
+        <div class="campo">
+          <label for="llamada_telefono">Teléfono</label>
+          <input type="text" id="llamada_telefono" name="llamada_telefono" maxlength="50" autocomplete="off">
+        </div>
+        <div class="campo">
+          <label for="fecha_proxima_llamada">Fecha de próxima llamada</label>
+          <input type="date" id="fecha_proxima_llamada" name="fecha_proxima_llamada">
+        </div>
+        <div class="campo campo--ancho">
+          <label for="llamada_asunto">Asunto / Observaciones</label>
+          <textarea id="llamada_asunto" name="llamada_asunto" rows="4"></textarea>
+        </div>
+      </div>
       <p class="aviso-sin-bitacora" id="aviso-sin-bitacora">Esta actividad no requiere el detalle de Cliente/Prospecto — solo Vendedor y Fecha.</p>
 
       <div class="form-acciones">
@@ -257,7 +275,7 @@
           <td>{{ t.vendedor }}</td>
           <td class="col-creador">{% if t.creador_correo %}{{ t.creador_nombre }}<div class="creador-correo">{{ t.creador_correo }}</div>{% else %}—{% endif %}</td>
           <td>{{ t.actividad }}</td>
-          <td class="col-contacto">{{ t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre }}</td>
+          <td class="col-contacto">{% if t.llamada_persona %}📞 {{ t.llamada_persona }}{% if t.llamada_telefono %}<div class="creador-correo">{{ t.llamada_telefono }}</div>{% endif %}{% else %}{{ (t.cliente_nombre if t.tipo_contacto == 'cliente' else t.prospecto_nombre) or '—' }}{% endif %}</td>
           <td>{{ t.asunto }}</td>
           <td>
             {% if t.asistentes %}
@@ -267,7 +285,7 @@
             {% else %}—{% endif %}
           </td>
           <td class="col-acuerdos" title="{{ t.acuerdos or '' }}">{{ t.acuerdos or '—' }}</td>
-          <td>{{ t.fecha_compromiso or '—' }}</td>
+          <td>{% if t.fecha_proxima_llamada %}<span title="Próxima llamada">📞 {{ t.fecha_proxima_llamada }}</span>{% else %}{{ t.fecha_compromiso or '—' }}{% endif %}</td>
           <td>
             {% if t.autorizada %}
               <span class="badge-autorizada" title="Autorizada por {{ t.autorizador_nombre }}">Autorizada</span>
@@ -324,11 +342,15 @@
       const opt = selActividad.options[selActividad.selectedIndex];
       const nombre = opt ? (opt.dataset.nombre || '') : '';
       const requiereBitacora = ACTIVIDADES_CON_BITACORA.includes(nombre);
+      const esLlamada = nombre === 'CALLS';
       bloqueBitacora.classList.toggle('visible', requiereBitacora);
-      avisoSinBitacora.style.display = requiereBitacora ? 'none' : '';
+      document.getElementById('bloque-llamada').classList.toggle('visible', esLlamada);
+      avisoSinBitacora.style.display = (requiereBitacora || esLlamada || !nombre) ? 'none' : '';
       document.getElementById('asunto').required = requiereBitacora;
+      document.getElementById('llamada_persona').required = esLlamada;
+      document.getElementById('llamada_asunto').required = esLlamada;
     }
-    selActividad.addEventListener('change', actualizarBitacora);
+    selActividad.addEventListener('change', () => { actualizarBitacora(); actualizarTipoContacto(); });
     actualizarBitacora();
 
     const selVendedor = document.getElementById('vendedor');
@@ -421,6 +443,10 @@
       document.getElementById('acuerdos').value = t.acuerdos || '';
       document.getElementById('responsables').value = t.responsables || '';
       document.getElementById('fecha_compromiso').value = t.fecha_compromiso || '';
+      document.getElementById('llamada_persona').value = t.llamada_persona || '';
+      document.getElementById('llamada_telefono').value = t.llamada_telefono || '';
+      document.getElementById('fecha_proxima_llamada').value = t.fecha_proxima_llamada || '';
+      document.getElementById('llamada_asunto').value = t.asunto || '';
       actualizarBitacora();
       panel.classList.add('abierto');
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });

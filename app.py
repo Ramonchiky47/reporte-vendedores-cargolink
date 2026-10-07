@@ -646,6 +646,13 @@ def init_db():
     """)
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS responsables text;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS fecha_compromiso date;")
+    # Calls: persona a la que se llamó, teléfono y fecha de la próxima
+    # llamada (el "Asunto / Observaciones" se guarda en asunto). Una llamada
+    # no lleva Cliente/Prospecto, así que tipo_contacto puede ir vacío.
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS llamada_persona text;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS llamada_telefono varchar(50);")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS fecha_proxima_llamada date;")
+    db.execute("ALTER TABLE crm_tareas ALTER COLUMN tipo_contacto DROP NOT NULL;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizada boolean not null default false;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_por_user_id uuid;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_en timestamptz;")
@@ -11043,6 +11050,7 @@ def crm_actividad_eliminar(actividad_id):
 
 
 ACTIVIDADES_CON_BITACORA = {"VIRTUAL MEETING", "CUSTOMER FACING VISIT"}
+ACTIVIDAD_LLAMADA = "CALLS"
 
 
 def _leer_formulario_tarea(db):
@@ -11067,14 +11075,30 @@ def _leer_formulario_tarea(db):
     responsables = request.form.get("responsables", "").strip()
     fecha_compromiso = fecha_valida_o_vacia(request.form.get("fecha_compromiso", ""))
 
+    llamada_persona = request.form.get("llamada_persona", "").strip()
+    llamada_telefono = request.form.get("llamada_telefono", "").strip()[:50]
+    llamada_asunto = request.form.get("llamada_asunto", "").strip()
+    fecha_proxima_llamada = fecha_valida_o_vacia(request.form.get("fecha_proxima_llamada", ""))
+
     error = None
-    actividad = db.execute("SELECT id FROM crm_actividades WHERE id = %s", (actividad_id,)).fetchone() if actividad_id else None
+    actividad = db.execute("SELECT id, nombre FROM crm_actividades WHERE id = %s", (actividad_id,)).fetchone() if actividad_id else None
+    nombre_actividad = (actividad["nombre"] or "").strip().upper() if actividad else ""
+    es_bitacora = nombre_actividad in ACTIVIDADES_CON_BITACORA
+    es_llamada = nombre_actividad == ACTIVIDAD_LLAMADA
     if not actividad:
         error = "Elige una actividad válida."
     elif not vendedor:
         error = "Elige un vendedor."
     elif not fecha:
         error = "Captura una fecha válida."
+    elif es_llamada and not llamada_persona:
+        error = "Captura la persona a la que se llamó."
+    elif es_llamada and not llamada_asunto:
+        error = "Captura el asunto / observaciones de la llamada."
+    elif vendedor_forzado_usuario() and normalizar(vendedor) != normalizar(vendedor_forzado_usuario()):
+        error = "Solo puedes registrar tareas a tu propio nombre."
+    elif not es_bitacora:
+        pass
     elif tipo_contacto not in ("cliente", "prospecto"):
         error = "Indica si es Cliente o Prospecto."
     elif tipo_contacto == "cliente" and not cliente_folio:
@@ -11086,13 +11110,25 @@ def _leer_formulario_tarea(db):
     elif vendedor_forzado_usuario() and normalizar(vendedor) != normalizar(vendedor_forzado_usuario()):
         error = "Solo puedes registrar tareas a tu propio nombre."
 
-    datos = {
-        "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": tipo_contacto,
-        "cliente_folio": cliente_folio if tipo_contacto == "cliente" else None,
-        "prospecto_nombre": prospecto_nombre if tipo_contacto == "prospecto" else None,
-        "asistentes": json.dumps(asistentes), "asunto": asunto, "acuerdos": acuerdos or None,
-        "responsables": responsables or None, "fecha_compromiso": fecha_compromiso or None,
-    }
+    if es_bitacora:
+        datos = {
+            "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": tipo_contacto,
+            "cliente_folio": cliente_folio if tipo_contacto == "cliente" else None,
+            "prospecto_nombre": prospecto_nombre if tipo_contacto == "prospecto" else None,
+            "asistentes": json.dumps(asistentes), "asunto": asunto, "acuerdos": acuerdos or None,
+            "responsables": responsables or None, "fecha_compromiso": fecha_compromiso or None,
+            "llamada_persona": None, "llamada_telefono": None, "fecha_proxima_llamada": None,
+        }
+    else:
+        datos = {
+            "actividad_id": actividad_id, "vendedor": vendedor, "fecha": fecha, "tipo_contacto": None,
+            "cliente_folio": None, "prospecto_nombre": None, "asistentes": "[]",
+            "asunto": (llamada_asunto or None) if es_llamada else None, "acuerdos": None,
+            "responsables": None, "fecha_compromiso": None,
+            "llamada_persona": llamada_persona or None if es_llamada else None,
+            "llamada_telefono": llamada_telefono or None if es_llamada else None,
+            "fecha_proxima_llamada": fecha_proxima_llamada or None if es_llamada else None,
+        }
     return datos, error
 
 
@@ -11124,13 +11160,16 @@ def crm_tareas():
             duplicada = db.execute("""
                 SELECT 1 FROM crm_tareas
                 WHERE vendedor = %(vendedor)s AND actividad_id = %(actividad_id)s AND fecha = %(fecha)s
-                  AND tipo_contacto = %(tipo_contacto)s
+                  AND tipo_contacto IS NOT DISTINCT FROM %(tipo_contacto)s
                   AND cliente_folio IS NOT DISTINCT FROM %(cliente_folio)s
                   AND prospecto_nombre IS NOT DISTINCT FROM %(prospecto_nombre)s
                   AND asistentes = %(asistentes)s AND asunto IS NOT DISTINCT FROM %(asunto)s
                   AND acuerdos IS NOT DISTINCT FROM %(acuerdos)s
                   AND responsables IS NOT DISTINCT FROM %(responsables)s
                   AND fecha_compromiso IS NOT DISTINCT FROM %(fecha_compromiso)s::date
+                  AND llamada_persona IS NOT DISTINCT FROM %(llamada_persona)s
+                  AND llamada_telefono IS NOT DISTINCT FROM %(llamada_telefono)s
+                  AND fecha_proxima_llamada IS NOT DISTINCT FROM %(fecha_proxima_llamada)s::date
                 LIMIT 1
             """, datos).fetchone()
             if duplicada:
@@ -11145,11 +11184,13 @@ def crm_tareas():
                 INSERT INTO crm_tareas (
                     actividad_id, vendedor, fecha, tipo_contacto, cliente_folio, prospecto_nombre,
                     asistentes, asunto, acuerdos, responsables, fecha_compromiso, creado_por_user_id,
-                    autorizada, autorizado_por_user_id, autorizado_en
+                    autorizada, autorizado_por_user_id, autorizado_en,
+                    llamada_persona, llamada_telefono, fecha_proxima_llamada
                 ) VALUES (
                     %(actividad_id)s, %(vendedor)s, %(fecha)s, %(tipo_contacto)s, %(cliente_folio)s, %(prospecto_nombre)s,
                     %(asistentes)s, %(asunto)s, %(acuerdos)s, %(responsables)s, %(fecha_compromiso)s, %(creado_por_user_id)s,
-                    %(autorizada)s, %(autorizado_por_user_id)s, CASE WHEN %(autorizada)s THEN now() END
+                    %(autorizada)s, %(autorizado_por_user_id)s, CASE WHEN %(autorizada)s THEN now() END,
+                    %(llamada_persona)s, %(llamada_telefono)s, %(fecha_proxima_llamada)s::date
                 )
             """, {**datos, "creado_por_user_id": creador_id, "autorizada": sin_autorizacion,
                   "autorizado_por_user_id": creador_id if sin_autorizacion else None})
@@ -11200,6 +11241,7 @@ def crm_tareas():
         SELECT t.id, t.actividad_id, t.fecha, t.vendedor, t.tipo_contacto, t.cliente_folio,
                t.prospecto_nombre, t.asistentes,
                t.asunto, t.acuerdos, t.responsables, t.fecha_compromiso, t.autorizada, t.autorizado_en,
+               t.llamada_persona, t.llamada_telefono, t.fecha_proxima_llamada,
                a.nombre AS actividad, ac.razon_social AS cliente_nombre,
                af.nombre_firma AS autorizador_firma, au.email AS autorizador_correo,
                cf.nombre_firma AS creador_firma, cu.email AS creador_correo,
@@ -11307,6 +11349,8 @@ def crm_tareas():
             "prospecto_nombre": t["prospecto_nombre"], "asistentes": t["asistentes"],
             "asunto": t["asunto"], "acuerdos": t["acuerdos"], "responsables": t["responsables"],
             "fecha_compromiso": t["fecha_compromiso"].isoformat() if t["fecha_compromiso"] else "",
+            "llamada_persona": t["llamada_persona"] or "", "llamada_telefono": t["llamada_telefono"] or "",
+            "fecha_proxima_llamada": t["fecha_proxima_llamada"].isoformat() if t["fecha_proxima_llamada"] else "",
         }
         for t in tareas
     }
@@ -11375,7 +11419,13 @@ def crm_tarea_editar(tarea_id):
                 tipo_contacto = %(tipo_contacto)s, cliente_folio = %(cliente_folio)s,
                 prospecto_nombre = %(prospecto_nombre)s, asistentes = %(asistentes)s, asunto = %(asunto)s,
                 acuerdos = %(acuerdos)s, responsables = %(responsables)s, fecha_compromiso = %(fecha_compromiso)s,
-                autorizada = false, autorizado_por_user_id = NULL, autorizado_en = NULL
+                llamada_persona = %(llamada_persona)s, llamada_telefono = %(llamada_telefono)s,
+                fecha_proxima_llamada = %(fecha_proxima_llamada)s::date,
+                -- Editar regresa la tarea a "por aprobar", salvo que quien la
+                -- creó tenga "Tareas sin autorización".
+                autorizada = coalesce((SELECT p.tareas_sin_autorizacion FROM app_user_permissions p WHERE p.user_id = crm_tareas.creado_por_user_id), false),
+                autorizado_por_user_id = CASE WHEN coalesce((SELECT p.tareas_sin_autorizacion FROM app_user_permissions p WHERE p.user_id = crm_tareas.creado_por_user_id), false) THEN crm_tareas.creado_por_user_id END,
+                autorizado_en = CASE WHEN coalesce((SELECT p.tareas_sin_autorizacion FROM app_user_permissions p WHERE p.user_id = crm_tareas.creado_por_user_id), false) THEN now() END
             WHERE id = %(tarea_id)s
         """, {**datos, "tarea_id": tarea_id})
         db.commit()
