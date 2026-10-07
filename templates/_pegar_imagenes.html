@@ -1,0 +1,118 @@
+{# Pegar imágenes (Ctrl/Cmd+V) en un textarea: cada imagen se agrega como
+   adjunto al <input type="file"> indicado y se muestra en miniatura. Uso:
+   {% include "_pegar_imagenes.html" %} y luego
+   habilitarPegarImagenes('id-textarea', 'id-input-archivos'). #}
+<style>
+  .pegar-ayuda { font-size: .72rem; color: #8a94a6; margin: .3rem 0 0; }
+  .pegar-miniaturas { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+  .pegar-miniaturas:empty { display: none; }
+  .pegar-mini { position: relative; width: 88px; height: 88px; border: 1px solid #d5dbe5; border-radius: 8px; overflow: hidden; background: #f8fafc; }
+  .pegar-mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pegar-mini button { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border: none; border-radius: 50%; background: rgba(15,23,42,.75); color: #fff; font-size: .8rem; line-height: 20px; padding: 0; cursor: pointer; }
+  .pegar-textarea-activo { outline: 2px dashed #60a5fa; outline-offset: 2px; }
+</style>
+<script>
+  function habilitarPegarImagenes(idTextarea, idInput) {
+    var textarea = document.getElementById(idTextarea);
+    var input = document.getElementById(idInput);
+    if (!textarea || !input || typeof DataTransfer === 'undefined') return;
+
+    var ayuda = document.createElement('p');
+    ayuda.className = 'pegar-ayuda';
+    ayuda.textContent = 'Puedes pegar imágenes aquí (Ctrl+V / ⌘+V); se envían como adjuntos.';
+    textarea.insertAdjacentElement('afterend', ayuda);
+    var miniaturas = document.createElement('div');
+    miniaturas.className = 'pegar-miniaturas';
+    ayuda.insertAdjacentElement('afterend', miniaturas);
+
+    var pegadas = [];       // archivos pegados (además de los elegidos a mano)
+    var elegidos = [];      // archivos elegidos con "Elegir archivos"
+    var contador = 0;
+
+    function sincronizar() {
+      var dt = new DataTransfer();
+      elegidos.concat(pegadas).forEach(function (f) { dt.items.add(f); });
+      input.files = dt.files;
+    }
+    input.addEventListener('change', function () {
+      // El navegador reemplaza la selección: guarda lo elegido y vuelve a sumar lo pegado.
+      var nuevos = Array.prototype.slice.call(input.files).filter(function (f) { return pegadas.indexOf(f) === -1; });
+      elegidos = nuevos;
+      sincronizar();
+    });
+
+    // Reduce capturas grandes (JPEG ≤1600px) para no pasar el límite de 4 MB.
+    function prepararImagen(blob, nombreBase) {
+      return new Promise(function (resolve) {
+        if (blob.size <= 600 * 1024) {
+          var ext = blob.type === 'image/jpeg' ? 'jpg' : 'png';
+          return resolve(new File([blob], nombreBase + '.' + ext, { type: blob.type === 'image/jpeg' ? 'image/jpeg' : 'image/png' }));
+        }
+        var url = URL.createObjectURL(blob);
+        var img = new Image();
+        img.onload = function () {
+          var escala = Math.min(1, 1600 / Math.max(img.width, img.height));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * escala);
+          canvas.height = Math.round(img.height * escala);
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(function (b) {
+            resolve(new File([b], nombreBase + '.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.85);
+        };
+        img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      });
+    }
+
+    function agregarMiniatura(archivo) {
+      var caja = document.createElement('div');
+      caja.className = 'pegar-mini';
+      caja.title = archivo.name;
+      var img = document.createElement('img');
+      img.src = URL.createObjectURL(archivo);
+      img.alt = archivo.name;
+      var quitar = document.createElement('button');
+      quitar.type = 'button';
+      quitar.textContent = '×';
+      quitar.title = 'Quitar imagen';
+      quitar.addEventListener('click', function () {
+        pegadas = pegadas.filter(function (f) { return f !== archivo; });
+        caja.remove();
+        sincronizar();
+      });
+      caja.appendChild(img);
+      caja.appendChild(quitar);
+      miniaturas.appendChild(caja);
+    }
+
+    textarea.addEventListener('paste', function (e) {
+      var items = (e.clipboardData || {}).items || [];
+      var imagenes = [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file' && /^image\//.test(items[i].type)) imagenes.push(items[i].getAsFile());
+      }
+      if (!imagenes.length) return;      // texto normal: se pega como siempre
+      e.preventDefault();
+      var marca = new Date();
+      var base = 'imagen_pegada_' + marca.getFullYear() + String(marca.getMonth() + 1).padStart(2, '0') +
+        String(marca.getDate()).padStart(2, '0') + '_' + String(marca.getHours()).padStart(2, '0') +
+        String(marca.getMinutes()).padStart(2, '0') + String(marca.getSeconds()).padStart(2, '0');
+      imagenes.forEach(function (blob) {
+        contador += 1;
+        prepararImagen(blob, base + '_' + contador).then(function (archivo) {
+          if (!archivo) return;
+          pegadas.push(archivo);
+          agregarMiniatura(archivo);
+          sincronizar();
+        });
+      });
+      textarea.classList.add('pegar-textarea-activo');
+      setTimeout(function () { textarea.classList.remove('pegar-textarea-activo'); }, 600);
+    });
+  }
+</script>

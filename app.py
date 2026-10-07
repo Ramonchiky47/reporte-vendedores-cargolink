@@ -10494,6 +10494,16 @@ def transporte_nacional_archivo(archivo_id):
         flash("Archivo no encontrado.")
         return redirect(url_for(primera_pagina_permitida()))
     db.close()
+    # Las imágenes se muestran en el navegador (miniaturas / imágenes
+    # pegadas en la respuesta); el tipo se fija por extensión, nunca por lo
+    # que mandó el navegador al subirla. Todo lo demás se descarga.
+    extension = archivo["nombre_archivo"].rsplit(".", 1)[-1].lower() if "." in archivo["nombre_archivo"] else ""
+    tipos_imagen = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+    if extension in tipos_imagen:
+        return send_file(
+            io.BytesIO(bytes(archivo["contenido"])), mimetype=tipos_imagen[extension],
+            as_attachment=False, download_name=archivo["nombre_archivo"],
+        )
     return send_file(
         io.BytesIO(bytes(archivo["contenido"])), mimetype=archivo["tipo_mime"],
         as_attachment=True, download_name=archivo["nombre_archivo"],

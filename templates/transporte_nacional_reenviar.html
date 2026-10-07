@@ -59,7 +59,9 @@
     <h3>Archivos adjuntos</h3>
     {% for a in archivos %}
     <div class="caja-hist">
-      <a href="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener">📎 {{ a.nombre_archivo }}</a>
+      <a href="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener" style="display:flex; align-items:center; gap:.5rem;">
+        {% if a.nombre_archivo.lower().endswith(('.png', '.jpg', '.jpeg')) %}<img src="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" alt="" loading="lazy" style="width:56px; height:56px; object-fit:cover; border-radius:6px; border:1px solid #ddd;">{% else %}📎{% endif %}
+        {{ a.nombre_archivo }}</a>
       <div class="quien" style="margin:.2rem 0 0;">{{ a.subido_por or '—' }} · {{ a.creado_en|hora_mx }} · {{ (a.tamano / 1024)|round(0)|int }} KB</div>
     </div>
     {% endfor %}
@@ -83,4 +85,6 @@
     {% endfor %}
     {% endif %}
   </div>
+  {% include "_pegar_imagenes.html" %}
+  <script>habilitarPegarImagenes('comentario', 'archivos');</script>
 {% endblock %}
