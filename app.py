@@ -11160,6 +11160,12 @@ def crm_tareas():
     anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
     fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
     fecha_fin_mes = date(anio_sel, mes_num_sel, calendar.monthrange(anio_sel, mes_num_sel)[1])
+    # Mes anterior para comparar las tarjetas: si el mes elegido es el mes en
+    # curso, solo los mismos días (1 a hoy); si no, el mes completo.
+    fecha_fin_mes_ant = fecha_inicio_mes - timedelta(days=1)
+    fecha_inicio_mes_ant = fecha_fin_mes_ant.replace(day=1)
+    if fecha_inicio_mes <= hoy <= fecha_fin_mes:
+        fecha_fin_mes_ant = fecha_inicio_mes_ant.replace(day=min(hoy.day, fecha_fin_mes_ant.day))
 
     vendedor_forzado = vendedor_forzado_usuario()
     plaza_por_vendedor = {
@@ -11197,7 +11203,7 @@ def crm_tareas():
         LEFT JOIN app_user_permissions cp ON cp.user_id = t.creado_por_user_id
         WHERE t.fecha >= %s AND t.fecha <= %s
         ORDER BY t.fecha DESC, t.id DESC
-    """, (fecha_inicio_mes.isoformat(), fecha_fin_mes.isoformat())).fetchall()
+    """, (fecha_inicio_mes_ant.isoformat(), fecha_fin_mes.isoformat())).fetchall()
     db.close()
 
     tareas_todas = [
@@ -11210,6 +11216,8 @@ def crm_tareas():
         if (plazas_permitidas is None or plaza_por_vendedor.get(normalizar(f["vendedor"])) in plazas_permitidas)
         and (not vendedor_forzado or normalizar(f["vendedor"]) == normalizar(vendedor_forzado))
     ]
+    tareas_ant = [t for t in tareas_todas if t["fecha"] < fecha_inicio_mes and t["fecha"] <= fecha_fin_mes_ant]
+    tareas_todas = [t for t in tareas_todas if t["fecha"] >= fecha_inicio_mes]
     # Filtro por plaza (la plaza es la del vendedor en catalogo_vendedores).
     plazas_opciones = sorted({
         p for p in plaza_por_vendedor.values()
@@ -11220,6 +11228,7 @@ def crm_tareas():
         plaza_seleccionada = ""
     if plaza_seleccionada:
         tareas_todas = [t for t in tareas_todas if plaza_por_vendedor.get(normalizar(t["vendedor"])) == plaza_seleccionada]
+        tareas_ant = [t for t in tareas_ant if plaza_por_vendedor.get(normalizar(t["vendedor"])) == plaza_seleccionada]
     # Filtro por vendedor: los del catálogo (dentro de la plaza elegida)
     # más cualquiera con tareas este mes aunque no esté en el catálogo.
     vendedores_filtro = {
@@ -11234,6 +11243,7 @@ def crm_tareas():
         vendedor_seleccionado = ""
     if vendedor_seleccionado:
         tareas_todas = [t for t in tareas_todas if normalizar(t["vendedor"]) == normalizar(vendedor_seleccionado)]
+        tareas_ant = [t for t in tareas_ant if normalizar(t["vendedor"]) == normalizar(vendedor_seleccionado)]
     # Filtro por quién creó la tarea (es a quien se le contabiliza en el
     # Scorecard de CRM → Resultados).
     # Las opciones salen de las tareas ya filtradas por Plaza/Vendedor: sin
@@ -11248,6 +11258,25 @@ def crm_tareas():
     creador_seleccionado = creador_match
     if creador_seleccionado:
         tareas_todas = [t for t in tareas_todas if normalizar(t["creador_nombre"] or "") == normalizar(creador_seleccionado)]
+        tareas_ant = [t for t in tareas_ant if normalizar(t["creador_nombre"] or "") == normalizar(creador_seleccionado)]
+    # Tarjetas (mismo criterio que Inicio): por aprobar = CFV + VM sin
+    # autorizar; CFV / VM / Calls = autorizadas.
+    def contar_tareas(lista):
+        nombres = [normalizar(t["actividad"]) for t in lista]
+        cfv, vm, calls = normalizar("CUSTOMER FACING VISIT"), normalizar("VIRTUAL MEETING"), normalizar("CALLS")
+        return {
+            "por_aprobar": sum(1 for t, n in zip(lista, nombres) if not t["autorizada"] and n in (cfv, vm)),
+            "customer_facing_visit": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == cfv),
+            "virtual_meeting": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == vm),
+            "calls": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == calls),
+        }
+    tarjetas_actual, tarjetas_ant = contar_tareas(tareas_todas), contar_tareas(tareas_ant)
+    tarjetas_tareas = [
+        {"clave": k, "etiqueta": etq, "valor": tarjetas_actual[k], "anterior": tarjetas_ant[k],
+         "delta": None if k == "por_aprobar" or not tarjetas_ant[k] else (tarjetas_actual[k] - tarjetas_ant[k]) / tarjetas_ant[k] * 100}
+        for k, etq in (("por_aprobar", "Tareas por aprobar"), ("customer_facing_visit", "Customer Facing Visit"),
+                       ("virtual_meeting", "Virtual Meeting"), ("calls", "Calls"))
+    ]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
 
@@ -11274,6 +11303,7 @@ def crm_tareas():
         tareas=tareas, plazas_opciones=plazas_opciones, plaza_seleccionada=plaza_seleccionada,
         vendedores_filtro=vendedores_filtro, vendedor_seleccionado=vendedor_seleccionado,
         creadores_filtro=creadores_filtro, creador_seleccionado=creador_seleccionado,
+        tarjetas_tareas=tarjetas_tareas,
     )
 
 

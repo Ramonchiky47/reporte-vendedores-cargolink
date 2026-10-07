@@ -1,5 +1,15 @@
 {% extends "crm_layout.html" %}
 {% block extra_style %}
+  .tareas-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 190px)); gap: 0.7rem; margin: 0 0 1rem; }
+  @media (max-width: 760px) { .tareas-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .tareas-kpi { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .tareas-kpi.por-aprobar { border-color: #f59e0b; background: linear-gradient(180deg, #fef3c7, #fff 65%); }
+  .tareas-kpi .etq { font-size: 0.66rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .tareas-kpi .val { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .tareas-kpi .delta { font-size: 0.72rem; font-weight: 600; }
+  .tareas-kpi .delta.pos { color: var(--exito); }
+  .tareas-kpi .delta.neg { color: var(--peligro); }
+  .tareas-kpi .delta.neutro { color: #888; font-weight: 500; }
   .par-filtro { display: inline-flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
   .filtro-mes { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
   .filtro-mes select { padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
@@ -109,6 +119,20 @@
     <span class="aviso-ocultas">{{ autorizadas_ocultas }} autorizada{{ 's' if autorizadas_ocultas != 1 else '' }} oculta{{ 's' if autorizadas_ocultas != 1 else '' }} este mes</span>
     {% endif %}
   </form>
+
+  <div class="tareas-kpis">
+    {% for k in tarjetas_tareas %}
+    <div class="tareas-kpi{{ ' por-aprobar' if k.clave == 'por_aprobar' else '' }}">
+      <div class="etq">{{ k.etiqueta }}</div>
+      <div class="val">{{ k.valor }}</div>
+      {% if k.delta is none %}
+      <div class="delta neutro">{{ k.anterior }} el mes pasado</div>
+      {% else %}
+      <div class="delta {{ 'pos' if k.delta >= 0 else 'neg' }}">{{ '↑' if k.delta >= 0 else '↓' }} {{ '%.1f'|format(k.delta|abs) }}% · {{ k.anterior }} el mes pasado</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
 
   <div class="acciones-form">
     <button type="button" id="btn-nueva-tarea">+ Nueva tarea</button>
