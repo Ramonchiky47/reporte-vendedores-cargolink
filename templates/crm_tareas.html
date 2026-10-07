@@ -290,7 +290,7 @@
             {% if t.autorizada %}
               <span class="badge-autorizada" title="Autorizada por {{ t.autorizador_nombre }}">Autorizada</span>
             {% else %}
-              <span class="badge-pendiente">Pendiente</span>
+              {% if t.actividad|upper == 'CALLS' %}<span class="badge-autorizada" style="background:#e0ecfb; color:#1e4f91;" title="Las llamadas no requieren autorización">Registrada</span>{% else %}<span class="badge-pendiente">Pendiente</span>{% endif %}
             {% endif %}
           </td>
           <td class="acciones">

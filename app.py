@@ -7820,7 +7820,9 @@ def construir_inicio_crm(
         return sum(1 for f in filas if f["actividad"] == normalizar(nombre))
     cfv_periodo, cfv_anterior = contar_actividad(tareas_periodo, "CUSTOMER FACING VISIT"), contar_actividad(tareas_anterior, "CUSTOMER FACING VISIT")
     vm_periodo, vm_anterior = contar_actividad(tareas_periodo, "VIRTUAL MEETING"), contar_actividad(tareas_anterior, "VIRTUAL MEETING")
-    calls_periodo, calls_anterior = contar_actividad(tareas_periodo, "CALLS"), contar_actividad(tareas_anterior, "CALLS")
+    # Calls no pasa por autorización: cuenta autorizadas + pendientes.
+    calls_periodo = contar_actividad(tareas_periodo, "CALLS") + contar_actividad(en_rango(filas_tarea_pendiente, fecha_inicio, fecha_fin), "CALLS")
+    calls_anterior = contar_actividad(tareas_anterior, "CALLS") + contar_actividad(en_rango(filas_tarea_pendiente, fecha_inicio_anterior, fecha_fin_anterior), "CALLS")
     actividades_bitacora = {normalizar("CUSTOMER FACING VISIT"), normalizar("VIRTUAL MEETING")}
     pend_periodo = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio, fecha_fin) if f["actividad"] in actividades_bitacora)
     pend_anterior = sum(1 for f in en_rango(filas_tarea_pendiente, fecha_inicio_anterior, fecha_fin_anterior) if f["actividad"] in actividades_bitacora)
@@ -11349,7 +11351,8 @@ def crm_tareas():
             "por_aprobar": sum(1 for t, n in zip(lista, nombres) if not t["autorizada"] and n in (cfv, vm)),
             "customer_facing_visit": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == cfv),
             "virtual_meeting": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == vm),
-            "calls": sum(1 for t, n in zip(lista, nombres) if t["autorizada"] and n == calls),
+            # Las llamadas no pasan por autorización: cuentan al registrarse.
+            "calls": sum(1 for n in nombres if n == calls),
         }
     tarjetas_actual, tarjetas_ant = contar_tareas(tareas_todas), contar_tareas(tareas_ant)
     tarjetas_tareas = [
