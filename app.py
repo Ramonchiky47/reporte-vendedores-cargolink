@@ -11363,6 +11363,20 @@ def crm_tareas():
     ]
     autorizadas_ocultas = sum(1 for t in tareas_todas if t["autorizada"])
     tareas = tareas_todas if mostrar_autorizadas else [t for t in tareas_todas if not t["autorizada"]]
+    # Clic en una tarjeta: la tabla muestra exactamente lo que cuenta esa
+    # tarjeta (sin importar "Mostrar autorizadas").
+    tarjeta_sel = request.args.get("tarjeta", "").strip()
+    _cfv, _vm, _calls = normalizar("CUSTOMER FACING VISIT"), normalizar("VIRTUAL MEETING"), normalizar("CALLS")
+    filtros_tarjeta = {
+        "por_aprobar": lambda t: not t["autorizada"] and normalizar(t["actividad"]) in (_cfv, _vm),
+        "customer_facing_visit": lambda t: t["autorizada"] and normalizar(t["actividad"]) == _cfv,
+        "virtual_meeting": lambda t: t["autorizada"] and normalizar(t["actividad"]) == _vm,
+        "calls": lambda t: normalizar(t["actividad"]) == _calls,
+    }
+    if tarjeta_sel in filtros_tarjeta:
+        tareas = [t for t in tareas_todas if filtros_tarjeta[tarjeta_sel](t)]
+    else:
+        tarjeta_sel = ""
 
     tareas_editar = {
         t["id"]: {
@@ -11390,6 +11404,7 @@ def crm_tareas():
         vendedores_filtro=vendedores_filtro, vendedor_seleccionado=vendedor_seleccionado,
         creadores_filtro=creadores_filtro, creador_seleccionado=creador_seleccionado,
         tarjetas_tareas=tarjetas_tareas,
+        tarjeta_sel=tarjeta_sel,
         actividades_seleccionadas=actividades_seleccionadas,
     )
 

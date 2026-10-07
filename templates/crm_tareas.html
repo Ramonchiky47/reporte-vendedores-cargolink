@@ -3,6 +3,10 @@
   .tareas-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 190px)); gap: 0.7rem; margin: 0 0 1rem; }
   @media (max-width: 760px) { .tareas-kpis { grid-template-columns: repeat(2, 1fr); } }
   .tareas-kpi { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 0.7rem 0.85rem; display: flex; flex-direction: column; gap: 0.2rem; }
+  .aviso-tarjeta { font-size: 0.82rem; color: #555; background: #eef4fc; border: 1px solid #c5d6ee; border-radius: 6px; padding: 0.4rem 0.7rem; margin: -0.3rem 0 0.9rem; }
+  a.tareas-kpi { color: inherit; text-decoration: none; cursor: pointer; transition: box-shadow .15s; }
+  a.tareas-kpi:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  a.tareas-kpi.activa { outline: 2px solid #1565c0; outline-offset: 1px; }
   .tareas-kpi.por-aprobar { border-color: #f59e0b; background: linear-gradient(180deg, #fef3c7, #fff 65%); }
   .tareas-kpi .etq { font-size: 0.66rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .tareas-kpi .val { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -137,7 +141,9 @@
 
   <div class="tareas-kpis">
     {% for k in tarjetas_tareas %}
-    <div class="tareas-kpi{{ ' por-aprobar' if k.clave == 'por_aprobar' else '' }}">
+    <a href="{{ url_for('crm_tareas') }}?{% for key, vals in request.args.to_dict(flat=False).items() if key != 'tarjeta' %}{% for v in vals %}{{ key|urlencode }}={{ v|urlencode }}&{% endfor %}{% endfor %}tarjeta={{ '' if tarjeta_sel == k.clave else k.clave }}"
+       class="tareas-kpi{{ ' por-aprobar' if k.clave == 'por_aprobar' else '' }}{{ ' activa' if tarjeta_sel == k.clave else '' }}"
+       title="{{ 'Quitar filtro' if tarjeta_sel == k.clave else 'Ver solo estas tareas' }}">
       <div class="etq">{{ k.etiqueta }}</div>
       <div class="val">{{ k.valor }}</div>
       {% if k.delta is none %}
@@ -145,10 +151,13 @@
       {% else %}
       <div class="delta {{ 'pos' if k.delta >= 0 else 'neg' }}">{{ '↑' if k.delta >= 0 else '↓' }} {{ '%.1f'|format(k.delta|abs) }}% · {{ k.anterior }} el mes pasado</div>
       {% endif %}
-    </div>
+    </a>
     {% endfor %}
   </div>
 
+  {% if tarjeta_sel %}
+  <p class="aviso-tarjeta">Mostrando solo: <b>{{ (tarjetas_tareas|selectattr('clave', 'equalto', tarjeta_sel)|first).etiqueta }}</b> ({{ tareas|length }}) · <a href="{{ url_for('crm_tareas') }}?{% for key, vals in request.args.to_dict(flat=False).items() if key != 'tarjeta' %}{% for v in vals %}{{ key|urlencode }}={{ v|urlencode }}&{% endfor %}{% endfor %}">Quitar filtro</a></p>
+  {% endif %}
   <div class="acciones-form">
     <button type="button" id="btn-nueva-tarea">+ Nueva tarea</button>
   </div>
