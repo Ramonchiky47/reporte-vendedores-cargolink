@@ -11149,6 +11149,7 @@ def crm_tareas():
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        actividad=request.form.getlist("actividad_filtro"),
         vendedor=request.form.get("vendedor_filtro", ""),
         creador=request.form.get("creador_filtro", ""),
         ))
@@ -11259,6 +11260,15 @@ def crm_tareas():
     if creador_seleccionado:
         tareas_todas = [t for t in tareas_todas if normalizar(t["creador_nombre"] or "") == normalizar(creador_seleccionado)]
         tareas_ant = [t for t in tareas_ant if normalizar(t["creador_nombre"] or "") == normalizar(creador_seleccionado)]
+    # Filtro por tipo de actividad (checkboxes + Aplicar). Sin ninguna
+    # marcada = todas.
+    ids_actividad_validos = {a["id"] for a in actividades}
+    actividades_seleccionadas = [
+        int(x) for x in request.args.getlist("actividad") if x.isdigit() and int(x) in ids_actividad_validos
+    ]
+    if actividades_seleccionadas:
+        tareas_todas = [t for t in tareas_todas if t["actividad_id"] in actividades_seleccionadas]
+        tareas_ant = [t for t in tareas_ant if t["actividad_id"] in actividades_seleccionadas]
     # Tarjetas (mismo criterio que Inicio): por aprobar = CFV + VM sin
     # autorizar; CFV / VM / Calls = autorizadas.
     def contar_tareas(lista):
@@ -11304,6 +11314,7 @@ def crm_tareas():
         vendedores_filtro=vendedores_filtro, vendedor_seleccionado=vendedor_seleccionado,
         creadores_filtro=creadores_filtro, creador_seleccionado=creador_seleccionado,
         tarjetas_tareas=tarjetas_tareas,
+        actividades_seleccionadas=actividades_seleccionadas,
     )
 
 
@@ -11320,6 +11331,7 @@ def crm_tarea_eliminar(tarea_id):
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        actividad=request.form.getlist("actividad_filtro"),
         vendedor=request.form.get("vendedor_filtro", ""),
         creador=request.form.get("creador_filtro", ""),
     ))
@@ -11337,6 +11349,7 @@ def crm_tarea_editar(tarea_id):
             "crm_tareas", mes=request.form.get("mes", ""),
             mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        actividad=request.form.getlist("actividad_filtro"),
         vendedor=request.form.get("vendedor_filtro", ""),
         creador=request.form.get("creador_filtro", ""),
         ))
@@ -11361,6 +11374,7 @@ def crm_tarea_editar(tarea_id):
         "crm_tareas", mes=request.form.get("mes", ""),
         mostrar_autorizadas=request.form.get("mostrar_autorizadas", ""),
         plaza=request.form.get("plaza", ""),
+        actividad=request.form.getlist("actividad_filtro"),
         vendedor=request.form.get("vendedor_filtro", ""),
         creador=request.form.get("creador_filtro", ""),
     ))
