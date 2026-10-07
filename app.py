@@ -8444,6 +8444,18 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         WHERE s.cotizacion_id = %s
         ORDER BY s.creado_en DESC
     """, (cotizacion_id,)).fetchall()
+    archivos_tn_por_solicitud = {}
+    for a in db.execute("""
+        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por
+        FROM crm_solicitudes_transporte_nacional_archivos a
+        JOIN crm_solicitudes_transporte_nacional s ON s.id = a.solicitud_id
+        WHERE s.cotizacion_id = %s
+        ORDER BY a.creado_en
+    """, (cotizacion_id,)).fetchall():
+        archivos_tn_por_solicitud.setdefault(a["solicitud_id"], []).append({
+            "id": a["id"], "nombre": a["nombre_archivo"], "subido_por": a["subido_por"] or "",
+            "es_imagen": a["nombre_archivo"].lower().endswith((".png", ".jpg", ".jpeg")),
+        })
     db.close()
 
     solicitudes_transporte_nacional = []
@@ -8594,7 +8606,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             {"id": s["id"], "referencia": s["referencia"], "tipo_servicio": s["tipo_servicio"] or "",
              "estado": s["estado"], "fecha_creacion": s["solicitud_en"], "creado_por": s["creado_por"] or "",
              "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
-             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
+             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"],
+             "archivos": archivos_tn_por_solicitud.get(s["id"], [])}
             for s in solicitudes_transporte_nacional
         ],
         "transporte_nacional_respuestas": transporte_nacional_respuestas,
