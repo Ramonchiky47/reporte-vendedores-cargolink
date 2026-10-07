@@ -154,6 +154,9 @@ def init_db():
     # Ver seguimientos de su plaza: líderes de plaza (ven los Seguimientos
     # de los vendedores de sus plazas permitidas).
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS ver_seguimientos_plaza boolean not null default false;")
+    # Operativo(s) que reciben por default las solicitudes de Transporte
+    # Nacional (catalogo_operativos lo administra otra pantalla/app).
+    db.execute("ALTER TABLE IF EXISTS catalogo_operativos ADD COLUMN IF NOT EXISTS default_transporte_nacional boolean not null default false;")
     # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
     # correos de cobranza), antes exclusivo de es_admin.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
@@ -9924,6 +9927,19 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
             campo_largo("requisito_adicional"),
         )).fetchone()["id"]
         _, errores_archivos = guardar_archivos_transporte_nacional(db, solicitud_id, request.files.getlist("archivos"))
+        # Operativo por default: entre los marcados como "Pricing Transporte
+        # Nacional por default" (hoy solo Laura Chávez), el que tenga menos
+        # solicitudes pendientes — así, si en el futuro hay más, se reparten.
+        db.execute("""
+            UPDATE crm_solicitudes_transporte_nacional SET operativo_asignado_id = (
+                SELECT co.id FROM catalogo_operativos co
+                WHERE co.activo AND co.default_transporte_nacional
+                ORDER BY (SELECT count(*) FROM crm_solicitudes_transporte_nacional x
+                          WHERE x.operativo_asignado_id = co.id AND x.estado IN ('Solicitud', 'En proceso')), co.id
+                LIMIT 1
+            )
+            WHERE id = %s AND operativo_asignado_id IS NULL
+        """, (solicitud_id,))
         db.commit()
         db.close()
         flash(f"Solicitud {referencia} enviada a Transporte Nacional.")
