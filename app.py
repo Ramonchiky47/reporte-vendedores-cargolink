@@ -653,6 +653,10 @@ def init_db():
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS llamada_telefono varchar(50);")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS fecha_proxima_llamada date;")
     db.execute("ALTER TABLE crm_tareas ALTER COLUMN tipo_contacto DROP NOT NULL;")
+    # Seguimientos: cuándo se marcó como hecho el seguimiento (próxima
+    # llamada o fecha de compromiso) y quién lo marcó.
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS seguimiento_hecho_en timestamptz;")
+    db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS seguimiento_hecho_por_user_id uuid;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizada boolean not null default false;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_por_user_id uuid;")
     db.execute("ALTER TABLE crm_tareas ADD COLUMN IF NOT EXISTS autorizado_en timestamptz;")
@@ -5668,6 +5672,7 @@ CRM_NAV = [
     {"grupo": None, "texto": "Negocios", "slug": "negocios"},
     {"grupo": None, "texto": "Cotizaciones", "slug": "cotizaciones"},
     {"grupo": None, "texto": "Tareas", "slug": "tareas"},
+    {"grupo": None, "texto": "Seguimientos", "slug": "seguimientos"},
     {"grupo": "Catálogos", "texto": "Clientes", "slug": "clientes"},
     {"grupo": "Catálogos", "texto": "Grupo", "slug": "grupo"},
     {"grupo": "Catálogos", "texto": "Contactos", "slug": "contactos"},
@@ -11370,6 +11375,108 @@ def crm_tareas():
         tarjetas_tareas=tarjetas_tareas,
         actividades_seleccionadas=actividades_seleccionadas,
     )
+
+
+@app.route("/crm/seguimientos")
+@crm_required
+def crm_seguimientos():
+    """Seguimientos pendientes agrupados por quien creó la tarea: la fecha de
+    próxima llamada (Calls) o la fecha de compromiso (CFV / VM) que todavía
+    no se marca como hecha. Misma visibilidad que CRM → Tareas."""
+    db = get_db()
+    plazas_permitidas = plazas_permitidas_usuario()
+    vendedor_forzado = vendedor_forzado_usuario()
+    nav_groups = agrupar_nav_crm("seguimientos")
+    hoy = datetime.now(TZ_LOCAL).date()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    filas = db.execute("""
+        SELECT t.id, t.fecha, t.vendedor, t.tipo_contacto, t.prospecto_nombre, t.asunto, t.acuerdos,
+               t.llamada_persona, t.llamada_telefono, t.autorizada,
+               coalesce(t.fecha_proxima_llamada, t.fecha_compromiso) AS fecha_seguimiento,
+               (t.fecha_proxima_llamada IS NOT NULL) AS es_llamada,
+               a.nombre AS actividad, ac.razon_social AS cliente_nombre,
+               cf.nombre_firma AS creador_firma, cu.email AS creador_correo,
+               coalesce(nullif(trim(cp.desarrollador_asociado), ''), nullif(trim(cp.vendedor_asociado), '')) AS creador_asociado
+        FROM crm_tareas t
+        JOIN crm_actividades a ON a.id = t.actividad_id
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = t.cliente_folio
+        LEFT JOIN crm_firmas cf ON cf.user_id = t.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = t.creado_por_user_id
+        LEFT JOIN app_user_permissions cp ON cp.user_id = t.creado_por_user_id
+        WHERE t.seguimiento_hecho_en IS NULL
+          AND coalesce(t.fecha_proxima_llamada, t.fecha_compromiso) IS NOT NULL
+        ORDER BY coalesce(t.fecha_proxima_llamada, t.fecha_compromiso), t.id
+    """).fetchall()
+    db.close()
+
+    pendientes = []
+    for f in filas:
+        if plazas_permitidas is not None and plaza_por_vendedor.get(normalizar(f["vendedor"])) not in plazas_permitidas:
+            continue
+        if vendedor_forzado and normalizar(f["vendedor"]) != normalizar(vendedor_forzado):
+            continue
+        dias = (f["fecha_seguimiento"] - hoy).days
+        pendientes.append({
+            **f,
+            "creador_nombre": f["creador_firma"] or f["creador_asociado"] or (nombre_desde_correo(f["creador_correo"]) if f["creador_correo"] else "Sin creador"),
+            "plaza": plaza_por_vendedor.get(normalizar(f["vendedor"])) or "",
+            "contacto": f["llamada_persona"] or f["cliente_nombre"] or f["prospecto_nombre"] or "—",
+            "dias": dias,
+            "urgencia": "vencido" if dias < 0 else ("hoy" if dias == 0 else ("semana" if dias <= 7 else "despues")),
+        })
+
+    creadores_opciones = sorted({p["creador_nombre"] for p in pendientes}, key=normalizar)
+    plazas_opciones = sorted({p["plaza"] for p in pendientes if p["plaza"]})
+    creador_sel = request.args.get("creador", "").strip()
+    if creador_sel not in creadores_opciones:
+        creador_sel = ""
+    plaza_sel = request.args.get("plaza", "").strip()
+    if plaza_sel not in plazas_opciones:
+        plaza_sel = ""
+    if plaza_sel:
+        pendientes = [p for p in pendientes if p["plaza"] == plaza_sel]
+    if creador_sel:
+        pendientes = [p for p in pendientes if p["creador_nombre"] == creador_sel]
+
+    grupos = {}
+    for p in pendientes:
+        g = grupos.setdefault(p["creador_nombre"], {
+            "creador": p["creador_nombre"], "correo": p["creador_correo"] or "",
+            "filas": [], "vencido": 0, "hoy": 0, "semana": 0, "despues": 0,
+        })
+        g["filas"].append(p)
+        g[p["urgencia"]] += 1
+    grupos = sorted(grupos.values(), key=lambda g: (-g["vencido"], -g["hoy"], -g["semana"], normalizar(g["creador"])))
+    totales = {k: sum(g[k] for g in grupos) for k in ("vencido", "hoy", "semana", "despues")}
+
+    return render_template(
+        "crm_seguimientos.html", nav_groups=nav_groups, titulo_pagina="Seguimientos",
+        grupos=grupos, totales=totales, creadores_opciones=creadores_opciones, creador_sel=creador_sel,
+        plazas_opciones=plazas_opciones, plaza_sel=plaza_sel,
+    )
+
+
+@app.route("/crm/seguimientos/<int:tarea_id>/hecho", methods=["POST"])
+@crm_required
+def crm_seguimiento_hecho(tarea_id):
+    db = get_db()
+    fila = db.execute("SELECT vendedor, creado_por_user_id FROM crm_tareas WHERE id = %s", (tarea_id,)).fetchone()
+    es_creador = bool(fila and str(fila["creado_por_user_id"] or "") == str(session.get("usuario_id") or ""))
+    if fila and (es_creador or usuario_puede_operar_tarea(fila["vendedor"])):
+        deshacer = request.form.get("deshacer") == "1"
+        db.execute("""
+            UPDATE crm_tareas SET
+                seguimiento_hecho_en = CASE WHEN %s THEN NULL ELSE now() END,
+                seguimiento_hecho_por_user_id = CASE WHEN %s THEN NULL ELSE %s::uuid END
+            WHERE id = %s
+        """, (deshacer, deshacer, session.get("usuario_id") or None, tarea_id))
+        db.commit()
+    else:
+        flash("No tienes permiso para actualizar este seguimiento.")
+    db.close()
+    return redirect(url_for("crm_seguimientos", creador=request.form.get("creador", ""), plaza=request.form.get("plaza", "")))
 
 
 @app.route("/crm/tareas/<int:tarea_id>/eliminar", methods=["POST"])

@@ -1,0 +1,108 @@
+{% extends "crm_layout.html" %}
+{% block extra_style %}
+  .seg-filtros { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .seg-filtros label { font-size: 0.85rem; color: #555; }
+  .seg-filtros select { padding: 0.4rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .seg-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 170px)); gap: 0.7rem; margin-bottom: 1.2rem; }
+  @media (max-width: 700px) { .seg-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .seg-kpi { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 0.65rem 0.85rem; }
+  .seg-kpi .etq { font-size: 0.66rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .seg-kpi .val { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .seg-kpi.vencido { border-color: #fca5a5; background: linear-gradient(180deg, #fee2e2, #fff 70%); }
+  .seg-kpi.hoy { border-color: #fbbf24; background: linear-gradient(180deg, #fef3c7, #fff 70%); }
+  .seg-grupo { background: #fff; border: 1px solid var(--borde); border-radius: 10px; margin-bottom: 1rem; overflow: hidden; }
+  .seg-grupo__cab { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.7rem 1rem; background: #fafafa; border-bottom: 1px solid var(--borde); }
+  .seg-grupo__nombre { font-weight: 700; font-size: 0.95rem; }
+  .seg-grupo__correo { font-size: 0.72rem; color: #888; }
+  .seg-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .seg-chip { font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 999px; background: #eee; color: #555; }
+  .seg-chip.vencido { background: #fee2e2; color: #991b1b; }
+  .seg-chip.hoy { background: #fef3c7; color: #92400e; }
+  .seg-chip.semana { background: #e0ecfb; color: #1e4f91; }
+  .seg-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .seg-tabla td { padding: 0.55rem 1rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .seg-tabla tr:last-child td { border-bottom: none; }
+  .seg-fecha { white-space: nowrap; font-weight: 700; }
+  .seg-fecha small { display: block; font-weight: 500; font-size: 0.7rem; }
+  .seg-fecha.vencido { color: #b91c1c; }
+  .seg-fecha.hoy { color: #b45309; }
+  .seg-tipo { white-space: nowrap; color: #555; }
+  .seg-sub { font-size: 0.72rem; color: #888; }
+  .seg-asunto { max-width: 380px; }
+  .seg-acciones { white-space: nowrap; text-align: right; }
+  .seg-acciones form { display: inline; }
+  .btn-hecho { padding: 0.3rem 0.75rem; border: 1px solid #166534; color: #166534; background: #fff; border-radius: 6px; font: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+  .btn-hecho:hover { background: #dcfce7; }
+  .btn-ver { font-size: 0.78rem; margin-right: 0.4rem; }
+  .aviso-vacio { color: #757575; font-size: 0.85rem; padding: 2rem 0; text-align: center; }
+{% endblock %}
+{% block crm_content %}
+  <h2>Seguimientos</h2>
+  <p class="pista">Próximas llamadas (Calls) y fechas de compromiso (Customer Facing Visit / Virtual Meeting) pendientes, agrupadas por quien creó la tarea. Marca "Hecho" cuando se cumpla.</p>
+
+  <form class="seg-filtros" method="get">
+    <label for="seg-creador">Creada por:</label>
+    <select id="seg-creador" name="creador" onchange="this.form.submit()">
+      <option value="">Todos</option>
+      {% for c in creadores_opciones %}<option value="{{ c }}" {{ 'selected' if c == creador_sel else '' }}>{{ c }}</option>{% endfor %}
+    </select>
+    {% if plazas_opciones|length > 1 %}
+    <label for="seg-plaza">Plaza:</label>
+    <select id="seg-plaza" name="plaza" onchange="this.form.submit()">
+      <option value="">Todas</option>
+      {% for p in plazas_opciones %}<option value="{{ p }}" {{ 'selected' if p == plaza_sel else '' }}>{{ p }}</option>{% endfor %}
+    </select>
+    {% endif %}
+  </form>
+
+  <div class="seg-kpis">
+    <div class="seg-kpi vencido"><div class="etq">Vencidos</div><div class="val">{{ totales.vencido }}</div></div>
+    <div class="seg-kpi hoy"><div class="etq">Hoy</div><div class="val">{{ totales.hoy }}</div></div>
+    <div class="seg-kpi"><div class="etq">Próximos 7 días</div><div class="val">{{ totales.semana }}</div></div>
+    <div class="seg-kpi"><div class="etq">Después</div><div class="val">{{ totales.despues }}</div></div>
+  </div>
+
+  {% for g in grupos %}
+  <div class="seg-grupo">
+    <div class="seg-grupo__cab">
+      <div>
+        <div class="seg-grupo__nombre">{{ g.creador }}</div>
+        {% if g.correo %}<div class="seg-grupo__correo">{{ g.correo }}</div>{% endif %}
+      </div>
+      <div class="seg-chips">
+        {% if g.vencido %}<span class="seg-chip vencido">Vencidos {{ g.vencido }}</span>{% endif %}
+        {% if g.hoy %}<span class="seg-chip hoy">Hoy {{ g.hoy }}</span>{% endif %}
+        {% if g.semana %}<span class="seg-chip semana">7 días {{ g.semana }}</span>{% endif %}
+        {% if g.despues %}<span class="seg-chip">Después {{ g.despues }}</span>{% endif %}
+      </div>
+    </div>
+    <table class="seg-tabla">
+      {% for p in g.filas %}
+      <tr>
+        <td class="seg-fecha {{ p.urgencia }}">{{ p.fecha_seguimiento }}
+          <small>{% if p.dias < 0 %}hace {{ -p.dias }} día{{ 's' if p.dias != -1 else '' }}{% elif p.dias == 0 %}hoy{% else %}en {{ p.dias }} día{{ 's' if p.dias != 1 else '' }}{% endif %}</small>
+        </td>
+        <td class="seg-tipo">{{ '📞 Próxima llamada' if p.es_llamada else 'Compromiso · ' ~ (p.actividad|title) }}</td>
+        <td>
+          {{ p.contacto }}
+          {% if p.llamada_telefono %}<div class="seg-sub">{{ p.llamada_telefono }}</div>{% endif %}
+          <div class="seg-sub">Vendedor: {{ p.vendedor }}{% if p.plaza %} · {{ p.plaza }}{% endif %}</div>
+        </td>
+        <td class="seg-asunto">{{ p.asunto or '—' }}{% if p.acuerdos %}<div class="seg-sub">{{ p.acuerdos|truncate(140) }}</div>{% endif %}</td>
+        <td class="seg-acciones">
+          <a class="btn-ver" href="{{ url_for('crm_tarea_vista', tarea_id=p.id) }}">Ver</a>
+          <form method="post" action="{{ url_for('crm_seguimiento_hecho', tarea_id=p.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="creador" value="{{ creador_sel }}">
+            <input type="hidden" name="plaza" value="{{ plaza_sel }}">
+            <button type="submit" class="btn-hecho">Hecho</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% else %}
+  <p class="aviso-vacio">No hay seguimientos pendientes{{ ' con este filtro' if creador_sel or plaza_sel else '' }}.</p>
+  {% endfor %}
+{% endblock %}
