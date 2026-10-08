@@ -34,7 +34,7 @@ import psycopg
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from flask import Flask, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, render_template_string, request, send_file, session, url_for
 from flask_wtf import CSRFProtect
 from markupsafe import Markup, escape
 from psycopg.rows import dict_row
@@ -9761,7 +9761,7 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
             return v or None
 
         referencia = generar_referencia_solicitud_transporte_terrestre(db)
-        db.execute("""
+        solicitud_id = db.execute("""
             INSERT INTO crm_solicitudes_transporte_terrestre (
                 referencia, cotizacion_id, creado_por, nombre, correo_solicitante,
                 confirma_un_material, importacion_exportacion, tipo_embarque, tipo_unidad,
@@ -9769,6 +9769,7 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
                 direccion_aa, directa_transbordo, hacemos_cruce, hazmat, descripcion_material,
                 requisitos_comentarios, fecha_hora_recoleccion, fecha_hora_entrega, hit_ratio
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
         """, (
             referencia, cotizacion_id, session.get("usuario", ""),
             campo("nombre"), campo("correo_solicitante"),
@@ -9779,10 +9780,13 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
             si_no("hazmat") or False, campo_largo("descripcion_material"),
             campo_largo("requisitos_comentarios"), fecha_hora("fecha_hora_recoleccion"),
             fecha_hora("fecha_hora_entrega"), campo("hit_ratio"),
-        ))
+        )).fetchone()["id"]
         db.commit()
         db.close()
         flash(f"Solicitud {referencia} enviada a Transporte Terrestre Internacional.")
+        error_aviso = avisar_nueva_solicitud_transporte_terrestre(solicitud_id)
+        if error_aviso:
+            flash(f"La solicitud se guardó, pero no se pudo enviar el correo a Pricing ({error_aviso}).")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
 
     db.close()
@@ -10352,6 +10356,76 @@ def puede_ver_solicitud_transporte_terrestre(db, fila):
     return cotizacion_visible_para_usuario(db, fila["cotizacion_id"])
 
 
+def generar_pdf_transporte_terrestre(db, fila, idioma="es"):
+    """PDF (bytes) de una solicitud de Transporte Terrestre Internacional —
+    lo usan la descarga/vista y el aviso por correo al crearla."""
+    operativo = None
+    if fila["operativo_asignado_id"]:
+        operativo = db.execute(
+            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
+        ).fetchone()
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_terrestre_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en ASC
+    """, (fila["id"],)).fetchall()
+    html = render_template(
+        "transporte_terrestre_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL), idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma],
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    return None if resultado.err else buffer.getvalue()
+
+
+CORREOS_AVISO_TRANSPORTE_TERRESTRE = ["arnold.cano@av2logistics.com", "avillanueva@av2logistics.com"]
+
+
+def avisar_nueva_solicitud_transporte_terrestre(solicitud_id):
+    """Manda el PDF de una solicitud nueva de Transporte Terrestre
+    Internacional a Pricing (un solo correo, el resto en copia). Regresa
+    None si salió bien o el texto del error."""
+    db = get_db()
+    try:
+        fila = db.execute("""
+            SELECT s.*, co.id AS cotizacion_id, co.id_cotizacion, ac.razon_social AS cliente_nombre
+            FROM crm_solicitudes_transporte_terrestre s
+            LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+            LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+            WHERE s.id = %s
+        """, (solicitud_id,)).fetchone()
+        if fila is None:
+            return "solicitud no encontrada"
+        pdf = generar_pdf_transporte_terrestre(db, fila)
+    finally:
+        db.close()
+    if pdf is None:
+        return "no se pudo generar el PDF"
+    enlace = url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id, _external=True)
+    cuerpo = render_template_string("""
+        <p>Se recibió una nueva solicitud de <b>Transporte Terrestre Internacional</b>.</p>
+        <table style="border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Referencia</td><td><b>{{ f.referencia }}</b></td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Cotización</td><td>{{ f.id_cotizacion or '—' }}{% if f.cliente_nombre %} · {{ f.cliente_nombre }}{% endif %}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Solicitó</td><td>{{ f.creado_por or '—' }}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Tipo</td><td>{{ f.tipo_embarque or '—' }}{% if f.tipo_unidad %} · {{ f.tipo_unidad }}{% endif %}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Origen → Destino</td><td>{{ f.codigo_postal_origen or '—' }} → {{ f.codigo_postal_destino or '—' }}</td></tr>
+        </table>
+        <p>Adjunto el PDF de la solicitud. Para contestarla: <a href="{{ enlace }}">{{ enlace }}</a></p>
+    """, f=fila, enlace=enlace)
+    try:
+        enviar_correo_smtp(
+            CORREOS_AVISO_TRANSPORTE_TERRESTRE[0],
+            f"Nueva solicitud Transporte Terrestre Internacional {fila['referencia']}",
+            cuerpo, adjuntos=[(f"{fila['referencia']}.pdf", pdf)], cc=CORREOS_AVISO_TRANSPORTE_TERRESTRE[1:],
+        )
+    except Exception as exc:
+        app.logger.exception("No se pudo enviar el aviso de la solicitud %s", fila["referencia"])
+        return str(exc)
+    return None
+
+
 @app.route("/transporte-terrestre/<int:solicitud_id>/pdf")
 @login_required
 def transporte_terrestre_pdf(solicitud_id):
@@ -10370,32 +10444,15 @@ def transporte_terrestre_pdf(solicitud_id):
         db.close()
         flash("Solicitud no encontrada.")
         return redirect(url_for(primera_pagina_permitida()))
-    operativo = None
-    if fila["operativo_asignado_id"]:
-        operativo = db.execute(
-            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
-        ).fetchone()
-    respuestas = db.execute("""
-        SELECT respuesta, respondido_por, creado_en
-        FROM crm_solicitudes_transporte_terrestre_respuestas
-        WHERE solicitud_id = %s
-        ORDER BY creado_en ASC
-    """, (solicitud_id,)).fetchall()
-    db.close()
     idioma = request.args.get("idioma", "es")
     if idioma not in PRICING_IDIOMAS:
         idioma = "es"
-
-    html = render_template(
-        "transporte_terrestre_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
-        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL), idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma],
-    )
-    buffer = io.BytesIO()
-    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
-    if resultado.err:
+    pdf = generar_pdf_transporte_terrestre(db, fila, idioma)
+    db.close()
+    if pdf is None:
         flash("No se pudo generar el PDF de la solicitud.")
         return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
-    buffer.seek(0)
+    buffer = io.BytesIO(pdf)
     return send_file(
         buffer, as_attachment=request.args.get("descargar") == "1",
         download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
