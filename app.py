@@ -10367,7 +10367,7 @@ def transporte_terrestre():
     db = get_db()
     filas = db.execute("""
         SELECT
-            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
+            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado, s.creado_por, s.creado_en,
             """ + SQL_TTI_NUEVA_PARA_PRICING + """ AS nueva_para_pricing,
             (SELECT count(*) FROM crm_solicitudes_transporte_terrestre_archivos a WHERE a.solicitud_id = s.id) AS num_archivos,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
