@@ -9792,7 +9792,10 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
             campo("lugar_entrega"), campo("naviera_aerolinea"), campo("fcl_numero_tipo_contenedores"),
             dias_libres, campo("producto"), campo("lcl_air_dimensiones"),
             si_no("estibable"), si_no("requiere_inbond_usa"), si_no("hazmat") or False, si_no("carga_reefer"),
-            campo("temperatura"), campo("requerimientos_especiales"), campo("agente_a_cotizar"),
+            campo("temperatura"),
+            # Texto largo sin límite de caracteres.
+            (request.form.get("requerimientos_especiales", "") or "").strip() or None,
+            campo("agente_a_cotizar"),
             campo("descripcion_material"), (request.form.get("anexos_notas", "") or "").strip() or None,
             campo("propiedad"),
         ))

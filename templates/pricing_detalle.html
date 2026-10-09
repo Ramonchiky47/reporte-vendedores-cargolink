@@ -89,7 +89,7 @@
             <div class="campo"><div class="label">Propiedad</div><div>{{ fila.propiedad or '—' }}</div></div>
           </div>
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Requerimientos especiales</div>
-          <p style="margin: 0 0 1rem; font-size: .85rem; line-height: 1.5;">{{ fila.requerimientos_especiales or '—' }}</p>
+          <p style="margin: 0 0 1rem; font-size: .85rem; line-height: 1.5; white-space: pre-line;">{{ fila.requerimientos_especiales or '—' }}</p>
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Anexos / notas</div>
           <p style="margin: 0; font-size: .85rem; line-height: 1.5; {{ '' if fila.anexos_notas else 'color: var(--ink-3); font-style: italic;' }}">{{ fila.anexos_notas or 'Sin anexos.' }}</p>
         </div>
