@@ -8937,10 +8937,8 @@ def guardar_cotizacion_crm(cotizacion_id):
 
     incoterm_id = request.form.get("incoterm_id") or None
     incoterm_id = int(incoterm_id) if incoterm_id else None
-    incoterm_nuevo = request.form.get("incoterm_nuevo", "").strip()
     modalidad_id = request.form.get("modalidad_id") or None
     modalidad_id = int(modalidad_id) if modalidad_id else None
-    modalidad_nuevo = request.form.get("modalidad_nuevo", "").strip()
 
     estibable = request.form.get("estibable") == "si"
     seguro_mercancia = request.form.get("seguro_mercancia") == "si"
@@ -8967,20 +8965,12 @@ def guardar_cotizacion_crm(cotizacion_id):
         return f"Tipo de cambio {error_tc}.", None
 
     db = get_db()
-    if incoterm_nuevo:
-        fila = db.execute(
-            "INSERT INTO crm_incoterms (nombre) VALUES (%s) "
-            "ON CONFLICT (nombre) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id",
-            (incoterm_nuevo,),
-        ).fetchone()
-        incoterm_id = fila["id"]
-    if modalidad_nuevo:
-        fila = db.execute(
-            "INSERT INTO crm_modalidades (nombre) VALUES (%s) "
-            "ON CONFLICT (nombre) DO UPDATE SET nombre = EXCLUDED.nombre RETURNING id",
-            (modalidad_nuevo,),
-        ).fetchone()
-        modalidad_id = fila["id"]
+    # Incoterm y Modalidad son catálogos: solo se aceptan valores existentes
+    # (el personal ya no puede dar de alta nuevos desde la cotización).
+    if incoterm_id and not db.execute("SELECT 1 FROM crm_incoterms WHERE id = %s", (incoterm_id,)).fetchone():
+        incoterm_id = None
+    if modalidad_id and not db.execute("SELECT 1 FROM crm_modalidades WHERE id = %s", (modalidad_id,)).fetchone():
+        modalidad_id = None
     if cotizacion_id is None:
         fecha_creacion = datetime.now(TZ_LOCAL).date()
     else:

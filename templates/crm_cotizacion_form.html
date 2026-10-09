@@ -249,7 +249,6 @@
             <option value="{{ i.id }}" {{ 'selected' if cotizacion and cotizacion.incoterm_id == i.id else '' }}>{{ i.nombre }}</option>
           {% endfor %}
         </select>
-        <input type="text" name="incoterm_nuevo" placeholder="O agrega un Incoterm nuevo (opcional)" style="margin-top:0.4rem;">
       </div>
       <div>
         <label for="modalidad_id">Modalidad</label>
@@ -259,7 +258,6 @@
             <option value="{{ m.id }}" {{ 'selected' if cotizacion and cotizacion.modalidad_id == m.id else '' }}>{{ m.nombre }}</option>
           {% endfor %}
         </select>
-        <input type="text" name="modalidad_nuevo" placeholder="O agrega una Modalidad nueva (opcional)" style="margin-top:0.4rem;">
       </div>
     </div>
 
