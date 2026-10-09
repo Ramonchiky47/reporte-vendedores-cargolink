@@ -1,5 +1,10 @@
 {% extends "crm_layout.html" %}
 {% block extra_style %}
+  {% if en_modal %}
+  .barra-lateral, .barra-superior { display: none !important; }
+  body.con-barra-lateral { margin: 0.5rem !important; padding-top: 0 !important; max-width: none !important; }
+  .crm-contenido { margin-left: 0 !important; padding: 1rem 1.2rem !important; max-width: none !important; }
+  {% endif %}
   .form-contacto { max-width: 640px; }
   .form-contacto label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin: 1rem 0 0.3rem; }
   .form-contacto label:first-of-type { margin-top: 0; }
@@ -53,6 +58,7 @@
   <h2>{{ titulo_pagina }}</h2>
 
   <form class="form-contacto" method="post">
+    {% if en_modal %}<input type="hidden" name="modal" value="1">{% endif %}
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="fila-2">
       <div>
@@ -132,7 +138,11 @@
 
     <div class="acciones-form-contacto">
       <button type="submit" class="btn-guardar">Guardar contacto</button>
+      {% if en_modal %}
+      <button type="button" class="btn-cancelar" onclick="window.parent.postMessage({tipo: 'contacto_cancelado'}, window.location.origin);">Cancelar</button>
+      {% else %}
       <a class="btn-cancelar" href="{{ url_for('crm_seccion', slug='contactos') }}">Cancelar</a>
+      {% endif %}
     </div>
   </form>
 {% endblock %}

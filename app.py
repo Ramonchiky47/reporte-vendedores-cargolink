@@ -2484,7 +2484,7 @@ def agregar_cabeceras_seguridad(resp):
         # Los visores de PDF (pantalla "ver") embeben el PDF en un <iframe>
         # propio; sin esto el navegador lo bloquea y el visor sale en blanco.
         "transporte_terrestre_pdf", "transporte_nacional_pdf", "crm_cotizacion_pdf",
-        "transporte_nacional_reenviar",
+        "transporte_nacional_reenviar", "crm_contacto_nuevo",
     ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
@@ -6571,6 +6571,7 @@ def guardar_contacto_crm(contacto_id):
         )
     db.commit()
     db.close()
+    g._contacto_guardado_id = contacto_id
     return None
 
 
@@ -9612,10 +9613,19 @@ def crm_cliente_detalle(folio):
 @app.route("/crm/contactos/nuevo", methods=["GET", "POST"])
 @crm_required
 def crm_contacto_nuevo():
+    # en_modal: el formulario se abre en una ventana emergente desde la
+    # cotización ("+" junto a Contacto); al guardar avisa a la cotización
+    # (postMessage) con el contacto nuevo para que quede seleccionado.
+    en_modal = request.values.get("modal") == "1"
     if request.method == "POST":
         error = guardar_contacto_crm(None)
         if error:
             flash(error)
+        elif en_modal:
+            nombre = " ".join(x for x in (request.form.get("nombre", "").strip(), request.form.get("apellido", "").strip()) if x)
+            return render_template_string("""<!doctype html><meta charset="utf-8"><script>
+              window.parent.postMessage({tipo: 'contacto_creado', id: {{ id|tojson }}, nombre: {{ nombre|tojson }}}, window.location.origin);
+            </script><p style="font-family:sans-serif">Contacto guardado.</p>""", id=g._contacto_guardado_id, nombre=nombre)
         else:
             return redirect(url_for("crm_seccion", slug="contactos"))
 
@@ -9626,8 +9636,10 @@ def crm_contacto_nuevo():
     nav_groups = agrupar_nav_crm("contactos")
     return render_template(
         "crm_contacto_form.html", nav_groups=nav_groups, titulo_pagina="Nuevo contacto",
-        contacto=None, clientes=clientes, grupos=grupos, clientes_sel=set(), grupos_sel=set(),
-        clientes_libres=[],
+        contacto=None, clientes=clientes, grupos=grupos,
+        # Desde la cotización llega el cliente elegido para ya dejarlo marcado.
+        clientes_sel={request.args.get("cliente", type=int)} if request.args.get("cliente", type=int) else set(),
+        grupos_sel=set(), clientes_libres=[], en_modal=en_modal,
     )
 
 

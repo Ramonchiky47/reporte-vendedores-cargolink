@@ -95,6 +95,16 @@
   .btn-solicitar-info:hover { background: #e3f2fd; }
   .btn-solicitar-info:disabled { color: #999; border-color: #ccc; cursor: not-allowed; background: #f5f5f5; }
   .btn-solicitar-info:disabled:hover { background: #f5f5f5; }
+  .fila-contacto { display: flex; align-items: stretch; gap: 0.5rem; }
+  .fila-contacto .multi-select { flex: 1 1 auto; }
+  .btn-nuevo-contacto { flex: none; width: 2.6rem; border: 1px solid #1565c0; background: #1565c0; color: #fff; border-radius: 6px; font-size: 1.3rem; font-weight: 700; line-height: 1; cursor: pointer; }
+  .btn-nuevo-contacto:hover { background: #0d47a1; }
+  .dlg-nuevo-contacto { border: none; border-radius: 12px; padding: 0; width: min(760px, calc(100% - 32px)); height: min(85vh, 860px); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  .dlg-nuevo-contacto::backdrop { background: rgba(15,23,42,.45); }
+  .dlg-nuevo-contacto[open] { display: flex; flex-direction: column; }
+  .dlg-nuevo-contacto__cab { display: flex; justify-content: space-between; align-items: center; padding: .7rem 1rem; border-bottom: 1px solid #e5e7eb; }
+  .dlg-nuevo-contacto__cerrar { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #888; }
+  .dlg-nuevo-contacto iframe { flex: 1 1 auto; width: 100%; border: none; }
 {% endblock %}
 {% block crm_content %}
   <div class="fila-encabezado-cotizacion">
@@ -173,6 +183,7 @@
 
     {% set contacto_actual = cotizacion.contacto_id if cotizacion else none %}
     <label>Contacto</label>
+    <div class="fila-contacto">
     <div class="multi-select" id="contacto-multiselect">
       <button type="button" class="multi-select-btn" id="contacto-btn">Selecciona un contacto</button>
       <div class="multi-select-panel" id="contacto-panel" hidden>
@@ -192,6 +203,15 @@
         </div>
       </div>
     </div>
+    <button type="button" class="btn-nuevo-contacto" id="btn-nuevo-contacto" title="Agregar un contacto nuevo">+</button>
+    </div>
+    <dialog id="dlg-nuevo-contacto" class="dlg-nuevo-contacto">
+      <div class="dlg-nuevo-contacto__cab">
+        <strong>Nuevo contacto</strong>
+        <button type="button" class="dlg-nuevo-contacto__cerrar" onclick="document.getElementById('dlg-nuevo-contacto').close()" aria-label="Cerrar">&times;</button>
+      </div>
+      <iframe id="iframe-nuevo-contacto" title="Nuevo contacto"></iframe>
+    </dialog>
 
     <div class="fila-2">
       <div>
@@ -443,6 +463,39 @@
         });
       }
       document.addEventListener('click', (e) => { if (!contenedor.contains(e.target)) panel.hidden = true; });
+
+      // "+" — alta de contacto en ventana emergente; al guardarse se agrega
+      // a la lista y queda seleccionado en la cotización.
+      const dlg = document.getElementById('dlg-nuevo-contacto');
+      const iframe = document.getElementById('iframe-nuevo-contacto');
+      document.getElementById('btn-nuevo-contacto').addEventListener('click', () => {
+        const cliente = document.querySelector('.check-cliente:checked');
+        iframe.src = '{{ url_for("crm_contacto_nuevo") }}?modal=1' + (cliente ? '&cliente=' + encodeURIComponent(cliente.value) : '');
+        dlg.showModal();
+      });
+      dlg.addEventListener('close', () => { iframe.src = 'about:blank'; });
+      window.addEventListener('message', (e) => {
+        if (e.origin !== window.location.origin || !e.data || !e.data.tipo) return;
+        if (e.data.tipo === 'contacto_cancelado') { dlg.close(); return; }
+        if (e.data.tipo !== 'contacto_creado') return;
+        const vacio = lista.querySelector('.pista-campo');
+        if (vacio) vacio.remove();
+        const etiqueta = document.createElement('label');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.className = 'check-contacto'; cb.name = 'contacto_id'; cb.value = String(e.data.id);
+        etiqueta.appendChild(cb);
+        etiqueta.appendChild(document.createTextNode(' ' + (e.data.nombre || 'Contacto nuevo')));
+        lista.prepend(etiqueta);
+        checks.forEach((otro) => { otro.checked = false; });
+        checks.unshift(cb);
+        cb.checked = true;
+        cb.addEventListener('change', () => {
+          if (cb.checked) checks.forEach((otro) => { if (otro !== cb) otro.checked = false; });
+          actualizarBoton();
+        });
+        actualizarBoton();
+        dlg.close();
+      });
 
       actualizarBoton();
     })();
