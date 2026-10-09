@@ -34,6 +34,13 @@
   .acciones-encabezado { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
   .fila-filtros-cot { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
   .buscador-cotizaciones input { padding: 0.45rem 0.7rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; min-width: 280px; }
+  .buscadores-cot { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; }
+  .buscador-fechas-cot { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+  .buscador-fechas-cot label { font-size: 0.8rem; color: #555; }
+  .buscador-fechas-cot input { padding: 0.4rem 0.5rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.85rem; }
+  .buscador-fechas-cot input:invalid { border-color: #c0392b; }
+  .btn-limpiar-fechas { padding: 0.42rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: #333; font: inherit; font-size: 0.82rem; cursor: pointer; }
+  .btn-limpiar-fechas:hover { background: #f5f5f5; }
   .filtro-estatus-cot { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
   .filtro-estatus-cot label {
     display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: #333; cursor: pointer;
@@ -69,8 +76,17 @@
   <p class="pista">Base de datos de cotizaciones: origen/destino, HAZ-MAT, Incoterm, Modalidad y condiciones comerciales.</p>
 
   <div class="acciones-encabezado">
-    <div class="buscador-cotizaciones">
-      <input type="text" id="buscador-cotizaciones" autocomplete="off" placeholder="Buscar por ID, origen, destino, incoterm..." />
+    <div class="buscadores-cot">
+      <div class="buscador-cotizaciones">
+        <input type="text" id="buscador-cotizaciones" autocomplete="off" placeholder="Buscar por ID, origen, destino, incoterm..." />
+      </div>
+      <div class="buscador-fechas-cot" title="Filtra por fecha de creación">
+        <label for="fecha-desde-cot">Creada del</label>
+        <input type="date" id="fecha-desde-cot">
+        <label for="fecha-hasta-cot">al</label>
+        <input type="date" id="fecha-hasta-cot">
+        <button type="button" id="btn-limpiar-fechas-cot" class="btn-limpiar-fechas">Limpiar fechas</button>
+      </div>
     </div>
     <a class="btn-agregar" href="{{ url_for('crm_cotizacion_nueva') }}">+ Agregar cotización</a>
   </div>
@@ -282,6 +298,40 @@
       let rangoDesde = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('desde') || '') ? paramsUrl.get('desde') : '';
       let rangoHasta = /^\d{4}-\d{2}-\d{2}$/.test(paramsUrl.get('hasta') || '') ? paramsUrl.get('hasta') : '';
       const avisoRango = document.getElementById('aviso-rango-cot');
+      // Buscador por fecha de creación (rango). La fecha fin no puede pasar
+      // de hoy (hora del centro de México).
+      const hoyCot = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date());
+      const inputDesde = document.getElementById('fecha-desde-cot');
+      const inputHasta = document.getElementById('fecha-hasta-cot');
+      const estatusPorDefecto = checksEstatus.map((c) => c.defaultChecked);
+      inputHasta.max = hoyCot;
+      inputDesde.max = hoyCot;
+      if (rangoHasta > hoyCot) rangoHasta = hoyCot;
+      inputDesde.value = rangoDesde;
+      inputHasta.value = rangoHasta;
+      function aplicarRangoFechas() {
+        if (inputHasta.value && inputHasta.value > hoyCot) inputHasta.value = hoyCot;
+        if (inputDesde.value && inputDesde.value > hoyCot) inputDesde.value = hoyCot;
+        if (inputDesde.value && inputHasta.value && inputDesde.value > inputHasta.value) {
+          // Si quedan al revés, se intercambian para no dejar el rango vacío.
+          const t = inputDesde.value; inputDesde.value = inputHasta.value; inputHasta.value = t;
+        }
+        inputHasta.min = inputDesde.value || '';
+        rangoDesde = inputDesde.value;
+        rangoHasta = inputHasta.value;
+        if (rangoDesde || rangoHasta) checksEstatus.forEach((c) => { c.checked = true; });
+        aplicarFiltros();
+      }
+      inputDesde.addEventListener('change', aplicarRangoFechas);
+      inputHasta.addEventListener('change', aplicarRangoFechas);
+      document.getElementById('btn-limpiar-fechas-cot').addEventListener('click', () => {
+        inputDesde.value = ''; inputHasta.value = ''; inputHasta.min = '';
+        rangoDesde = ''; rangoHasta = '';
+        if (!creadorFiltro) checksEstatus.forEach((c, i) => { c.checked = estatusPorDefecto[i]; });
+        document.getElementById('rango-cot-fechas').hidden = true;
+        if (!creadorFiltro) avisoRango.hidden = true;
+        aplicarFiltros();
+      });
       if ((rangoDesde && rangoHasta) || creadorFiltro) {
         if (rangoDesde && rangoHasta) checksEstatus.forEach((c) => { c.checked = true; });
         document.getElementById('rango-cot-creador').textContent = creadorFiltro ? 'Creadas por ' + creadorFiltro : 'Creadas';
@@ -292,6 +342,7 @@
         document.getElementById('rango-cot-quitar').addEventListener('click', (e) => {
           e.preventDefault();
           rangoDesde = ''; rangoHasta = ''; creadorFiltro = '';
+          inputDesde.value = ''; inputHasta.value = '';
           avisoRango.hidden = true;
           aplicarFiltros();
         });
@@ -309,7 +360,7 @@
           const coincidePlaza = !plaza || fila.dataset.plaza === plaza;
           const coincideVendedor = !vendedor || fila.dataset.vendedor === vendedor;
           const fecha = fila.dataset.fecha || '';
-          const coincideRango = !rangoDesde || (fecha >= rangoDesde && fecha <= rangoHasta);
+          const coincideRango = (!rangoDesde || fecha >= rangoDesde) && (!rangoHasta || fecha <= rangoHasta);
           const coincideCreador = !creadorFiltro || normalizarTexto(fila.dataset.creador) === normalizarTexto(creadorFiltro);
           const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor && coincideRango && coincideCreador;
           fila.hidden = !coincide;
