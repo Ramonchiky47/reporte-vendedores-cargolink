@@ -9796,6 +9796,13 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
     )
 
 
+TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE = ["FTLI", "FTLE", "FTL", "LCLI", "LCLE", "LCL"]
+TRANSPORTE_TERRESTRE_TIPOS_UNIDAD = [
+    "1 TON", "3.5 TON", "Rabón", "DV53' (Single Driver)", "DV53' (Team Drivers)", "Sprinter",
+    "Small Straight", "Large Straight (Single Drivers)", "Large Straight (Team Drivers)", "FB53",
+]
+
+
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/solicitud-transporte-terrestre/nueva", methods=["GET", "POST"])
 @crm_required
 def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
@@ -9828,7 +9835,11 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
         directa_transbordo = (request.form.get("directa_transbordo", "") or "").strip()
         hazmat = si_no("hazmat")
         error = None
-        if directa_transbordo not in ("Directo", "Transbordo"):
+        if (request.form.get("tipo_embarque", "") or "").strip() not in TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE:
+            error = "Elige el Tipo de Embarque."
+        elif (request.form.get("tipo_unidad", "") or "").strip() not in TRANSPORTE_TERRESTRE_TIPOS_UNIDAD:
+            error = "Elige el Tipo de Unidad."
+        elif directa_transbordo not in ("Directo", "Transbordo"):
             error = "Indica si es Directo o Transbordo."
         elif si_no("hacemos_cruce") is None:
             error = "Indica si hacemos el cruce (Sí o No)."
@@ -9880,7 +9891,8 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
     return render_template(
         "crm_solicitud_transporte_terrestre_form.html", nav_groups=nav_groups,
         titulo_pagina="Solicitud a Transporte Terrestre Internacional",
-        cotizacion=cotizacion,
+        cotizacion=cotizacion, tipos_embarque=TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE,
+        tipos_unidad=TRANSPORTE_TERRESTRE_TIPOS_UNIDAD,
     )
 
 

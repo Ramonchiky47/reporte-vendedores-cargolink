@@ -82,12 +82,18 @@
     <div class="separador-seccion">Embarque</div>
     <div class="fila-2">
       <div>
-        <label for="tipo_embarque">Tipo de Embarque</label>
-        <input type="text" id="tipo_embarque" name="tipo_embarque" maxlength="100">
+        <label for="tipo_embarque">Tipo de Embarque *</label>
+        <select id="tipo_embarque" name="tipo_embarque" required>
+          <option value="">Selecciona</option>
+          {% for op in tipos_embarque %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+        </select>
       </div>
       <div>
-        <label for="tipo_unidad">Tipo de Unidad</label>
-        <input type="text" id="tipo_unidad" name="tipo_unidad" maxlength="100">
+        <label for="tipo_unidad">Tipo de Unidad *</label>
+        <select id="tipo_unidad" name="tipo_unidad" required>
+          <option value="">Selecciona</option>
+          {% for op in tipos_unidad %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+        </select>
       </div>
     </div>
 
