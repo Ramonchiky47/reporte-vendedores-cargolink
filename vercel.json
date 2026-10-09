@@ -1,12 +1,27 @@
 {
   "builds": [
-    { "src": "api/index.py", "use": "@vercel/python" }
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "api/index.py" }
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
   ],
   "crons": [
-    { "path": "/cron/generar-reporte", "schedule": "0 21 * * *" },
-    { "path": "/cron/generar-reporte", "schedule": "0 2 * * *" }
+    {
+      "path": "/cron/generar-reporte",
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/cron/generar-reporte",
+      "schedule": "0 2 * * *"
+    }
+  ],
+  "regions": [
+    "sfo1"
   ]
 }

@@ -20,6 +20,7 @@ import mimetypes
 import os
 import random
 import re
+import threading
 import secrets
 import smtplib
 import time
@@ -90,10 +91,80 @@ def get_secret_key():
     return secrets.token_hex(32)
 
 
+# Reserva de conexiones abiertas (por proceso). Abrir una conexión nueva a
+# Supabase cuesta ~0.3-0.5 s (TCP + TLS + autenticación en el pooler), y cada
+# página abría 3-6 (permisos, notificaciones, la ruta...). Ahora "cerrar" una
+# conexión hace rollback (lo mismo que descarta un cierre real) y la deja en
+# reserva para la siguiente llamada; dos get_db() simultáneos siguen
+# recibiendo conexiones distintas, así que las transacciones no se mezclan.
+_RESERVA_CONEXIONES = []
+_RESERVA_CANDADO = threading.Lock()
+_RESERVA_MAX = 4
+_RESERVA_EDAD_MAX_S = 120  # no reutilizar conexiones inactivas por más tiempo
+
+
+class _ConexionReutilizable:
+    """Envuelve una conexión de psycopg; close() la regresa a la reserva."""
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._cerrada = False
+
+    def close(self):
+        if self._cerrada:
+            return
+        self._cerrada = True
+        conn = self._conn
+        try:
+            if conn.closed or conn.broken:
+                return
+            conn.rollback()
+            if conn.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+                conn.close()
+                return
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return
+        with _RESERVA_CANDADO:
+            if len(_RESERVA_CONEXIONES) < _RESERVA_MAX:
+                _RESERVA_CONEXIONES.append((time.monotonic(), conn))
+                return
+        conn.close()
+
+    def __getattr__(self, nombre):
+        return getattr(self._conn, nombre)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
 def get_db():
     if not DATABASE_URL:
         raise RuntimeError("Falta la variable de entorno DATABASE_URL.")
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    ahora = time.monotonic()
+    while True:
+        with _RESERVA_CANDADO:
+            entrada = _RESERVA_CONEXIONES.pop() if _RESERVA_CONEXIONES else None
+        if entrada is None:
+            break
+        usada_en, conn = entrada
+        if ahora - usada_en > _RESERVA_EDAD_MAX_S or conn.closed or conn.broken:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            continue
+        return _ConexionReutilizable(conn)
+    # prepare_threshold=None: el pooler de Supabase (modo transacción) no
+    # soporta sentencias preparadas del lado del servidor, y con conexiones
+    # reutilizadas psycopg las activaría tras 5 usos de la misma consulta.
+    return _ConexionReutilizable(psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None))
 
 
 _cache_consultas = {}
