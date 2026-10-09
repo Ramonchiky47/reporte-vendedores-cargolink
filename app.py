@@ -10027,6 +10027,10 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
         if peligroso == "SI" and not un:
             flash("Si la carga es peligrosa, el UN# es obligatorio.")
             return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
+        # CP origen/destino: solo números, máximo 7 dígitos.
+        if not re.fullmatch(r"\d{1,7}", cp_origen) or not re.fullmatch(r"\d{1,7}", cp_destino):
+            flash("El CP de origen y de destino deben ser solo números (máximo 7 dígitos).")
+            return redirect(url_for("crm_solicitud_transporte_nacional_nueva", cotizacion_id=cotizacion_id))
 
         # Evita duplicados por doble/triple clic en "Enviar": se serializan
         # los envíos de la misma cotización y, si ya se guardó una solicitud

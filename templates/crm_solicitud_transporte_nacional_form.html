@@ -36,11 +36,11 @@
     <div class="fila-2">
       <div>
         <label for="cp_origen">CP Origen *</label>
-        <input type="text" id="cp_origen" name="cp_origen" maxlength="10" inputmode="numeric" required>
+        <input type="text" id="cp_origen" name="cp_origen" maxlength="7" inputmode="numeric" pattern="[0-9]{1,7}" title="Solo números, máximo 7 dígitos" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 7)" required>
       </div>
       <div>
         <label for="cp_destino">CP Destino *</label>
-        <input type="text" id="cp_destino" name="cp_destino" maxlength="10" inputmode="numeric" required>
+        <input type="text" id="cp_destino" name="cp_destino" maxlength="7" inputmode="numeric" pattern="[0-9]{1,7}" title="Solo números, máximo 7 dígitos" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 7)" required>
       </div>
     </div>
     <label for="direccion_origen">Dirección Origen *</label>
