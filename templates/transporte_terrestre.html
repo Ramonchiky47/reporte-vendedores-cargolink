@@ -41,11 +41,51 @@
     font-size: .62rem; font-weight: 800; letter-spacing: .03em; background: var(--danger); color: #fff; vertical-align: middle;
   }
   .fila-pricing.nueva td { background: #fff7ed; }
+  .tt-filtros { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin: 0 0 1rem; }
+  .tt-filtros label { font-size: .8rem; font-weight: 600; color: var(--ink-2); }
+  .tt-filtros select { padding: .38rem .55rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .85rem; background: #fff; }
+  .tt-kpis { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: .55rem; margin: 0 0 1.2rem; }
+  @media (max-width: 1200px) { .tt-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .tt-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tt-kpi { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; cursor: pointer; text-align: left; font: inherit; display: flex; flex-direction: column; justify-content: space-between; gap: .25rem; min-width: 0; transition: box-shadow .15s, border-color .15s; }
+  .tt-kpi:hover { box-shadow: 0 4px 12px rgba(15,23,42,.08); }
+  .tt-kpi.activo { border-color: var(--accent-dark); box-shadow: 0 0 0 2px rgba(29,78,216,.18); }
+  .tt-kpi .etq { font-size: .62rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; line-height: 1.25; }
+  .tt-kpi .val { font-size: 1.35rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tt-kpi.pendiente { background: linear-gradient(180deg, #fef3de, #fff 70%); border-color: #f5c58a; }
+  .tt-kpi.curso { background: linear-gradient(180deg, #dbeafe, #fff 70%); border-color: #93c5fd; }
+  .tt-kpi.cotizada, .tt-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #86efac; }
+  .tt-kpi.faltante { background: linear-gradient(180deg, #ede9fe, #fff 70%); border-color: #c4b5fd; }
+  .tt-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
+  .tt-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
+  .tt-aviso-filtro { font-size: .8rem; color: var(--ink-3); margin: -.6rem 0 .8rem; }
+  .tt-aviso-filtro button { background: none; border: none; color: var(--accent-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
 </style>
 {% endblock %}
 {% block content %}
     <h2 style="margin: 0 0 .2rem;">Transporte Terrestre Internacional</h2>
-    <p class="hint" style="margin: 0 0 1.5rem;">Solicitudes de Transporte Terrestre Internacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+    <p class="hint" style="margin: 0 0 1rem;">Solicitudes de Transporte Terrestre Internacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+
+    <form class="tt-filtros" method="get">
+      <label for="tt-mes">Mes:</label>
+      <select id="tt-mes" name="mes" onchange="this.form.submit()">
+        {% for op in meses_opciones %}<option value="{{ op.value }}" {{ 'selected' if op.value == mes_seleccionado else '' }}>{{ op.label }}</option>{% endfor %}
+      </select>
+      <label for="tt-solicitante">Solicitada por:</label>
+      <select id="tt-solicitante" name="solicitante" onchange="this.form.submit()">
+        <option value="">Todos</option>
+        {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
+      </select>
+    </form>
+
+    <div class="tt-kpis">
+      {% for clave, etiqueta, clase, valor in tarjetas %}
+      <button type="button" class="tt-kpi {{ clase }}" data-filtro="{{ clave }}" data-etiqueta="{{ etiqueta }}">
+        <span class="etq">{{ etiqueta }}</span><span class="val">{{ valor }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    <p class="tt-aviso-filtro" id="tt-aviso-filtro" hidden>Mostrando: <b id="tt-aviso-texto"></b> · <button type="button" onclick="filtrarTT('')">Ver todas</button></p>
 
     {% if filas %}
     <table class="tabla-pricing">
@@ -63,7 +103,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing{{ ' cotizada' if fila.estado in ('Cotizado', 'Cotizada') else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_terrestre_detalle', solicitud_id=fila.id) }}'">
+        <tr data-estado="{{ fila.estado }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado in ('Cotizado', 'Cotizada') else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_terrestre_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">{{ fila.referencia }}{% if fila.nueva_para_pricing %}<span class="badge-aviso">NUEVA</span>{% endif %}</div>
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
@@ -88,6 +128,27 @@
       </tbody>
     </table>
     {% else %}
-    <p class="empty">Todavía no hay solicitudes a Transporte Terrestre Internacional.</p>
+    <p class="empty">No hay solicitudes a Transporte Terrestre Internacional en este mes{{ ' para ese solicitante' if solicitante else '' }}.</p>
     {% endif %}
+    <script>
+      function filtrarTT(filtro) {
+        var partes = filtro ? [filtro.slice(0, filtro.indexOf(':')), filtro.slice(filtro.indexOf(':') + 1)] : null;
+        document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
+          tr.hidden = partes ? tr.dataset[partes[0]] !== partes[1] : false;
+        });
+        var etiqueta = '';
+        document.querySelectorAll('.tt-kpi').forEach(function (b) {
+          var activa = !!filtro && b.dataset.filtro === filtro;
+          b.classList.toggle('activo', activa);
+          if (activa) etiqueta = b.dataset.etiqueta;
+        });
+        document.getElementById('tt-aviso-filtro').hidden = !filtro;
+        document.getElementById('tt-aviso-texto').textContent = etiqueta;
+      }
+      document.querySelectorAll('.tt-kpi').forEach(function (b) {
+        b.addEventListener('click', function () {
+          filtrarTT(b.classList.contains('activo') || !b.dataset.filtro ? '' : b.dataset.filtro);
+        });
+      });
+    </script>
 {% endblock %}

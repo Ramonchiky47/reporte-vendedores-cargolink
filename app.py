@@ -10394,6 +10394,17 @@ SQL_TTI_NUEVA_PARA_PRICING = "(s.estado = 'Por Cotizar')"
 @app.route("/transporte-terrestre")
 @transporte_terrestre_required
 def transporte_terrestre():
+    # Filtro de Mes (fecha de creación, hora del centro de México; default:
+    # mes en curso) y Solicitada por — mismo tablero que Transporte Nacional.
+    hoy = datetime.now(TZ_LOCAL).date()
+    mes_actual = hoy.strftime("%Y-%m")
+    meses_opciones = [o for o in opciones_mes() if o["value"] <= mes_actual][::-1]
+    mes_seleccionado = request.args.get("mes", "").strip()
+    if mes_seleccionado not in {o["value"] for o in meses_opciones}:
+        mes_seleccionado = mes_actual
+    anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
+    fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
+    fecha_fin_mes_excl = date(anio_sel + (mes_num_sel == 12), mes_num_sel % 12 + 1, 1)
     db = get_db()
     filas = db.execute("""
         SELECT
@@ -10409,12 +10420,40 @@ def transporte_terrestre():
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
+        WHERE (s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
+          AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s
         ORDER BY (s.estado = 'Por Cotizar') DESC, (s.estado = 'Cotización en curso') DESC,
                  (s.estado = 'Información Faltante') DESC, s.creado_en DESC
-    """).fetchall()
+    """, (fecha_inicio_mes, fecha_fin_mes_excl)).fetchall()
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
-    return render_template("transporte_terrestre.html", filas=filas)
+
+    solicitantes = sorted({f["creado_por"] for f in filas if f["creado_por"]}, key=str.lower)
+    solicitante = request.args.get("solicitante", "").strip()
+    if solicitante not in solicitantes:
+        solicitante = ""
+    if solicitante:
+        filas = [f for f in filas if f["creado_por"] == solicitante]
+
+    # Tarjetas: (clave del filtro, etiqueta, clase de color, conteo).
+    def contar(cond):
+        return sum(1 for f in filas if cond(f))
+    tarjetas = [
+        ("", "Solicitudes", "", len(filas)),
+        ("estado:Por Cotizar", "Por Cotizar", "pendiente", contar(lambda f: f["estado"] == "Por Cotizar")),
+        ("estado:Cotización en curso", "Cotización en curso", "curso", contar(lambda f: f["estado"] == "Cotización en curso")),
+        ("estado:Cotizada", "Cotizada", "cotizada", contar(lambda f: f["estado"] == "Cotizada")),
+        ("estado:Información Faltante", "Información Faltante", "faltante", contar(lambda f: f["estado"] == "Información Faltante")),
+        ("estado:Rechazada", "Rechazada", "perdida", contar(lambda f: f["estado"] == "Rechazada")),
+        ("resultado:vigente", "Vigentes", "vigente", contar(lambda f: f.get("cotizacion_estatus_actual") == "vigente")),
+        ("resultado:ganada", "Ganadas", "ganada", contar(lambda f: f.get("cotizacion_estatus_actual") == "ganada")),
+        ("resultado:perdida", "Perdidas", "perdida", contar(lambda f: f.get("cotizacion_estatus_actual") == "perdida")),
+    ]
+    return render_template(
+        "transporte_terrestre.html", filas=filas, tarjetas=tarjetas,
+        meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
+        solicitantes=solicitantes, solicitante=solicitante,
+    )
 
 
 @app.route("/transporte-terrestre/<int:solicitud_id>")
