@@ -10428,6 +10428,23 @@ def transporte_terrestre():
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
 
+    # Estadístico por usuario (del mes elegido, antes de filtrar por
+    # solicitante): mismas cifras que las tarjetas, un renglón por usuario.
+    estadistico_usuarios = {}
+    for f in filas:
+        u = estadistico_usuarios.setdefault(f["creado_por"] or "—", {
+            "usuario": f["creado_por"] or "—", "total": 0, "por_cotizar": 0, "en_curso": 0, "cotizada": 0,
+            "faltante": 0, "rechazada": 0, "vigente": 0, "ganada": 0, "perdida": 0,
+        })
+        u["total"] += 1
+        clave_estado = {"Por Cotizar": "por_cotizar", "Cotización en curso": "en_curso", "Cotizada": "cotizada",
+                        "Información Faltante": "faltante", "Rechazada": "rechazada"}.get(f["estado"])
+        if clave_estado:
+            u[clave_estado] += 1
+        if f.get("cotizacion_estatus_actual") in ("vigente", "ganada", "perdida"):
+            u[f["cotizacion_estatus_actual"]] += 1
+    estadistico_usuarios = sorted(estadistico_usuarios.values(), key=lambda u: (-u["total"], u["usuario"].lower()))
+
     solicitantes = sorted({f["creado_por"] for f in filas if f["creado_por"]}, key=str.lower)
     solicitante = request.args.get("solicitante", "").strip()
     if solicitante not in solicitantes:
@@ -10452,7 +10469,7 @@ def transporte_terrestre():
     return render_template(
         "transporte_terrestre.html", filas=filas, tarjetas=tarjetas,
         meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
-        solicitantes=solicitantes, solicitante=solicitante,
+        solicitantes=solicitantes, solicitante=solicitante, estadistico_usuarios=estadistico_usuarios,
     )
 
 

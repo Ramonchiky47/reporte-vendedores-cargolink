@@ -58,6 +58,23 @@
   .tt-kpi.faltante { background: linear-gradient(180deg, #ede9fe, #fff 70%); border-color: #c4b5fd; }
   .tt-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
   .tt-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
+  .tt-btn-estadistico { padding: .38rem .8rem; border: 1px solid var(--border-strong); border-radius: 7px; background: #fff; font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .tt-btn-estadistico.activo, .tt-btn-estadistico:hover { border-color: var(--accent-dark); color: var(--accent-dark); }
+  .tt-estadistico { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem 1rem; margin: -.4rem 0 1rem; overflow-x: auto; }
+  .tt-estadistico__titulo { font-size: .85rem; font-weight: 700; color: var(--ink); margin-bottom: .6rem; }
+  .tt-estadistico__titulo span { font-weight: 500; color: var(--ink-3); font-size: .78rem; }
+  .tt-est-tabla { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .tt-est-tabla th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); padding: .35rem .5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .tt-est-tabla td { padding: .4rem .5rem; border-bottom: 1px solid #f1f5f9; }
+  .tt-est-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tt-est-tabla td.cero { color: var(--ink-4); }
+  .tt-est-tabla tbody tr { cursor: pointer; }
+  .tt-est-tabla tbody tr:hover td { background: #f8fafc; }
+  .tt-est-tabla tbody tr.sel td { background: #eef4fc; }
+  .tt-est-tabla tfoot td { font-weight: 700; border-top: 1px solid var(--border); border-bottom: none; }
+  .tt-est-tabla td.usuario { white-space: nowrap; }
+  .tt-barra { display: inline-block; vertical-align: middle; width: 70px; height: 6px; background: #eef2f7; border-radius: 3px; margin-right: .5rem; overflow: hidden; }
+  .tt-barra i { display: block; height: 100%; background: var(--accent-dark); border-radius: 3px; }
   .tt-aviso-filtro { font-size: .8rem; color: var(--ink-3); margin: -.6rem 0 .8rem; }
   .tt-aviso-filtro button { background: none; border: none; color: var(--accent-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
 </style>
@@ -76,7 +93,41 @@
         <option value="">Todos</option>
         {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
       </select>
+      {% if estadistico_usuarios %}
+      <button type="button" class="tt-btn-estadistico{{ ' activo' if solicitante else '' }}" onclick="var p=document.getElementById('tt-estadistico'); p.hidden=!p.hidden; this.classList.toggle('activo', !p.hidden);">📊 Estadístico por usuario</button>
+      {% endif %}
     </form>
+
+    {% if estadistico_usuarios %}
+    {% set max_total = estadistico_usuarios|map(attribute='total')|max %}
+    <div class="tt-estadistico" id="tt-estadistico" {{ '' if solicitante else 'hidden' }}>
+      <div class="tt-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span></div>
+      <table class="tt-est-tabla">
+        <thead><tr>
+          <th>Usuario</th><th class="num">Solicitudes</th><th class="num">Por Cotizar</th><th class="num">En curso</th>
+          <th class="num">Cotizada</th><th class="num">Info. Faltante</th><th class="num">Rechazada</th>
+          <th class="num">Vigentes</th><th class="num">Ganadas</th><th class="num">Perdidas</th>
+        </tr></thead>
+        <tbody>
+          {% for u in estadistico_usuarios %}
+          <tr class="{{ 'sel' if u.usuario == solicitante else '' }}" onclick="var s=document.getElementById('tt-solicitante'); s.value='{{ '' if u.usuario == solicitante else u.usuario }}'; s.form.submit();">
+            <td class="usuario">{{ u.usuario }}</td>
+            <td class="num"><div class="tt-barra"><i style="width:{{ (u.total / max_total * 100) if max_total else 0 }}%"></i></div><b>{{ u.total }}</b></td>
+            {% for k in ['por_cotizar', 'en_curso', 'cotizada', 'faltante', 'rechazada', 'vigente', 'ganada', 'perdida'] %}
+            <td class="num{{ ' cero' if not u[k] else '' }}">{{ u[k] }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr>
+          <td>Total</td><td class="num"><b>{{ estadistico_usuarios|sum(attribute='total') }}</b></td>
+          {% for k in ['por_cotizar', 'en_curso', 'cotizada', 'faltante', 'rechazada', 'vigente', 'ganada', 'perdida'] %}
+          <td class="num">{{ estadistico_usuarios|sum(attribute=k) }}</td>
+          {% endfor %}
+        </tr></tfoot>
+      </table>
+    </div>
+    {% endif %}
 
     <div class="tt-kpis">
       {% for clave, etiqueta, clase, valor in tarjetas %}
