@@ -1,0 +1,124 @@
+{# Tablero de una bandeja de Pricing: filtros Mes / Solicitada por, botón de
+   regreso, estadístico por usuario y tarjetas que filtran las filas.
+   Espera: endpoint_bandeja, meses_opciones, mes_seleccionado, solicitantes,
+   solicitante, tarjetas [(clave, etiqueta, clase, valor)],
+   estadistico_usuarios [dict], columnas_estadistico [(clave, etiqueta)].
+   Las filas de la tabla deben tener class="fila-pricing" y data-* con los
+   valores que usan las claves de las tarjetas ("campo:valor"). #}
+<style>
+  .tb-filtros { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin: 0 0 1rem; }
+  .tb-filtros label { font-size: .8rem; font-weight: 600; color: var(--ink-2); }
+  .tb-filtros select { padding: .38rem .55rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .85rem; background: #fff; }
+  .tb-btn-regresar { padding: .38rem .8rem; border-radius: 7px; background: var(--accent-dark); color: #fff; font-size: .82rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .tb-btn-regresar:hover { filter: brightness(1.1); }
+  .tb-btn-estadistico { padding: .38rem .8rem; border: 1px solid var(--border-strong); border-radius: 7px; background: #fff !important; font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .tb-btn-estadistico.activo, .tb-btn-estadistico:hover { border-color: var(--accent-dark); color: var(--accent-dark); background: #eef4fc !important; }
+  .tb-estadistico { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem 1rem; margin: -.4rem 0 1rem; overflow-x: auto; }
+  .tb-estadistico__titulo { font-size: .85rem; font-weight: 700; color: var(--ink); margin-bottom: .6rem; }
+  .tb-estadistico__titulo span { font-weight: 500; color: var(--ink-3); font-size: .78rem; }
+  .tb-est-tabla { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .tb-est-tabla th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); padding: .35rem .5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .tb-est-tabla td { padding: .4rem .5rem; border-bottom: 1px solid #f1f5f9; }
+  .tb-est-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tb-est-tabla td.cero { color: var(--ink-4); }
+  .tb-est-tabla tbody tr { cursor: pointer; }
+  .tb-est-tabla tbody tr:hover td { background: #f8fafc; }
+  .tb-est-tabla tbody tr.sel td { background: #eef4fc; }
+  .tb-est-tabla tfoot td { font-weight: 700; border-top: 1px solid var(--border); border-bottom: none; }
+  .tb-est-tabla td.usuario { white-space: nowrap; }
+  .tb-barra { display: inline-block; vertical-align: middle; width: 70px; height: 6px; background: #eef2f7; border-radius: 3px; margin-right: .5rem; overflow: hidden; }
+  .tb-barra i { display: block; height: 100%; background: var(--accent-dark); border-radius: 3px; }
+  .tb-kpis { display: grid; grid-template-columns: repeat({{ tarjetas|length }}, minmax(0, 1fr)); gap: .55rem; margin: 0 0 1.2rem; }
+  @media (max-width: 1200px) { .tb-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .tb-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tb-kpi { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; cursor: pointer; text-align: left; font: inherit; color: inherit; display: flex; flex-direction: column; justify-content: space-between; gap: .25rem; min-width: 0; transition: box-shadow .15s, border-color .15s; }
+  .tb-kpi:hover { box-shadow: 0 4px 12px rgba(15,23,42,.08); }
+  .tb-kpi.activo { border-color: var(--accent-dark); box-shadow: 0 0 0 2px rgba(29,78,216,.18); }
+  .tb-kpi .etq { font-size: .62rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; line-height: 1.25; }
+  .tb-kpi .val { font-size: 1.35rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tb-kpi.pendiente { background: linear-gradient(180deg, #fef3de, #fff 70%); border-color: #f5c58a; }
+  .tb-kpi.curso { background: linear-gradient(180deg, #dbeafe, #fff 70%); border-color: #93c5fd; }
+  .tb-kpi.cotizada, .tb-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #86efac; }
+  .tb-kpi.faltante { background: linear-gradient(180deg, #ede9fe, #fff 70%); border-color: #c4b5fd; }
+  .tb-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
+  .tb-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
+  .tb-aviso-filtro { font-size: .8rem; color: var(--ink-3); margin: -.6rem 0 .8rem; }
+  .tb-aviso-filtro button { background: none !important; border: none; color: var(--accent-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
+</style>
+
+<form class="tb-filtros" method="get">
+  <label for="tb-mes">Mes:</label>
+  <select id="tb-mes" name="mes" onchange="this.form.submit()">
+    {% for op in meses_opciones %}<option value="{{ op.value }}" {{ 'selected' if op.value == mes_seleccionado else '' }}>{{ op.label }}</option>{% endfor %}
+  </select>
+  <label for="tb-solicitante">Solicitada por:</label>
+  <select id="tb-solicitante" name="solicitante" onchange="this.form.submit()">
+    <option value="">Todos</option>
+    {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
+  </select>
+  {% if solicitante %}
+  <a class="tb-btn-regresar" href="{{ url_for(endpoint_bandeja, mes=mes_seleccionado) }}">&larr; Regresar a todos</a>
+  {% endif %}
+  {% if estadistico_usuarios %}
+  <button type="button" class="tb-btn-estadistico{{ ' activo' if solicitante else '' }}" onclick="var p=document.getElementById('tb-estadistico'); p.hidden=!p.hidden; this.classList.toggle('activo', !p.hidden);">📊 Estadístico por usuario</button>
+  {% endif %}
+</form>
+
+{% if estadistico_usuarios %}
+{% set max_total = estadistico_usuarios|map(attribute='total')|max %}
+<div class="tb-estadistico" id="tb-estadistico" {{ '' if solicitante else 'hidden' }}>
+  <div class="tb-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span>{% if solicitante %} · <a href="{{ url_for(endpoint_bandeja, mes=mes_seleccionado) }}" style="font-size:.78rem;">&larr; Regresar a todos</a>{% endif %}</div>
+  <table class="tb-est-tabla">
+    <thead><tr>
+      <th>Usuario</th><th class="num">Solicitudes</th>
+      {% for k, etq in columnas_estadistico %}<th class="num">{{ etq }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+      {% for u in estadistico_usuarios %}
+      <tr class="{{ 'sel' if u.usuario == solicitante else '' }}" data-usuario="{{ '' if u.usuario == solicitante else u.usuario }}" onclick="var s=document.getElementById('tb-solicitante'); s.value=this.dataset.usuario; s.form.submit();">
+        <td class="usuario">{{ u.usuario }}</td>
+        <td class="num"><div class="tb-barra"><i style="width:{{ (u.total / max_total * 100) if max_total else 0 }}%"></i></div><b>{{ u.total }}</b></td>
+        {% for k, etq in columnas_estadistico %}<td class="num{{ ' cero' if not u[k] else '' }}">{{ u[k] }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr>
+      <td>Total</td><td class="num"><b>{{ estadistico_usuarios|sum(attribute='total') }}</b></td>
+      {% for k, etq in columnas_estadistico %}<td class="num">{{ estadistico_usuarios|sum(attribute=k) }}</td>{% endfor %}
+    </tr></tfoot>
+  </table>
+</div>
+{% endif %}
+
+<div class="tb-kpis">
+  {% for clave, etiqueta, clase, valor in tarjetas %}
+  <button type="button" class="tb-kpi {{ clase }}" data-filtro="{{ clave }}" data-etiqueta="{{ etiqueta }}">
+    <span class="etq">{{ etiqueta }}</span><span class="val">{{ valor }}</span>
+  </button>
+  {% endfor %}
+</div>
+<p class="tb-aviso-filtro" id="tb-aviso-filtro" hidden>Mostrando: <b id="tb-aviso-texto"></b> · <button type="button" onclick="filtrarTablero('')">Ver todas</button></p>
+
+<script>
+  function filtrarTablero(filtro) {
+    var corte = filtro ? filtro.indexOf(':') : -1;
+    var campo = corte >= 0 ? filtro.slice(0, corte) : null;
+    var valor = corte >= 0 ? filtro.slice(corte + 1) : null;
+    document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
+      tr.hidden = campo ? tr.dataset[campo] !== valor : false;
+    });
+    var etiqueta = '';
+    document.querySelectorAll('.tb-kpi').forEach(function (b) {
+      var activa = !!filtro && b.dataset.filtro === filtro;
+      b.classList.toggle('activo', activa);
+      if (activa) etiqueta = b.dataset.etiqueta;
+    });
+    document.getElementById('tb-aviso-filtro').hidden = !filtro;
+    document.getElementById('tb-aviso-texto').textContent = etiqueta;
+  }
+  document.querySelectorAll('.tb-kpi').forEach(function (b) {
+    b.addEventListener('click', function () {
+      filtrarTablero(b.classList.contains('activo') || !b.dataset.filtro ? '' : b.dataset.filtro);
+    });
+  });
+</script>

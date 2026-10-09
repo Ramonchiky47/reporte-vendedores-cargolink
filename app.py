@@ -10148,10 +10148,22 @@ PRICING_TEXTOS = {
 @app.route("/pricing")
 @pricing_required
 def pricing():
+    # Filtro de Mes (fecha de creación, hora del centro de México; default:
+    # mes en curso) y Solicitada por — mismo tablero que Transporte Nacional
+    # y Terrestre Internacional (plantilla _tablero_pricing.html).
+    hoy = datetime.now(TZ_LOCAL).date()
+    mes_actual = hoy.strftime("%Y-%m")
+    meses_opciones = [o for o in opciones_mes() if o["value"] <= mes_actual][::-1]
+    mes_seleccionado = request.args.get("mes", "").strip()
+    if mes_seleccionado not in {o["value"] for o in meses_opciones}:
+        mes_seleccionado = mes_actual
+    anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
+    fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
+    fecha_fin_mes_excl = date(anio_sel + (mes_num_sel == 12), mes_num_sel % 12 + 1, 1)
     db = get_db()
     filas = db.execute("""
         SELECT
-            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
+            s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado, s.creado_por, s.creado_en,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
@@ -10161,11 +10173,59 @@ def pricing():
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
+        WHERE (s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
+          AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
-    """).fetchall()
+    """, (fecha_inicio_mes, fecha_fin_mes_excl)).fetchall()
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
-    return render_template("pricing.html", filas=filas)
+    for f in filas:
+        f["grupo"] = (
+            "por_cotizar" if f["estado"] in ("Solicitud", "En proceso")
+            else {"Cotizado": "cotizada", "Rechazada": "rechazada"}.get(f["estado"], "otro")
+        )
+        f["tipo_clave"] = {"Marítimo": "maritimo", "Aéreo": "aereo"}.get(f["tipo_embarque"] or "", "otro")
+
+    # Estadístico por usuario (mes elegido, antes de filtrar por solicitante).
+    columnas_estadistico = [
+        ("por_cotizar", "Por cotizar"), ("cotizada", "Cotizadas"), ("rechazada", "Rechazadas"),
+        ("maritimo", "Marítimo"), ("aereo", "Aéreo"), ("vigente", "Vigentes"), ("ganada", "Ganadas"), ("perdida", "Perdidas"),
+    ]
+    estadistico = {}
+    for f in filas:
+        u = estadistico.setdefault(f["creado_por"] or "—", {"usuario": f["creado_por"] or "—", "total": 0, **{k: 0 for k, _ in columnas_estadistico}})
+        u["total"] += 1
+        for clave in (f["grupo"], f["tipo_clave"], f.get("cotizacion_estatus_actual")):
+            if clave in u and clave not in ("usuario", "total"):
+                u[clave] += 1
+    estadistico_usuarios = sorted(estadistico.values(), key=lambda u: (-u["total"], u["usuario"].lower()))
+
+    solicitantes = sorted({f["creado_por"] for f in filas if f["creado_por"]}, key=str.lower)
+    solicitante = request.args.get("solicitante", "").strip()
+    if solicitante not in solicitantes:
+        solicitante = ""
+    if solicitante:
+        filas = [f for f in filas if f["creado_por"] == solicitante]
+
+    def contar(cond):
+        return sum(1 for f in filas if cond(f))
+    tarjetas = [
+        ("", "Solicitudes", "", len(filas)),
+        ("grupo:por_cotizar", "Por cotizar", "pendiente", contar(lambda f: f["grupo"] == "por_cotizar")),
+        ("grupo:cotizada", "Cotizadas", "cotizada", contar(lambda f: f["grupo"] == "cotizada")),
+        ("grupo:rechazada", "Rechazadas", "perdida", contar(lambda f: f["grupo"] == "rechazada")),
+        ("tipo:maritimo", "Marítimo", "", contar(lambda f: f["tipo_clave"] == "maritimo")),
+        ("tipo:aereo", "Aéreo", "", contar(lambda f: f["tipo_clave"] == "aereo")),
+        ("resultado:vigente", "Vigentes", "vigente", contar(lambda f: f.get("cotizacion_estatus_actual") == "vigente")),
+        ("resultado:ganada", "Ganadas", "ganada", contar(lambda f: f.get("cotizacion_estatus_actual") == "ganada")),
+        ("resultado:perdida", "Perdidas", "perdida", contar(lambda f: f.get("cotizacion_estatus_actual") == "perdida")),
+    ]
+    return render_template(
+        "pricing.html", filas=filas, tarjetas=tarjetas, endpoint_bandeja="pricing",
+        meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
+        solicitantes=solicitantes, solicitante=solicitante,
+        estadistico_usuarios=estadistico_usuarios, columnas_estadistico=columnas_estadistico,
+    )
 
 
 @app.route("/pricing/<int:solicitud_id>")

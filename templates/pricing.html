@@ -3,6 +3,8 @@
 {% set active = "pricing" %}
 {% block extra_head %}
 <style>
+  main { max-width: 1500px; }
+  .tabla-pricing td.nowrap { white-space: nowrap; }
   .pricing-badge {
     display: inline-block; font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 999px;
     text-transform: uppercase; letter-spacing: .02em; white-space: nowrap;
@@ -20,10 +22,10 @@
 
   .tabla-pricing { width: 100%; border-collapse: collapse; font-size: .85rem; }
   .tabla-pricing th {
-    text-align: left; padding: .55rem .6rem; color: var(--ink-2); font-weight: 700;
+    text-align: left; padding: .6rem .9rem; color: var(--ink-2); font-weight: 700;
     border-bottom: 1px solid var(--border); background: #f8fafc; white-space: nowrap;
   }
-  .tabla-pricing td { padding: .7rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tabla-pricing td { padding: .75rem .9rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
   .tabla-pricing tr:last-child td { border-bottom: none; }
   .fila-pricing { cursor: pointer; }
   .fila-pricing:hover td { background: #f8fafc; }
@@ -37,7 +39,9 @@
 {% endblock %}
 {% block content %}
     <h2 style="margin: 0 0 .2rem;">Pricing Marítimo / Aéreo</h2>
-    <p class="hint" style="margin: 0 0 1.5rem;">Solicitudes Marítimo / Aéreo de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+    <p class="hint" style="margin: 0 0 1rem;">Solicitudes Marítimo / Aéreo de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
+
+    {% include "_tablero_pricing.html" %}
 
     {% if filas %}
     <table class="tabla-pricing">
@@ -45,6 +49,7 @@
         <tr>
           <th>Referencia</th>
           <th>Tipo</th>
+          <th>Solicitó</th>
           <th>Fecha</th>
           <th>Operativo asignado</th>
           <th>Cotización</th>
@@ -53,13 +58,14 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}" onclick="window.location.href='{{ url_for('pricing_detalle', solicitud_id=fila.id) }}'">
+        <tr data-grupo="{{ fila.grupo }}" data-tipo="{{ fila.tipo_clave }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}" onclick="window.location.href='{{ url_for('pricing_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">{{ fila.referencia }}</div>
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
           </td>
           <td>{{ fila.tipo_embarque or '—' }}</td>
-          <td>{{ fila.fecha_creacion }}</td>
+          <td>{{ fila.creado_por or '—' }}</td>
+          <td class="nowrap">{{ fila.creado_en|hora_mx if fila.creado_en else fila.fecha_creacion }}</td>
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
           <td>
             {% if fila.cotizacion_estatus_actual %}
@@ -76,6 +82,6 @@
       </tbody>
     </table>
     {% else %}
-    <p class="empty">Todavía no hay solicitudes a Pricing.</p>
+    <p class="empty">No hay solicitudes a Pricing en este mes{{ ' para ese solicitante' if solicitante else '' }}.</p>
     {% endif %}
 {% endblock %}
