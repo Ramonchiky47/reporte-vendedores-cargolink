@@ -66,6 +66,8 @@
   .tn-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #4ade80; }
   .tn-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
   .tn-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
+  .tn-check-cotizadas { display: inline-flex; align-items: center; gap: .35rem; font-size: .82rem !important; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .tn-aviso-ocultas { font-size: .78rem; color: #b45309; font-weight: 600; }
   .tn-btn-regresar { padding: .38rem .8rem; border-radius: 7px; background: var(--accent-dark); color: #fff; font-size: .82rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .tn-btn-regresar:hover { filter: brightness(1.1); }
   .tn-btn-estadistico { padding: .38rem .8rem; border: 1px solid var(--border-strong); border-radius: 7px; background: #fff !important; font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
@@ -103,8 +105,11 @@
         <option value="">Todos</option>
         {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
       </select>
+      <label class="tn-check-cotizadas"><input type="checkbox" name="mostrar_cotizadas" value="1" {{ 'checked' if mostrar_cotizadas else '' }} onchange="this.form.submit()"> Mostrar cotizadas</label>
+      {% set n_cotizadas = filas|selectattr('grupo', 'equalto', 'cotizada')|list|length %}
+      {% if not mostrar_cotizadas and n_cotizadas %}<span class="tn-aviso-ocultas">{{ n_cotizadas }} cotizada{{ 's' if n_cotizadas != 1 else '' }} oculta{{ 's' if n_cotizadas != 1 else '' }}</span>{% endif %}
       {% if solicitante %}
-      <a class="tn-btn-regresar" href="{{ url_for('transporte_nacional', mes=mes_seleccionado) }}">&larr; Regresar a todos</a>
+      <a class="tn-btn-regresar" href="{{ url_for('transporte_nacional', mes=mes_seleccionado, mostrar_cotizadas='1' if mostrar_cotizadas else None) }}">&larr; Regresar a todos</a>
       {% endif %}
       {% if estadistico_usuarios %}
       <button type="button" class="tn-btn-estadistico{{ ' activo' if solicitante else '' }}" onclick="var p=document.getElementById('tn-estadistico'); p.hidden=!p.hidden; this.classList.toggle('activo', !p.hidden);">📊 Estadístico por usuario</button>
@@ -115,7 +120,7 @@
     {% set max_total = estadistico_usuarios|map(attribute='total')|max %}
     {% set cols = ['por_cotizar', 'cotizada', 'pendiente_info', 'rechazada', 'ftl', 'ltl', 'vigente', 'ganada', 'perdida'] %}
     <div class="tn-estadistico" id="tn-estadistico" {{ '' if solicitante else 'hidden' }}>
-      <div class="tn-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span>{% if solicitante %} · <a href="{{ url_for('transporte_nacional', mes=mes_seleccionado) }}" style="font-size:.78rem;">&larr; Regresar a todos</a>{% endif %}</div>
+      <div class="tn-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span>{% if solicitante %} · <a href="{{ url_for('transporte_nacional', mes=mes_seleccionado, mostrar_cotizadas='1' if mostrar_cotizadas else None) }}" style="font-size:.78rem;">&larr; Regresar a todos</a>{% endif %}</div>
       <table class="tn-est-tabla">
         <thead><tr>
           <th>Usuario</th><th class="num">Solicitudes</th><th class="num">Por cotizar</th><th class="num">Cotizadas</th>
@@ -166,7 +171,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr data-grupo="{{ fila.grupo }}" data-tipo="{{ fila.tipo_servicio or '' }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
+        <tr data-grupo="{{ fila.grupo }}" {{ 'hidden' if fila.grupo == 'cotizada' and not mostrar_cotizadas else '' }} data-tipo="{{ fila.tipo_servicio or '' }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">
               {{ fila.referencia }}
@@ -213,8 +218,11 @@
     <script>
       function filtrarTN(filtro) {
         var partes = filtro ? filtro.split(':') : null;
+        var mostrarCotizadas = {{ 'true' if mostrar_cotizadas else 'false' }};
         document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
-          tr.hidden = partes ? tr.dataset[partes[0]] !== partes[1] : false;
+          // Sin filtro de tarjeta, las cotizadas siguen ocultas salvo
+          // "Mostrar cotizadas"; la tarjeta Cotizadas sí las muestra.
+          tr.hidden = partes ? tr.dataset[partes[0]] !== partes[1] : (!mostrarCotizadas && tr.dataset.grupo === 'cotizada');
         });
         var etiqueta = '';
         document.querySelectorAll('.tn-kpi').forEach(function (b) {

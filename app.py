@@ -10900,6 +10900,10 @@ def transporte_nacional():
         "transporte_nacional.html", filas=filas, tarjetas=tarjetas,
         meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
         solicitantes=solicitantes, solicitante=solicitante, estadistico_usuarios=estadistico_usuarios,
+        # Las cotizadas se ocultan de la tabla salvo que se marque "Mostrar
+        # cotizadas" (siguen contando en las tarjetas). Si el vendedor la
+        # regresa con comentarios, vuelve a "Solicitud" y reaparece sola.
+        mostrar_cotizadas=request.args.get("mostrar_cotizadas") == "1",
     )
 
 
