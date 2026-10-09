@@ -40,11 +40,10 @@
         <input type="email" id="correo_solicitante" name="correo_solicitante" maxlength="100" value="{{ session.usuario or '' }}">
       </div>
       <div>
-        <label for="importacion_exportacion">Importación o Exportación</label>
-        <select id="importacion_exportacion" name="importacion_exportacion">
+        <label for="importacion_exportacion">Importación, Exportación o Doméstico *</label>
+        <select id="importacion_exportacion" name="importacion_exportacion" required>
           <option value="">Selecciona</option>
-          <option value="Importación">Importación</option>
-          <option value="Exportación">Exportación</option>
+          {% for op in embarque_por_operacion %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
         </select>
       </div>
     </div>
@@ -83,9 +82,8 @@
     <div class="fila-2">
       <div>
         <label for="tipo_embarque">Tipo de Embarque *</label>
-        <select id="tipo_embarque" name="tipo_embarque" required>
-          <option value="">Selecciona</option>
-          {% for op in tipos_embarque %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+        <select id="tipo_embarque" name="tipo_embarque" required disabled>
+          <option value="">Primero elige Importación / Exportación / Doméstico</option>
         </select>
       </div>
       <div>
@@ -166,6 +164,22 @@
       }
       hazmat.addEventListener('change', actualizarUN);
       actualizarUN();
+
+      // Tipo de Embarque según Importación / Exportación / Doméstico.
+      const EMBARQUE_POR_OPERACION = {{ embarque_por_operacion|tojson }};
+      const operacion = document.getElementById('importacion_exportacion');
+      const embarque = document.getElementById('tipo_embarque');
+      function actualizarEmbarque() {
+        const opciones = EMBARQUE_POR_OPERACION[operacion.value] || [];
+        const actual = embarque.value;
+        embarque.innerHTML = '';
+        embarque.appendChild(new Option(opciones.length ? 'Selecciona' : 'Primero elige Importación / Exportación / Doméstico', ''));
+        opciones.forEach((o) => embarque.appendChild(new Option(o, o)));
+        embarque.disabled = !opciones.length;
+        if (opciones.includes(actual)) embarque.value = actual;
+      }
+      operacion.addEventListener('change', actualizarEmbarque);
+      actualizarEmbarque();
     })();
   </script>
 {% endblock %}

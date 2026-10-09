@@ -9786,7 +9786,13 @@ def crm_solicitud_maritimo_nueva(cotizacion_id):
     )
 
 
-TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE = ["FTLI", "FTLE", "FTL", "LCLI", "LCLE", "LCL"]
+TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE = ["FTLI", "FTLE", "FTL", "LCLI", "LCLE", "LTL"]
+# Tipos de embarque permitidos según Importación / Exportación / Doméstico.
+TRANSPORTE_TERRESTRE_EMBARQUE_POR_OPERACION = {
+    "Importación": ["FTLI", "LCLI"],
+    "Exportación": ["FTLE", "LCLE"],
+    "Doméstico": ["FTL", "LTL"],
+}
 TRANSPORTE_TERRESTRE_TIPOS_UNIDAD = [
     "1 TON", "3.5 TON", "Rabón", "DV53' (Single Driver)", "DV53' (Team Drivers)", "Sprinter",
     "Small Straight", "Large Straight (Single Drivers)", "Large Straight (Team Drivers)", "FB53",
@@ -9825,8 +9831,11 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
         directa_transbordo = (request.form.get("directa_transbordo", "") or "").strip()
         hazmat = si_no("hazmat")
         error = None
-        if (request.form.get("tipo_embarque", "") or "").strip() not in TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE:
-            error = "Elige el Tipo de Embarque."
+        operacion = (request.form.get("importacion_exportacion", "") or "").strip()
+        if operacion not in TRANSPORTE_TERRESTRE_EMBARQUE_POR_OPERACION:
+            error = "Indica si es Importación, Exportación o Doméstico."
+        elif (request.form.get("tipo_embarque", "") or "").strip() not in TRANSPORTE_TERRESTRE_EMBARQUE_POR_OPERACION[operacion]:
+            error = f"Elige un Tipo de Embarque válido para {operacion}."
         elif (request.form.get("tipo_unidad", "") or "").strip() not in TRANSPORTE_TERRESTRE_TIPOS_UNIDAD:
             error = "Elige el Tipo de Unidad."
         elif directa_transbordo not in ("Directo", "Transbordo"):
@@ -9882,6 +9891,7 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
         "crm_solicitud_transporte_terrestre_form.html", nav_groups=nav_groups,
         titulo_pagina="Solicitud a Transporte Terrestre Internacional",
         cotizacion=cotizacion, tipos_embarque=TRANSPORTE_TERRESTRE_TIPOS_EMBARQUE,
+        embarque_por_operacion=TRANSPORTE_TERRESTRE_EMBARQUE_POR_OPERACION,
         tipos_unidad=TRANSPORTE_TERRESTRE_TIPOS_UNIDAD,
     )
 
