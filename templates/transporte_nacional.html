@@ -51,16 +51,38 @@
   .tn-filtros { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin: 0 0 1rem; }
   .tn-filtros label { font-size: .8rem; font-weight: 600; color: var(--ink-2); }
   .tn-filtros select { padding: .38rem .55rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .85rem; background: #fff; }
-  .tn-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .75rem; margin: 0 0 1.2rem; }
-  .tn-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; cursor: pointer; text-align: left; font: inherit; display: flex; flex-direction: column; gap: .3rem; transition: box-shadow .15s, border-color .15s; }
+  .tn-kpis { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: .55rem; margin: 0 0 1.2rem; }
+  @media (max-width: 1200px) { .tn-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .tn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .tn-kpi { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; min-width: 0; justify-content: space-between; cursor: pointer; text-align: left; font: inherit; display: flex; flex-direction: column; gap: .3rem; transition: box-shadow .15s, border-color .15s; }
   .tn-kpi:hover { box-shadow: 0 4px 12px rgba(15,23,42,.08); }
   .tn-kpi.activo { border-color: var(--accent-dark); box-shadow: 0 0 0 2px rgba(29,78,216,.18); }
-  .tn-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
-  .tn-kpi .val { font-size: 1.5rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tn-kpi .etq { font-size: .62rem; line-height: 1.25; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .tn-kpi .val { font-size: 1.35rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
   .tn-kpi.pendiente { background: linear-gradient(180deg, #fef3de, #fff 70%); border-color: #f5c58a; }
   .tn-kpi.cotizada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #86efac; }
   .tn-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #4ade80; }
   .tn-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
+  .tn-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
+  .tn-btn-regresar { padding: .38rem .8rem; border-radius: 7px; background: var(--accent-dark); color: #fff; font-size: .82rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+  .tn-btn-regresar:hover { filter: brightness(1.1); }
+  .tn-btn-estadistico { padding: .38rem .8rem; border: 1px solid var(--border-strong); border-radius: 7px; background: #fff !important; font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .tn-btn-estadistico.activo, .tn-btn-estadistico:hover { border-color: var(--accent-dark); color: var(--accent-dark); background: #eef4fc !important; }
+  .tn-estadistico { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem 1rem; margin: -.4rem 0 1rem; overflow-x: auto; }
+  .tn-estadistico__titulo { font-size: .85rem; font-weight: 700; color: var(--ink); margin-bottom: .6rem; }
+  .tn-estadistico__titulo span { font-weight: 500; color: var(--ink-3); font-size: .78rem; }
+  .tn-est-tabla { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .tn-est-tabla th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-3); padding: .35rem .5rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .tn-est-tabla td { padding: .4rem .5rem; border-bottom: 1px solid #f1f5f9; }
+  .tn-est-tabla .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tn-est-tabla td.cero { color: var(--ink-4); }
+  .tn-est-tabla tbody tr { cursor: pointer; }
+  .tn-est-tabla tbody tr:hover td { background: #f8fafc; }
+  .tn-est-tabla tbody tr.sel td { background: #eef4fc; }
+  .tn-est-tabla tfoot td { font-weight: 700; border-top: 1px solid var(--border); border-bottom: none; }
+  .tn-est-tabla td.usuario { white-space: nowrap; }
+  .tn-barra { display: inline-block; vertical-align: middle; width: 70px; height: 6px; background: #eef2f7; border-radius: 3px; margin-right: .5rem; overflow: hidden; }
+  .tn-barra i { display: block; height: 100%; background: var(--accent-dark); border-radius: 3px; }
   .tn-aviso-filtro { font-size: .8rem; color: var(--ink-3); margin: -.6rem 0 .8rem; }
   .tn-aviso-filtro button { background: none; border: none; color: var(--accent-dark); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
 </style>
@@ -79,30 +101,48 @@
         <option value="">Todos</option>
         {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
       </select>
+      {% if solicitante %}
+      <a class="tn-btn-regresar" href="{{ url_for('transporte_nacional', mes=mes_seleccionado) }}">&larr; Regresar a todos</a>
+      {% endif %}
+      {% if estadistico_usuarios %}
+      <button type="button" class="tn-btn-estadistico{{ ' activo' if solicitante else '' }}" onclick="var p=document.getElementById('tn-estadistico'); p.hidden=!p.hidden; this.classList.toggle('activo', !p.hidden);">📊 Estadístico por usuario</button>
+      {% endif %}
     </form>
 
+    {% if estadistico_usuarios %}
+    {% set max_total = estadistico_usuarios|map(attribute='total')|max %}
+    {% set cols = ['por_cotizar', 'cotizada', 'rechazada', 'ftl', 'ltl', 'vigente', 'ganada', 'perdida'] %}
+    <div class="tn-estadistico" id="tn-estadistico" {{ '' if solicitante else 'hidden' }}>
+      <div class="tn-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span>{% if solicitante %} · <a href="{{ url_for('transporte_nacional', mes=mes_seleccionado) }}" style="font-size:.78rem;">&larr; Regresar a todos</a>{% endif %}</div>
+      <table class="tn-est-tabla">
+        <thead><tr>
+          <th>Usuario</th><th class="num">Solicitudes</th><th class="num">Por cotizar</th><th class="num">Cotizadas</th>
+          <th class="num">Rechazadas</th><th class="num">FTL</th><th class="num">LTL</th>
+          <th class="num">Vigentes</th><th class="num">Ganadas</th><th class="num">Perdidas</th>
+        </tr></thead>
+        <tbody>
+          {% for u in estadistico_usuarios %}
+          <tr class="{{ 'sel' if u.usuario == solicitante else '' }}" onclick="var s=document.getElementById('tn-solicitante'); s.value='{{ '' if u.usuario == solicitante else u.usuario }}'; s.form.submit();">
+            <td class="usuario">{{ u.usuario }}</td>
+            <td class="num"><div class="tn-barra"><i style="width:{{ (u.total / max_total * 100) if max_total else 0 }}%"></i></div><b>{{ u.total }}</b></td>
+            {% for k in cols %}<td class="num{{ ' cero' if not u[k] else '' }}">{{ u[k] }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr>
+          <td>Total</td><td class="num"><b>{{ estadistico_usuarios|sum(attribute='total') }}</b></td>
+          {% for k in cols %}<td class="num">{{ estadistico_usuarios|sum(attribute=k) }}</td>{% endfor %}
+        </tr></tfoot>
+      </table>
+    </div>
+    {% endif %}
+
     <div class="tn-kpis">
-      <button type="button" class="tn-kpi" data-filtro="">
-        <span class="etq">Solicitudes</span><span class="val">{{ kpis.total }}</span>
+      {% for clave, etiqueta, clase, valor in tarjetas %}
+      <button type="button" class="tn-kpi {{ clase }}" data-filtro="{{ clave }}" data-etiqueta="{{ etiqueta }}">
+        <span class="etq">{{ etiqueta }}</span><span class="val">{{ valor }}</span>
       </button>
-      <button type="button" class="tn-kpi pendiente" data-filtro="grupo:por_cotizar">
-        <span class="etq">Por cotizar</span><span class="val">{{ kpis.por_cotizar }}</span>
-      </button>
-      <button type="button" class="tn-kpi cotizada" data-filtro="grupo:cotizada">
-        <span class="etq">Cotizadas</span><span class="val">{{ kpis.cotizadas }}</span>
-      </button>
-      <button type="button" class="tn-kpi" data-filtro="tipo:FTL">
-        <span class="etq">FTL</span><span class="val">{{ kpis.ftl }}</span>
-      </button>
-      <button type="button" class="tn-kpi" data-filtro="tipo:LTL">
-        <span class="etq">LTL</span><span class="val">{{ kpis.ltl }}</span>
-      </button>
-      <button type="button" class="tn-kpi ganada" data-filtro="resultado:ganada" title="La cotización de la que salió la solicitud está Ganada">
-        <span class="etq">Ganadas</span><span class="val">{{ kpis.ganadas }}</span>
-      </button>
-      <button type="button" class="tn-kpi perdida" data-filtro="resultado:perdida" title="La cotización de la que salió la solicitud está Perdida">
-        <span class="etq">Perdidas</span><span class="val">{{ kpis.perdidas }}</span>
-      </button>
+      {% endfor %}
     </div>
     <p class="tn-aviso-filtro" id="tn-aviso-filtro" hidden>Mostrando: <b id="tn-aviso-texto"></b> · <button type="button" onclick="filtrarTN('')">Ver todas</button></p>
 
@@ -124,7 +164,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr data-grupo="{{ 'por_cotizar' if fila.estado in ['Solicitud', 'En proceso'] else ('cotizada' if fila.estado == 'Cotizado' else 'otro') }}" data-tipo="{{ fila.tipo_servicio or '' }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
+        <tr data-grupo="{{ fila.grupo }}" data-tipo="{{ fila.tipo_servicio or '' }}" data-resultado="{{ fila.cotizacion_estatus_actual or '' }}" class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_nacional_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">
               {{ fila.referencia }}
@@ -169,22 +209,23 @@
       <div class="dlg-cuerpo" id="dlg-obs-texto"></div>
     </dialog>
     <script>
-      var etiquetasFiltroTN = {
-        'grupo:por_cotizar': 'Por cotizar', 'grupo:cotizada': 'Cotizadas', 'tipo:FTL': 'FTL', 'tipo:LTL': 'LTL',
-        'resultado:ganada': 'Ganadas', 'resultado:perdida': 'Perdidas'
-      };
       function filtrarTN(filtro) {
         var partes = filtro ? filtro.split(':') : null;
         document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
           tr.hidden = partes ? tr.dataset[partes[0]] !== partes[1] : false;
         });
-        document.querySelectorAll('.tn-kpi').forEach(function (b) { b.classList.toggle('activo', !!filtro && b.dataset.filtro === filtro); });
+        var etiqueta = '';
+        document.querySelectorAll('.tn-kpi').forEach(function (b) {
+          var activa = !!filtro && b.dataset.filtro === filtro;
+          b.classList.toggle('activo', activa);
+          if (activa) etiqueta = b.dataset.etiqueta;
+        });
         document.getElementById('tn-aviso-filtro').hidden = !filtro;
-        document.getElementById('tn-aviso-texto').textContent = etiquetasFiltroTN[filtro] || '';
+        document.getElementById('tn-aviso-texto').textContent = etiqueta;
       }
       document.querySelectorAll('.tn-kpi').forEach(function (b) {
         b.addEventListener('click', function () {
-          filtrarTN(b.classList.contains('activo') ? '' : b.dataset.filtro);
+          filtrarTN(b.classList.contains('activo') || !b.dataset.filtro ? '' : b.dataset.filtro);
         });
       });
       function abrirObservacion(btn) {

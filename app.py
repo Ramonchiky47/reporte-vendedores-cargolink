@@ -10779,6 +10779,30 @@ def transporte_nacional():
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
 
+    # Grupo de cada fila (para tarjetas y estadístico).
+    def grupo_tn(f):
+        if f["estado"] in ("Solicitud", "En proceso"):
+            return "por_cotizar"
+        return {"Cotizado": "cotizada", "Rechazada": "rechazada"}.get(f["estado"], "otro")
+
+    # Estadístico por usuario (del mes elegido, antes de filtrar por
+    # solicitante): mismas cifras que las tarjetas.
+    estadistico_usuarios = {}
+    for f in filas:
+        u = estadistico_usuarios.setdefault(f["creado_por"] or "—", {
+            "usuario": f["creado_por"] or "—", "total": 0, "por_cotizar": 0, "cotizada": 0, "rechazada": 0,
+            "ftl": 0, "ltl": 0, "vigente": 0, "ganada": 0, "perdida": 0,
+        })
+        u["total"] += 1
+        g = grupo_tn(f)
+        if g in u:
+            u[g] += 1
+        if f["tipo_servicio"] in ("FTL", "LTL"):
+            u[f["tipo_servicio"].lower()] += 1
+        if f.get("cotizacion_estatus_actual") in ("vigente", "ganada", "perdida"):
+            u[f["cotizacion_estatus_actual"]] += 1
+    estadistico_usuarios = sorted(estadistico_usuarios.values(), key=lambda u: (-u["total"], u["usuario"].lower()))
+
     solicitantes = sorted({f["creado_por"] for f in filas if f["creado_por"]}, key=str.lower)
     solicitante = request.args.get("solicitante", "").strip()
     if solicitante not in solicitantes:
@@ -10786,19 +10810,27 @@ def transporte_nacional():
     if solicitante:
         filas = [f for f in filas if f["creado_por"] == solicitante]
 
-    kpis = {
-        "total": len(filas),
-        "por_cotizar": sum(1 for f in filas if f["estado"] in ("Solicitud", "En proceso")),
-        "cotizadas": sum(1 for f in filas if f["estado"] == "Cotizado"),
-        "ftl": sum(1 for f in filas if f["tipo_servicio"] == "FTL"),
-        "ltl": sum(1 for f in filas if f["tipo_servicio"] == "LTL"),
-        "ganadas": sum(1 for f in filas if f.get("cotizacion_estatus_actual") == "ganada"),
-        "perdidas": sum(1 for f in filas if f.get("cotizacion_estatus_actual") == "perdida"),
-    }
+    for f in filas:
+        f["grupo"] = grupo_tn(f)
+
+    def contar(cond):
+        return sum(1 for f in filas if cond(f))
+    # Tarjetas: (clave del filtro, etiqueta, clase de color, conteo).
+    tarjetas = [
+        ("", "Solicitudes", "", len(filas)),
+        ("grupo:por_cotizar", "Por cotizar", "pendiente", contar(lambda f: f["grupo"] == "por_cotizar")),
+        ("grupo:cotizada", "Cotizadas", "cotizada", contar(lambda f: f["grupo"] == "cotizada")),
+        ("grupo:rechazada", "Rechazadas", "perdida", contar(lambda f: f["grupo"] == "rechazada")),
+        ("tipo:FTL", "FTL", "", contar(lambda f: f["tipo_servicio"] == "FTL")),
+        ("tipo:LTL", "LTL", "", contar(lambda f: f["tipo_servicio"] == "LTL")),
+        ("resultado:vigente", "Vigentes", "vigente", contar(lambda f: f.get("cotizacion_estatus_actual") == "vigente")),
+        ("resultado:ganada", "Ganadas", "ganada", contar(lambda f: f.get("cotizacion_estatus_actual") == "ganada")),
+        ("resultado:perdida", "Perdidas", "perdida", contar(lambda f: f.get("cotizacion_estatus_actual") == "perdida")),
+    ]
     return render_template(
-        "transporte_nacional.html", filas=filas, kpis=kpis,
+        "transporte_nacional.html", filas=filas, tarjetas=tarjetas,
         meses_opciones=meses_opciones, mes_seleccionado=mes_seleccionado,
-        solicitantes=solicitantes, solicitante=solicitante,
+        solicitantes=solicitantes, solicitante=solicitante, estadistico_usuarios=estadistico_usuarios,
     )
 
 
