@@ -7,6 +7,9 @@
     width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--borde); border-radius: 6px; font: inherit; font-size: 0.88rem;
   }
   .form-solicitud textarea { resize: vertical; min-height: 90px; }
+  .nombre-con-prefijo { display: flex; align-items: stretch; }
+  .prefijo-cot { display: flex; align-items: center; padding: 0 0.7rem; background: #eef2f7; border: 1px solid var(--borde); border-right: none; border-radius: 6px 0 0 6px; font-weight: 700; font-size: 0.88rem; color: #333; white-space: nowrap; }
+  .nombre-con-prefijo input { border-radius: 0 6px 6px 0 !important; }
   .fila-2 { display: flex; gap: 1rem; }
   .fila-2 > div { flex: 1; }
   .fila-3 { display: flex; gap: 1rem; }
@@ -32,7 +35,10 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <label for="nombre">Nombre con la que se identificará la solicitud</label>
-    <input type="text" id="nombre" name="nombre" maxlength="100">
+    <div class="nombre-con-prefijo">
+      <span class="prefijo-cot">{{ cotizacion.id_cotizacion }}</span>
+      <input type="text" id="nombre" name="nombre" maxlength="{{ 99 - (cotizacion.id_cotizacion or '')|length }}" placeholder="Agrega lo que necesites (opcional)">
+    </div>
 
     <div class="fila-2">
       <div>

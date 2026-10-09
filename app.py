@@ -9863,7 +9863,10 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
             RETURNING id
         """, (
             referencia, cotizacion_id, session.get("usuario", ""),
-            campo("nombre"), campo("correo_solicitante"),
+            # El nombre siempre arranca con el ID de la cotización
+            # (COT-xxxxxxxx) y después lo que agregue el vendedor.
+            " ".join(x for x in (cotizacion["id_cotizacion"] or "", campo("nombre") or "") if x)[:100] or None,
+            campo("correo_solicitante"),
             campo("confirma_un_material") if hazmat else None, campo("importacion_exportacion"), campo("tipo_embarque"),
             campo("tipo_unidad"), campo("codigo_postal_origen"), campo("codigo_postal_destino"),
             campo_largo("direccion_origen"), campo_largo("direccion_destino"),
