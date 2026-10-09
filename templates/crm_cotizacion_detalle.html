@@ -189,6 +189,7 @@
           <th>Fecha de entrega</th>
           <th>Diferencia</th>
           <th>Estado</th>
+          <th>Archivos</th>
         </tr>
       </thead>
       <tbody>
@@ -202,6 +203,13 @@
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
           <td>{{ s.diferencia or '—' }}</td>
           <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+          <td onclick="event.stopPropagation();" class="tn-archivos">
+            {% for a in s.archivos %}
+            <a href="{{ url_for('transporte_terrestre_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener" title="{{ a.nombre }} · {{ 'Pricing' if a.origen == 'pricing' else 'Vendedor' }} · {{ a.subido_por or '—' }}">
+              {% if a.es_imagen %}<img src="{{ url_for('transporte_terrestre_archivo', archivo_id=a.id) }}" alt="{{ a.nombre }}" loading="lazy">{% else %}<span class="tn-archivo-doc">📎 {{ a.nombre.rsplit('.', 1)[-1]|upper }}</span>{% endif %}
+            </a>
+            {% else %}<span class="sin-dato">—</span>{% endfor %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -157,6 +157,27 @@ def init_db():
     # Operativo(s) que reciben por default las solicitudes de Transporte
     # Nacional (catalogo_operativos lo administra otra pantalla/app).
     db.execute("ALTER TABLE IF EXISTS catalogo_operativos ADD COLUMN IF NOT EXISTS default_transporte_nacional boolean not null default false;")
+    # Transporte Terrestre Internacional: aviso de "nueva" para Pricing y
+    # archivos adjuntos (vendedor al solicitar / Pricing al responder), igual
+    # que Transporte Nacional. Las solicitudes que ya estaban contestadas se
+    # dan por vistas para que solo se marquen las pendientes.
+    db.execute("ALTER TABLE IF EXISTS crm_solicitudes_transporte_terrestre ADD COLUMN IF NOT EXISTS visto_por_pricing_en timestamptz;")
+    db.execute("""
+        UPDATE crm_solicitudes_transporte_terrestre SET visto_por_pricing_en = coalesce(respondido_en, now())
+        WHERE visto_por_pricing_en IS NULL AND estado NOT IN ('Solicitud', 'En proceso');
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_terrestre_archivos (
+            id bigint generated always as identity primary key,
+            solicitud_id bigint references crm_solicitudes_transporte_terrestre(id) on delete cascade,
+            nombre_archivo text not null,
+            tipo_mime text not null,
+            contenido bytea not null,
+            subido_por text,
+            origen text,
+            creado_en timestamptz not null default now()
+        );
+    """)
     # Mismo patrón, para el permiso de Administración (antigüedad de saldos /
     # correos de cobranza), antes exclusivo de es_admin.
     db.execute("ALTER TABLE public.app_user_permissions ADD COLUMN IF NOT EXISTS puede_ver_administracion boolean not null default false;")
@@ -3252,26 +3273,56 @@ def inject_permisos():
 @app.context_processor
 def inject_notificaciones_pricing():
     """Campana de notificaciones (arriba a la derecha) para quien atiende
-    Transporte Nacional: solicitudes nuevas o regresadas por el vendedor con
-    comentarios que el operativo todavía no ha abierto."""
-    if not session.get("logged_in") or not usuario_puede_transporte_nacional():
+    Transporte Nacional y/o Transporte Terrestre Internacional: solicitudes
+    nuevas (o regresadas con comentarios, en Nacional) que el operativo
+    todavía no ha abierto. Cada aviso trae su sección y liga."""
+    if not session.get("logged_in"):
         return {"notificaciones_pricing": None}
+    ve_nacional = usuario_puede_transporte_nacional()
+    ve_terrestre = usuario_puede_transporte_terrestre()
+    if not (ve_nacional or ve_terrestre):
+        return {"notificaciones_pricing": None}
+    avisos = []
     try:
         db = get_db()
-        filas = db.execute("""
-            SELECT s.id, s.referencia, s.creado_por, s.reenviado_en, s.creado_en,
-                   ac.razon_social AS cliente_nombre
-            FROM crm_solicitudes_transporte_nacional s
-            LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
-            LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
-            WHERE """ + SQL_TN_NUEVA_PARA_PRICING + """
-            ORDER BY coalesce(s.reenviado_en, s.creado_en) DESC
-            LIMIT 30
-        """).fetchall()
+        if ve_nacional:
+            for n in db.execute("""
+                SELECT s.id, s.referencia, s.creado_por, s.reenviado_en, s.creado_en,
+                       ac.razon_social AS cliente_nombre
+                FROM crm_solicitudes_transporte_nacional s
+                LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+                LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+                WHERE """ + SQL_TN_NUEVA_PARA_PRICING + """
+                ORDER BY coalesce(s.reenviado_en, s.creado_en) DESC
+                LIMIT 30
+            """).fetchall():
+                avisos.append({
+                    "seccion": "Transporte Nacional", "referencia": n["referencia"],
+                    "url": url_for("transporte_nacional_detalle", solicitud_id=n["id"]),
+                    "editada": bool(n["reenviado_en"]), "cuando": n["reenviado_en"] or n["creado_en"],
+                    "detalle": n["cliente_nombre"] or n["creado_por"] or "",
+                })
+        if ve_terrestre:
+            for n in db.execute("""
+                SELECT s.id, s.referencia, s.creado_por, s.creado_en,
+                       ac.razon_social AS cliente_nombre
+                FROM crm_solicitudes_transporte_terrestre s
+                LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+                LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+                WHERE """ + SQL_TTI_NUEVA_PARA_PRICING + """
+                ORDER BY s.creado_en DESC
+                LIMIT 30
+            """).fetchall():
+                avisos.append({
+                    "seccion": "Terrestre Internacional", "referencia": n["referencia"],
+                    "url": url_for("transporte_terrestre_detalle", solicitud_id=n["id"]),
+                    "editada": False, "cuando": n["creado_en"],
+                    "detalle": n["cliente_nombre"] or n["creado_por"] or "",
+                })
         db.close()
     except Exception:
         return {"notificaciones_pricing": None}
-    return {"notificaciones_pricing": filas}
+    return {"notificaciones_pricing": avisos}
 
 
 def autenticar_contra_catalogo_accesos(email, password):
@@ -8491,6 +8542,19 @@ def construir_documento_cotizacion_crm(cotizacion_id):
         WHERE s.cotizacion_id = %s
         ORDER BY s.creado_en DESC
     """, (cotizacion_id,)).fetchall()
+    archivos_tti_por_solicitud = {}
+    for a in db.execute("""
+        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por, a.origen
+        FROM crm_solicitudes_transporte_terrestre_archivos a
+        JOIN crm_solicitudes_transporte_terrestre s ON s.id = a.solicitud_id
+        WHERE s.cotizacion_id = %s
+        ORDER BY a.creado_en
+    """, (cotizacion_id,)).fetchall():
+        archivos_tti_por_solicitud.setdefault(a["solicitud_id"], []).append({
+            "id": a["id"], "nombre": a["nombre_archivo"], "subido_por": a["subido_por"] or "",
+            "origen": a["origen"] or "vendedor",
+            "es_imagen": a["nombre_archivo"].lower().endswith((".png", ".jpg", ".jpeg")),
+        })
     archivos_tn_por_solicitud = {}
     for a in db.execute("""
         SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por, a.origen, a.creado_en
@@ -8646,7 +8710,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             {"id": s["id"], "referencia": s["referencia"], "tipo_embarque": s["tipo_embarque"] or "",
              "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or "",
              "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
-             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"]}
+             "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"],
+             "archivos": archivos_tti_por_solicitud.get(s["id"], [])}
             for s in solicitudes_transporte_terrestre
         ],
         "transporte_terrestre_respuestas": transporte_terrestre_respuestas,
@@ -9760,6 +9825,22 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
             v = (request.form.get(nombre, "") or "").strip()
             return v or None
 
+        directa_transbordo = (request.form.get("directa_transbordo", "") or "").strip()
+        hazmat = si_no("hazmat")
+        error = None
+        if directa_transbordo not in ("Directo", "Transbordo"):
+            error = "Indica si es Directo o Transbordo."
+        elif si_no("hacemos_cruce") is None:
+            error = "Indica si hacemos el cruce (Sí o No)."
+        elif hazmat is None:
+            error = "Indica si es Hazmat (Sí o No)."
+        elif hazmat and not campo("confirma_un_material"):
+            error = "Captura el UN# del material (es Hazmat)."
+        if error:
+            db.close()
+            flash(error)
+            return redirect(url_for("crm_solicitud_transporte_terrestre_nueva", cotizacion_id=cotizacion_id))
+
         referencia = generar_referencia_solicitud_transporte_terrestre(db)
         solicitud_id = db.execute("""
             INSERT INTO crm_solicitudes_transporte_terrestre (
@@ -9773,17 +9854,22 @@ def crm_solicitud_transporte_terrestre_nueva(cotizacion_id):
         """, (
             referencia, cotizacion_id, session.get("usuario", ""),
             campo("nombre"), campo("correo_solicitante"),
-            campo("confirma_un_material"), campo("importacion_exportacion"), campo("tipo_embarque"),
+            campo("confirma_un_material") if hazmat else None, campo("importacion_exportacion"), campo("tipo_embarque"),
             campo("tipo_unidad"), campo("codigo_postal_origen"), campo("codigo_postal_destino"),
             campo_largo("direccion_origen"), campo_largo("direccion_destino"),
-            campo("direccion_aa"), campo("directa_transbordo"), si_no("hacemos_cruce"),
-            si_no("hazmat") or False, campo_largo("descripcion_material"),
+            campo("direccion_aa"), directa_transbordo, si_no("hacemos_cruce"),
+            hazmat, campo_largo("descripcion_material"),
             campo_largo("requisitos_comentarios"), fecha_hora("fecha_hora_recoleccion"),
             fecha_hora("fecha_hora_entrega"), campo("hit_ratio"),
         )).fetchone()["id"]
+        _, errores_archivos = guardar_archivos_transporte_nacional(
+            db, solicitud_id, request.files.getlist("archivos"), origen="vendedor", tipo="terrestre",
+        )
         db.commit()
         db.close()
         flash(f"Solicitud {referencia} enviada a Transporte Terrestre Internacional.")
+        for error_archivo in errores_archivos:
+            flash(f"Archivo no adjuntado — {error_archivo}.")
         error_aviso = avisar_nueva_solicitud_transporte_terrestre(solicitud_id)
         if error_aviso:
             flash(f"La solicitud se guardó, pero no se pudo enviar el correo a Pricing ({error_aviso}).")
@@ -9809,7 +9895,13 @@ TN_ARCHIVO_MAX_BYTES = 4 * 1024 * 1024
 TN_ARCHIVO_EXTENSIONES = {"pdf", "png", "jpg", "jpeg", "xlsx", "xls", "docx", "doc", "csv", "txt"}
 
 
-def guardar_archivos_transporte_nacional(db, solicitud_id, archivos, origen="vendedor"):
+TABLAS_ARCHIVOS_SOLICITUD = {
+    "nacional": "crm_solicitudes_transporte_nacional_archivos",
+    "terrestre": "crm_solicitudes_transporte_terrestre_archivos",
+}
+
+
+def guardar_archivos_transporte_nacional(db, solicitud_id, archivos, origen="vendedor", tipo="nacional"):
     """Guarda los adjuntos de una solicitud de Transporte Nacional. Regresa
     (guardados, errores) — los inválidos se saltan sin bloquear el resto."""
     guardados, errores, total = 0, [], 0
@@ -9830,17 +9922,17 @@ def guardar_archivos_transporte_nacional(db, solicitud_id, archivos, origen="ven
             continue
         tipo_mime = archivo.mimetype or mimetypes.guess_type(nombre)[0] or "application/octet-stream"
         db.execute("""
-            INSERT INTO crm_solicitudes_transporte_nacional_archivos (solicitud_id, nombre_archivo, tipo_mime, contenido, subido_por, origen)
+            INSERT INTO """ + TABLAS_ARCHIVOS_SOLICITUD[tipo] + """ (solicitud_id, nombre_archivo, tipo_mime, contenido, subido_por, origen)
             VALUES (%s, %s, %s, %s, %s, %s)
         """, (solicitud_id, nombre, tipo_mime, contenido, session.get("usuario", ""), origen))
         guardados += 1
     return guardados, errores
 
 
-def archivos_transporte_nacional(db, solicitud_id):
+def archivos_transporte_nacional(db, solicitud_id, tipo="nacional"):
     return db.execute("""
-        SELECT id, nombre_archivo, subido_por, creado_en, octet_length(contenido) AS tamano
-        FROM crm_solicitudes_transporte_nacional_archivos
+        SELECT id, nombre_archivo, subido_por, origen, creado_en, octet_length(contenido) AS tamano
+        FROM """ + TABLAS_ARCHIVOS_SOLICITUD[tipo] + """
         WHERE solicitud_id = %s
         ORDER BY creado_en
     """, (solicitud_id,)).fetchall()
@@ -10250,6 +10342,10 @@ TRANSPORTE_TERRESTRE_TEXTOS = {
 }
 
 
+# Solicitud de Terrestre Internacional que Pricing todavía no abre.
+SQL_TTI_NUEVA_PARA_PRICING = "(s.estado IN ('Solicitud', 'En proceso') AND s.visto_por_pricing_en IS NULL)"
+
+
 @app.route("/transporte-terrestre")
 @transporte_terrestre_required
 def transporte_terrestre():
@@ -10257,6 +10353,8 @@ def transporte_terrestre():
     filas = db.execute("""
         SELECT
             s.id, s.referencia, s.tipo_embarque, s.fecha_creacion, s.estado,
+            """ + SQL_TTI_NUEVA_PARA_PRICING + """ AS nueva_para_pricing,
+            (SELECT count(*) FROM crm_solicitudes_transporte_terrestre_archivos a WHERE a.solicitud_id = s.id) AS num_archivos,
             co.id AS cotizacion_id, co.id_cotizacion, co.estatus AS cotizacion_estatus,
             co.fecha_vencimiento AS cotizacion_fecha_vencimiento,
             ac.razon_social AS cliente_nombre,
@@ -10305,10 +10403,17 @@ def transporte_terrestre_detalle(solicitud_id):
         WHERE solicitud_id = %s
         ORDER BY creado_en DESC
     """, (solicitud_id,)).fetchall()
+    archivos = archivos_transporte_nacional(db, solicitud_id, tipo="terrestre")
+    # Abrirla desde la bandeja de Pricing apaga el aviso de "nueva".
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_terrestre SET visto_por_pricing_en = now() WHERE id = %s AND visto_por_pricing_en IS NULL",
+        (solicitud_id,),
+    )
+    db.commit()
     db.close()
     return render_template(
         "transporte_terrestre_detalle.html", fila=fila, estados=ESTADOS_FINALES_TRANSPORTE_TERRESTRE,
-        operativos=operativos, respuestas=respuestas,
+        operativos=operativos, respuestas=respuestas, archivos=archivos,
     )
 
 
@@ -10336,10 +10441,43 @@ def transporte_terrestre_responder(solicitud_id):
             INSERT INTO crm_solicitudes_transporte_terrestre_respuestas (solicitud_id, respuesta, respondido_por)
             VALUES (%s, %s, %s)
         """, (solicitud_id, respuesta, usuario))
+    _, errores_archivos = guardar_archivos_transporte_nacional(
+        db, solicitud_id, request.files.getlist("archivos"), origen="pricing", tipo="terrestre",
+    )
     db.commit()
     db.close()
     flash("Solicitud actualizada.")
+    for error_archivo in errores_archivos:
+        flash(f"Archivo no adjuntado — {error_archivo}.")
     return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
+
+
+@app.route("/transporte-terrestre/archivo/<int:archivo_id>")
+@login_required
+def transporte_terrestre_archivo(archivo_id):
+    db = get_db()
+    archivo = db.execute("""
+        SELECT a.nombre_archivo, a.tipo_mime, a.contenido, s.cotizacion_id
+        FROM crm_solicitudes_transporte_terrestre_archivos a
+        JOIN crm_solicitudes_transporte_terrestre s ON s.id = a.solicitud_id
+        WHERE a.id = %s
+    """, (archivo_id,)).fetchone()
+    if archivo is None or not puede_ver_solicitud_transporte_terrestre(db, archivo):
+        db.close()
+        flash("Archivo no encontrado.")
+        return redirect(url_for(primera_pagina_permitida()))
+    db.close()
+    extension = archivo["nombre_archivo"].rsplit(".", 1)[-1].lower() if "." in archivo["nombre_archivo"] else ""
+    tipos_imagen = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+    if extension in tipos_imagen:
+        return send_file(
+            io.BytesIO(bytes(archivo["contenido"])), mimetype=tipos_imagen[extension],
+            as_attachment=False, download_name=archivo["nombre_archivo"],
+        )
+    return send_file(
+        io.BytesIO(bytes(archivo["contenido"])), mimetype=archivo["tipo_mime"],
+        as_attachment=True, download_name=archivo["nombre_archivo"],
+    )
 
 
 def puede_ver_solicitud_transporte_terrestre(db, fila):

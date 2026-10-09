@@ -216,14 +216,17 @@
               {% if notificaciones_pricing %}<span class="nav-notif-contador">{{ notificaciones_pricing|length }}</span>{% endif %}
             </button>
             <div class="nav-dropdown-menu nav-notif-menu">
-              <div class="nav-notif-titulo">Transporte Nacional</div>
-              {% for n in notificaciones_pricing %}
-              <a href="{{ url_for('transporte_nacional_detalle', solicitud_id=n.id) }}">
+              {% for seccion, avisos in notificaciones_pricing|groupby('seccion') %}
+              <div class="nav-notif-titulo">{{ seccion }}</div>
+              {% for n in avisos %}
+              <a href="{{ n.url }}">
                 <span class="nav-notif-ref">{{ n.referencia }}</span>
-                <span class="nav-notif-tipo{{ ' editada' if n.reenviado_en else '' }}">{{ 'Editada' if n.reenviado_en else 'Nueva' }}</span>
-                <span class="nav-notif-detalle">{{ n.cliente_nombre or n.creado_por or '' }} · {{ (n.reenviado_en or n.creado_en)|hora_mx }}</span>
+                <span class="nav-notif-tipo{{ ' editada' if n.editada else '' }}">{{ 'Editada' if n.editada else 'Nueva' }}</span>
+                <span class="nav-notif-detalle">{{ n.detalle }} · {{ n.cuando|hora_mx }}</span>
               </a>
+              {% endfor %}
               {% else %}
+              <div class="nav-notif-titulo">Pricing</div>
               <div class="nav-notif-vacio">Sin solicitudes nuevas.</div>
               {% endfor %}
             </div>

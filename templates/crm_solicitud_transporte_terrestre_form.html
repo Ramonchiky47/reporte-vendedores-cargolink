@@ -28,7 +28,7 @@
   <h2>Solicitud a Transporte Terrestre Internacional</h2>
   <p class="id-cotizacion">Cotización asociada: <strong>{{ cotizacion.id_cotizacion }}</strong>{{ ' · ' + cotizacion.nombre_cotizacion if cotizacion.nombre_cotizacion else '' }}. La referencia de la solicitud se genera automáticamente al guardar.</p>
 
-  <form class="form-solicitud" method="post">
+  <form class="form-solicitud" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <label for="nombre">Nombre con la que se identificará la solicitud</label>
@@ -93,24 +93,24 @@
 
     <div class="fila-3">
       <div>
-        <label for="directa_transbordo">¿Directa o a Transbordo?</label>
-        <select id="directa_transbordo" name="directa_transbordo">
+        <label for="directa_transbordo">¿Directo o Transbordo? *</label>
+        <select id="directa_transbordo" name="directa_transbordo" required>
           <option value="">Selecciona</option>
-          <option value="Aplica">Aplica</option>
-          <option value="No aplica">No aplica</option>
+          <option value="Directo">Directo</option>
+          <option value="Transbordo">Transbordo</option>
         </select>
       </div>
       <div>
-        <label for="hacemos_cruce">¿Hacemos el cruce?</label>
-        <select id="hacemos_cruce" name="hacemos_cruce">
+        <label for="hacemos_cruce">¿Hacemos el cruce? *</label>
+        <select id="hacemos_cruce" name="hacemos_cruce" required>
           <option value="">Selecciona</option>
           <option value="si">Sí</option>
           <option value="no">No</option>
         </select>
       </div>
       <div>
-        <label for="hazmat">¿Hazmat?</label>
-        <select id="hazmat" name="hazmat">
+        <label for="hazmat">¿Hazmat? *</label>
+        <select id="hazmat" name="hazmat" required>
           <option value="">Selecciona</option>
           <option value="si">Sí</option>
           <option value="no">No</option>
@@ -118,8 +118,8 @@
       </div>
     </div>
 
-    <label for="confirma_un_material">Confirma el UN# del material</label>
-    <input type="text" id="confirma_un_material" name="confirma_un_material" maxlength="100">
+    <label for="confirma_un_material">Confirma el UN# del material <span id="un-nota" style="font-weight:400; color:#999;">(solo si es Hazmat)</span></label>
+    <input type="text" id="confirma_un_material" name="confirma_un_material" maxlength="100" disabled>
 
     <label for="descripcion_material">Descripción del material</label>
     <textarea id="descripcion_material" name="descripcion_material"></textarea>
@@ -136,9 +136,30 @@
     <label for="requisitos_comentarios">Requisitos / Comentarios</label>
     <textarea id="requisitos_comentarios" name="requisitos_comentarios"></textarea>
 
+    <label for="archivos">Archivos de complemento</label>
+    <input type="file" id="archivos" name="archivos" multiple accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.docx,.doc,.csv,.txt">
+    <p style="font-size:.75rem; color:#999; margin:.3rem 0 0;">Máximo 4 MB en total. También puedes pegar imágenes en "Requisitos / Comentarios".</p>
+
     <div class="acciones-form-cotizacion">
       <button type="submit" class="btn-guardar">Enviar a Transporte Terrestre Internacional</button>
       <a class="btn-cancelar" href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=cotizacion.id) }}">Cancelar</a>
     </div>
   </form>
+  {% include "_pegar_imagenes.html" %}
+  <script>
+    habilitarPegarImagenes('requisitos_comentarios', 'archivos');
+    (function () {
+      const hazmat = document.getElementById('hazmat');
+      const un = document.getElementById('confirma_un_material');
+      function actualizarUN() {
+        const esHazmat = hazmat.value === 'si';
+        un.disabled = !esHazmat;
+        un.required = esHazmat;
+        if (!esHazmat) un.value = '';
+        document.getElementById('un-nota').textContent = esHazmat ? '*' : '(solo si es Hazmat)';
+      }
+      hazmat.addEventListener('change', actualizarUN);
+      actualizarUN();
+    })();
+  </script>
 {% endblock %}
