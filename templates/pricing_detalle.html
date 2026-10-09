@@ -37,7 +37,7 @@
       <div>
         <div style="display: flex; align-items: center; gap: .6rem; margin-bottom: .3rem;">
           <h1 style="margin: 0; font-size: 1.35rem;">{{ fila.referencia }}</h1>
-          <span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span>
+          <span class="pricing-badge {{ fila.estado|clase_estado }}">{{ fila.estado }}</span>
         </div>
         <p class="hint" style="margin: 0;">
           {% if fila.cotizacion_id %}<a href="{{ url_for('crm_cotizacion_detalle', cotizacion_id=fila.cotizacion_id) }}">{{ fila.id_cotizacion or ('Cotización #' ~ fila.cotizacion_id) }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</a> &middot; {% endif %}

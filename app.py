@@ -162,9 +162,19 @@ def init_db():
     # que Transporte Nacional. Las solicitudes que ya estaban contestadas se
     # dan por vistas para que solo se marquen las pendientes.
     db.execute("ALTER TABLE IF EXISTS crm_solicitudes_transporte_terrestre ADD COLUMN IF NOT EXISTS visto_por_pricing_en timestamptz;")
+    # Estados nuevos de Terrestre Internacional (ver ESTADOS_SOLICITUD_TRANSPORTE_TERRESTRE).
+    db.execute("ALTER TABLE IF EXISTS crm_solicitudes_transporte_terrestre ALTER COLUMN estado SET DEFAULT 'Por Cotizar';")
+    db.execute("""
+        UPDATE crm_solicitudes_transporte_terrestre SET estado = CASE estado
+            WHEN 'Solicitud' THEN CASE WHEN visto_por_pricing_en IS NULL THEN 'Por Cotizar' ELSE 'Cotización en curso' END
+            WHEN 'En proceso' THEN 'Cotización en curso'
+            WHEN 'Cotizado' THEN 'Cotizada'
+            ELSE estado END
+        WHERE estado IN ('Solicitud', 'En proceso', 'Cotizado');
+    """)
     db.execute("""
         UPDATE crm_solicitudes_transporte_terrestre SET visto_por_pricing_en = coalesce(respondido_en, now())
-        WHERE visto_por_pricing_en IS NULL AND estado NOT IN ('Solicitud', 'En proceso');
+        WHERE visto_por_pricing_en IS NULL AND estado NOT IN ('Solicitud', 'En proceso', 'Por Cotizar', 'Cotización en curso');
     """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS crm_solicitudes_transporte_terrestre_archivos (
@@ -2459,6 +2469,21 @@ def formatear_duracion(delta):
     if horas:
         return f"{horas}h {minutos}min"
     return f"{minutos}min"
+
+
+# Clase CSS del badge de estado de una solicitud (Pricing / Terrestre /
+# Nacional). Los estados de Terrestre Internacional usan los mismos colores
+# que los equivalentes de siempre.
+CLASE_ESTADO_SOLICITUD = {
+    "por cotizar": "solicitud", "cotización en curso": "en-proceso", "cotizada": "cotizado",
+    "información faltante": "faltante",
+}
+
+
+@app.template_filter("clase_estado")
+def clase_estado(estado):
+    texto = (estado or "").strip().lower()
+    return CLASE_ESTADO_SOLICITUD.get(texto, texto.replace(" ", "-"))
 
 
 @app.template_filter("hora_mx")
@@ -6720,7 +6745,7 @@ def construir_cotizaciones_crm(
         )
         pricing_estado = (
             "nuevo" if pricing_no_visto
-            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Rechazada")
+            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Cotizada", "Rechazada", "Información Faltante")
             else "pendiente" if r["pricing_estado_mas_reciente"]
             else None
         )
@@ -10307,10 +10332,15 @@ def pricing_ver(solicitud_id):
     return render_template("pricing_pdf_ver.html", fila=fila, idioma=idioma, t=PRICING_TEXTOS[idioma])
 
 
-ESTADOS_SOLICITUD_TRANSPORTE_TERRESTRE = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
+# Estados de Terrestre Internacional: "Por Cotizar" al llegar, "Cotización en
+# curso" en cuanto Pricing la abre (automático); los demás los elige el
+# operativo al responder.
+TTI_POR_COTIZAR = "Por Cotizar"
+TTI_EN_CURSO = "Cotización en curso"
+ESTADOS_SOLICITUD_TRANSPORTE_TERRESTRE = [TTI_POR_COTIZAR, TTI_EN_CURSO, "Cotizada", "Información Faltante", "Rechazada"]
 # Igual que con Pricing: al guardar una respuesta hay que llegar a una
 # decisión final, no se puede dejar la solicitud en "Solicitud" ni "En proceso".
-ESTADOS_FINALES_TRANSPORTE_TERRESTRE = ["Cotizado", "Rechazada"]
+ESTADOS_FINALES_TRANSPORTE_TERRESTRE = ["Cotizada", "Información Faltante", "Rechazada"]
 
 TRANSPORTE_TERRESTRE_TEXTOS = {
     "es": {
@@ -10358,7 +10388,7 @@ TRANSPORTE_TERRESTRE_TEXTOS = {
 
 
 # Solicitud de Terrestre Internacional que Pricing todavía no abre.
-SQL_TTI_NUEVA_PARA_PRICING = "(s.estado IN ('Solicitud', 'En proceso') AND s.visto_por_pricing_en IS NULL)"
+SQL_TTI_NUEVA_PARA_PRICING = "(s.estado = 'Por Cotizar')"
 
 
 @app.route("/transporte-terrestre")
@@ -10379,7 +10409,8 @@ def transporte_terrestre():
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
-        ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
+        ORDER BY (s.estado = 'Por Cotizar') DESC, (s.estado = 'Cotización en curso') DESC,
+                 (s.estado = 'Información Faltante') DESC, s.creado_en DESC
     """).fetchall()
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
@@ -10421,9 +10452,12 @@ def transporte_terrestre_detalle(solicitud_id):
     archivos = archivos_transporte_nacional(db, solicitud_id, tipo="terrestre")
     # Abrirla desde la bandeja de Pricing apaga el aviso de "nueva".
     db.execute(
-        "UPDATE crm_solicitudes_transporte_terrestre SET visto_por_pricing_en = now() WHERE id = %s AND visto_por_pricing_en IS NULL",
-        (solicitud_id,),
+        "UPDATE crm_solicitudes_transporte_terrestre SET visto_por_pricing_en = coalesce(visto_por_pricing_en, now()), "
+        "estado = CASE WHEN estado = %s THEN %s ELSE estado END WHERE id = %s",
+        (TTI_POR_COTIZAR, TTI_EN_CURSO, solicitud_id),
     )
+    if fila["estado"] == TTI_POR_COTIZAR:
+        fila = {**fila, "estado": TTI_EN_CURSO}
     db.commit()
     db.close()
     return render_template(
@@ -10437,7 +10471,7 @@ def transporte_terrestre_detalle(solicitud_id):
 def transporte_terrestre_responder(solicitud_id):
     estado = request.form.get("estado", "").strip()
     if estado not in ESTADOS_FINALES_TRANSPORTE_TERRESTRE:
-        flash("Elige Cotizado o Rechazada para guardar la respuesta.")
+        flash("Elige Cotizada, Información Faltante o Rechazada para guardar la respuesta.")
         return redirect(url_for("transporte_terrestre_detalle", solicitud_id=solicitud_id))
     respuesta = (request.form.get("respuesta_transporte_terrestre", "") or "").strip()[:4000] or None
     operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()

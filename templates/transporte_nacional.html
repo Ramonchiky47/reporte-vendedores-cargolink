@@ -155,7 +155,7 @@
             <span class="col-operativo sin-asignar">Sin cotización</span>
             {% endif %}
           </td>
-          <td><span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span></td>
+          <td><span class="pricing-badge {{ fila.estado|clase_estado }}">{{ fila.estado }}</span></td>
         </tr>
         {% endfor %}
       </tbody>

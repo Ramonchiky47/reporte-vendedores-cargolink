@@ -39,6 +39,7 @@
   .badge-estado-solicitud.en-proceso { background: #e3f2fd; color: #1565c0; }
   .badge-estado-solicitud.cotizado { background: #dcfce7; color: var(--exito); }
   .badge-estado-solicitud.rechazada { background: #fee2e2; color: var(--peligro); }
+  .badge-estado-solicitud.faltante { background: #ede9fe; color: #5b21b6; }
   .sin-dato { color: #999; }
   .detalle-aplicar-booking summary {
     font-size: 0.725rem; font-weight: 700; cursor: pointer; color: #222; list-style: revert;
@@ -167,7 +168,7 @@
           <td>{{ s.solicitud_en|hora_mx }}</td>
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
           <td>{{ s.diferencia or '—' }}</td>
-          <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+          <td><span class="badge-estado-solicitud {{ s.estado|clase_estado }}">{{ s.estado }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
@@ -202,7 +203,7 @@
           <td>{{ s.solicitud_en|hora_mx }}</td>
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
           <td>{{ s.diferencia or '—' }}</td>
-          <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+          <td><span class="badge-estado-solicitud {{ s.estado|clase_estado }}">{{ s.estado }}</span></td>
           <td onclick="event.stopPropagation();" class="tn-archivos">
             {% for a in s.archivos %}
             <a href="{{ url_for('transporte_terrestre_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener" title="{{ a.nombre }} · {{ 'Pricing' if a.origen == 'pricing' else 'Vendedor' }} · {{ a.subido_por or '—' }}">
@@ -232,7 +233,7 @@
     <template id="tti-modal-{{ s.id }}">
       <div class="tnm-cab">
         <div><h3>{{ s.referencia }}{% if s.tipo_embarque %} · {{ s.tipo_embarque }}{% endif %}</h3>
-          <span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></div>
+          <span class="badge-estado-solicitud {{ s.estado|clase_estado }}">{{ s.estado }}</span></div>
         <button type="button" class="tnm-cerrar" onclick="document.getElementById('tti-modal').close()" aria-label="Cerrar">&times;</button>
       </div>
       <div class="tnm-cuerpo">
@@ -293,7 +294,7 @@
           <td>{{ s.solicitud_en|hora_mx }}</td>
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
           <td>{{ s.diferencia or '—' }}</td>
-          <td><span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></td>
+          <td><span class="badge-estado-solicitud {{ s.estado|clase_estado }}">{{ s.estado }}</span></td>
           <td onclick="event.stopPropagation();" class="tn-archivos">
             {% for a in s.archivos %}
             <a href="{{ url_for('transporte_nacional_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener" title="{{ a.nombre }} · subió {{ a.subido_por or '—' }}">
@@ -328,7 +329,7 @@
     <template id="tn-modal-{{ s.id }}">
       <div class="tnm-cab">
         <div><h3>{{ s.referencia }}{% if s.tipo_servicio %} · {{ s.tipo_servicio }}{% endif %}</h3>
-          <span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></div>
+          <span class="badge-estado-solicitud {{ s.estado|clase_estado }}">{{ s.estado }}</span></div>
         <button type="button" class="tnm-cerrar" onclick="document.getElementById('tn-modal').close()" aria-label="Cerrar">&times;</button>
       </div>
       <div class="tnm-cuerpo">

@@ -13,6 +13,7 @@
   .pricing-badge.en-proceso { background: #dbeafe; color: var(--accent-dark); }
   .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
   .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
+  .pricing-badge.faltante { background: #ede9fe; color: #5b21b6; }
 
   .badge-estatus { display: inline-block; padding: .15rem .55rem; border-radius: 10px; font-size: .66rem; font-weight: 700; white-space: nowrap; }
   .badge-estatus.vigente { background: #e3f2fd; color: #1565c0; }
@@ -62,7 +63,7 @@
       </thead>
       <tbody>
         {% for fila in filas %}
-        <tr class="fila-pricing{{ ' cotizada' if fila.estado == 'Cotizado' else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_terrestre_detalle', solicitud_id=fila.id) }}'">
+        <tr class="fila-pricing{{ ' cotizada' if fila.estado in ('Cotizado', 'Cotizada') else '' }}{{ ' nueva' if fila.nueva_para_pricing else '' }}" onclick="window.location.href='{{ url_for('transporte_terrestre_detalle', solicitud_id=fila.id) }}'">
           <td>
             <div class="referencia">{{ fila.referencia }}{% if fila.nueva_para_pricing %}<span class="badge-aviso">NUEVA</span>{% endif %}</div>
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
@@ -81,7 +82,7 @@
             <span class="col-operativo sin-asignar">Sin cotización</span>
             {% endif %}
           </td>
-          <td><span class="pricing-badge {{ fila.estado|lower|replace(' ', '-') }}">{{ fila.estado }}</span></td>
+          <td><span class="pricing-badge {{ fila.estado|clase_estado }}">{{ fila.estado }}</span></td>
         </tr>
         {% endfor %}
       </tbody>
