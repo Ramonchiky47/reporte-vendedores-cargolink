@@ -11346,6 +11346,19 @@ def crm_cotizacion_vista(cotizacion_id):
     )
 
 
+def nombre_archivo_cotizacion(documento, idioma="es"):
+    """Nombre del PDF descargado: el ID de la cotización seguido de su
+    nombre (p. ej. "COT-00533381 MS MOTORS - IMPORTACION SHANGHAI-MANZANILLO.pdf").
+    Se quitan los caracteres que Windows/macOS no permiten en un nombre de
+    archivo (la "/" se cambia por " - "). En inglés se agrega " (EN)"."""
+    nombre = (documento.get("nombre_cotizacion") or "").strip()
+    nombre = nombre.replace("/", " - ").replace("\\", " - ")
+    nombre = re.sub(r'[<>:"|?*\x00-\x1f]', "", nombre)
+    nombre = re.sub(r"\s+", " ", nombre).strip(" .-")
+    base = " ".join(x for x in (documento.get("id_cotizacion") or "Cotizacion", nombre) if x)[:150].rstrip(" .-")
+    return f"{base}{' (EN)' if idioma == 'en' else ''}.pdf"
+
+
 @app.route("/crm/cotizaciones/<int:cotizacion_id>/pdf")
 @crm_required
 def crm_cotizacion_pdf(cotizacion_id):
@@ -11369,7 +11382,7 @@ def crm_cotizacion_pdf(cotizacion_id):
         return redirect(url_for("crm_cotizacion_vista", cotizacion_id=cotizacion_id, idioma=idioma, incluir_pricing="1" if incluir_pricing else "0"))
     buffer.seek(0)
     return send_file(
-        buffer, as_attachment=True, download_name=f"Cotizacion_{documento['id_cotizacion']}_{idioma}.pdf",
+        buffer, as_attachment=True, download_name=nombre_archivo_cotizacion(documento, idioma),
         mimetype="application/pdf",
     )
 
