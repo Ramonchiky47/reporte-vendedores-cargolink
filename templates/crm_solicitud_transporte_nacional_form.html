@@ -123,6 +123,8 @@
   <script>
     (function () {
       const tipoServicio = document.getElementById("tipo_servicio");
+      const tipoFtl = document.getElementById("tipo_ftl");
+      const unidad = document.getElementById("unidad_dedicada");
       const medidas = document.getElementById("medidas_lineales");
       const peligroso = document.getElementById("peligroso");
       const un = document.getElementById("un");
@@ -133,6 +135,14 @@
         medidas.disabled = esFtl;
         medidas.placeholder = esFtl ? "No aplica para FTL" : "";
         if (esFtl) medidas.value = "";
+
+        // LTL: no aplica Tipo de FTL ni Unidad dedicada.
+        const esLtl = tipoServicio.value === "LTL";
+        [tipoFtl, unidad].forEach(function (sel) {
+          sel.disabled = esLtl;
+          if (esLtl) sel.value = "";
+          sel.options[0].textContent = esLtl ? "No aplica para LTL" : "Selecciona";
+        });
 
         const esPeligroso = peligroso.value === "SI";
         un.disabled = !esPeligroso;

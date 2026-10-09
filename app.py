@@ -10063,8 +10063,9 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
             referencia, cotizacion_id, session.get("usuario", ""),
             direccion_origen, cp_origen, direccion_destino, cp_destino,
             tipo_servicio,
-            opcion("tipo_ftl", TRANSPORTE_NACIONAL_TIPOS_FTL),
-            opcion("unidad_dedicada", TRANSPORTE_NACIONAL_UNIDADES),
+            # LTL no lleva Tipo de FTL ni Unidad dedicada.
+            None if tipo_servicio == "LTL" else opcion("tipo_ftl", TRANSPORTE_NACIONAL_TIPOS_FTL),
+            None if tipo_servicio == "LTL" else opcion("unidad_dedicada", TRANSPORTE_NACIONAL_UNIDADES),
             medidas_lineales, peso,
             peligroso, un,
             campo_largo("requisito_adicional"),
