@@ -8544,7 +8544,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     """, (cotizacion_id,)).fetchall()
     archivos_tti_por_solicitud = {}
     for a in db.execute("""
-        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por, a.origen
+        SELECT a.id, a.solicitud_id, a.nombre_archivo, a.subido_por, a.origen, a.creado_en
         FROM crm_solicitudes_transporte_terrestre_archivos a
         JOIN crm_solicitudes_transporte_terrestre s ON s.id = a.solicitud_id
         WHERE s.cotizacion_id = %s
@@ -8552,7 +8552,7 @@ def construir_documento_cotizacion_crm(cotizacion_id):
     """, (cotizacion_id,)).fetchall():
         archivos_tti_por_solicitud.setdefault(a["solicitud_id"], []).append({
             "id": a["id"], "nombre": a["nombre_archivo"], "subido_por": a["subido_por"] or "",
-            "origen": a["origen"] or "vendedor",
+            "origen": a["origen"] or "vendedor", "creado_en": a["creado_en"],
             "es_imagen": a["nombre_archivo"].lower().endswith((".png", ".jpg", ".jpeg")),
         })
     archivos_tn_por_solicitud = {}
@@ -10936,6 +10936,28 @@ def transporte_nacional_pdf(solicitud_id):
         buffer, as_attachment=request.args.get("descargar") == "1",
         download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
     )
+
+
+@app.route("/transporte-terrestre/<int:solicitud_id>/visto", methods=["POST"])
+@login_required
+def transporte_terrestre_marcar_visto(solicitud_id):
+    """Igual que transporte_nacional_marcar_visto: la ventana de archivos de
+    la cotización quita el aviso de "Nuevo" al abrirse."""
+    db = get_db()
+    fila = db.execute(
+        "SELECT id, referencia, cotizacion_id FROM crm_solicitudes_transporte_terrestre WHERE id = %s",
+        (solicitud_id,),
+    ).fetchone()
+    if fila is None or not puede_ver_solicitud_transporte_terrestre(db, fila):
+        db.close()
+        return jsonify({"ok": False}), 404
+    db.execute(
+        "UPDATE crm_solicitudes_transporte_terrestre SET visto_por_vendedor_en = now() WHERE id = %s",
+        (solicitud_id,),
+    )
+    db.commit()
+    db.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/transporte-nacional/<int:solicitud_id>/visto", methods=["POST"])

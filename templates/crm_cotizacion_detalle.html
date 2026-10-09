@@ -101,8 +101,8 @@
   .tn-archivos a { display: inline-block; vertical-align: middle; margin: 0 .2rem .2rem 0; text-decoration: none; }
   .tn-archivos img { width: 40px; height: 40px; object-fit: cover; border-radius: 5px; border: 1px solid #ddd; display: block; }
   .tn-archivo-doc { display: inline-block; font-size: .7rem; font-weight: 700; color: #1565c0; border: 1px solid #c5d6ee; border-radius: 5px; padding: .2rem .35rem; }
-  #tn-modal { border: none; border-radius: 12px; padding: 0; width: min(640px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-  #tn-modal::backdrop { background: rgba(15,23,42,.45); }
+  #tn-modal, #tti-modal { border: none; border-radius: 12px; padding: 0; width: min(640px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  #tn-modal::backdrop, #tti-modal::backdrop { background: rgba(15,23,42,.45); }
   .tnm-cab { display: flex; justify-content: space-between; align-items: flex-start; padding: 1rem 1.2rem .8rem; border-bottom: 1px solid #e5e7eb; }
   .tnm-cab h3 { margin: 0 0 .35rem; font-size: 1rem; }
   .tnm-cerrar { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #888; padding: 0 .2rem; }
@@ -194,10 +194,10 @@
       </thead>
       <tbody>
         {% for s in doc.solicitudes_transporte_terrestre %}
-        <tr class="fila-solicitud-pricing" onclick="window.open('{{ url_for('transporte_terrestre_ver', solicitud_id=s.id) }}', '_blank')">
+        <tr class="fila-solicitud-pricing" onclick="abrirArchivosTTI({{ s.id }})">
           <td>
             {{ s.referencia }} · {{ s.tipo_embarque or "—" }}
-            {% if s.es_nuevo %}<span class="badge-nuevo">NUEVO</span>{% endif %}
+            {% if s.es_nuevo %}<span class="badge-nuevo" id="tti-nuevo-{{ s.id }}">NUEVO</span>{% endif %}
           </td>
           <td>{{ s.solicitud_en|hora_mx }}</td>
           <td>{{ s.fecha_entrega|hora_mx if s.fecha_entrega else '' }}{% if not s.fecha_entrega %}<span class="sin-dato">Pendiente</span>{% endif %}</td>
@@ -214,6 +214,54 @@
         {% endfor %}
       </tbody>
     </table>
+    {% macro lista_archivos_tti(archivos, vacio) %}
+      {% if archivos %}
+      <div class="tnm-lista">
+        {% for a in archivos %}
+        <a class="tnm-archivo" href="{{ url_for('transporte_terrestre_archivo', archivo_id=a.id) }}" target="_blank" rel="noopener">
+          {% if a.es_imagen %}<img src="{{ url_for('transporte_terrestre_archivo', archivo_id=a.id) }}" alt="" loading="lazy">{% else %}<span class="tnm-icono">{{ a.nombre.rsplit('.', 1)[-1]|upper }}</span>{% endif %}
+          <span class="tnm-info"><span class="tnm-nombre">{{ a.nombre }}</span><span class="tnm-meta">{{ a.subido_por or '—' }} · {{ a.creado_en|hora_mx }}</span></span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="tnm-vacio">{{ vacio }}</p>
+      {% endif %}
+    {% endmacro %}
+    {% for s in doc.solicitudes_transporte_terrestre %}
+    <template id="tti-modal-{{ s.id }}">
+      <div class="tnm-cab">
+        <div><h3>{{ s.referencia }}{% if s.tipo_embarque %} · {{ s.tipo_embarque }}{% endif %}</h3>
+          <span class="badge-estado-solicitud {{ s.estado|lower|replace(' ', '-') }}">{{ s.estado }}</span></div>
+        <button type="button" class="tnm-cerrar" onclick="document.getElementById('tti-modal').close()" aria-label="Cerrar">&times;</button>
+      </div>
+      <div class="tnm-cuerpo">
+        <h4>Archivos del vendedor</h4>
+        {{ lista_archivos_tti(s.archivos|selectattr('origen', 'equalto', 'vendedor')|list, 'El vendedor no adjuntó archivos.') }}
+        <h4>Archivos de Pricing</h4>
+        {{ lista_archivos_tti(s.archivos|selectattr('origen', 'equalto', 'pricing')|list, 'Pricing no ha adjuntado archivos.') }}
+      </div>
+      <div class="tnm-pie">
+        <a class="tnm-btn" href="{{ url_for('transporte_terrestre_ver', solicitud_id=s.id) }}" target="_blank" rel="noopener">Ver PDF</a>
+      </div>
+    </template>
+    {% endfor %}
+    <dialog id="tti-modal" onclick="if (event.target === this) this.close();"><div id="tti-modal-contenido"></div></dialog>
+    <script>
+      function abrirArchivosTTI(id) {
+        var tpl = document.getElementById('tti-modal-' + id);
+        var cont = document.getElementById('tti-modal-contenido');
+        cont.innerHTML = '';
+        cont.appendChild(tpl.content.cloneNode(true));
+        document.getElementById('tti-modal').showModal();
+        var badge = document.getElementById('tti-nuevo-' + id);
+        if (badge) {
+          fetch('{{ url_for("transporte_terrestre_marcar_visto", solicitud_id=0) }}'.replace('/0/', '/' + id + '/'), {
+            method: 'POST', credentials: 'same-origin', headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
+          }).then(function (r) { if (r.ok) badge.remove(); });
+        }
+      }
+    </script>
     {% else %}
       <p class="pendiente">Todavía no hay solicitudes enviadas.</p>
     {% endif %}
