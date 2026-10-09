@@ -14,6 +14,8 @@
   .pricing-badge.en-proceso { background: #dbeafe; color: var(--accent-dark); }
   .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
   .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
+  .pricing-badge.faltante { background: #ede9fe; color: #5b21b6; }
+  .tn-kpi.faltante { background: linear-gradient(180deg, #ede9fe, #fff 70%); border-color: #c4b5fd; }
 
   .badge-estatus { display: inline-block; padding: .15rem .55rem; border-radius: 10px; font-size: .66rem; font-weight: 700; white-space: nowrap; }
   .badge-estatus.vigente { background: #e3f2fd; color: #1565c0; }
@@ -51,7 +53,7 @@
   .tn-filtros { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin: 0 0 1rem; }
   .tn-filtros label { font-size: .8rem; font-weight: 600; color: var(--ink-2); }
   .tn-filtros select { padding: .38rem .55rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .85rem; background: #fff; }
-  .tn-kpis { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: .55rem; margin: 0 0 1.2rem; }
+  .tn-kpis { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: .55rem; margin: 0 0 1.2rem; }
   @media (max-width: 1200px) { .tn-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
   @media (max-width: 640px) { .tn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   .tn-kpi { background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: .6rem .7rem; min-width: 0; justify-content: space-between; cursor: pointer; text-align: left; font: inherit; display: flex; flex-direction: column; gap: .3rem; transition: box-shadow .15s, border-color .15s; }
@@ -111,13 +113,13 @@
 
     {% if estadistico_usuarios %}
     {% set max_total = estadistico_usuarios|map(attribute='total')|max %}
-    {% set cols = ['por_cotizar', 'cotizada', 'rechazada', 'ftl', 'ltl', 'vigente', 'ganada', 'perdida'] %}
+    {% set cols = ['por_cotizar', 'cotizada', 'pendiente_info', 'rechazada', 'ftl', 'ltl', 'vigente', 'ganada', 'perdida'] %}
     <div class="tn-estadistico" id="tn-estadistico" {{ '' if solicitante else 'hidden' }}>
       <div class="tn-estadistico__titulo">Solicitudes por usuario · {{ (meses_opciones|selectattr('value', 'equalto', mes_seleccionado)|first).label }} <span>(clic en un usuario para filtrar la bandeja)</span>{% if solicitante %} · <a href="{{ url_for('transporte_nacional', mes=mes_seleccionado) }}" style="font-size:.78rem;">&larr; Regresar a todos</a>{% endif %}</div>
       <table class="tn-est-tabla">
         <thead><tr>
           <th>Usuario</th><th class="num">Solicitudes</th><th class="num">Por cotizar</th><th class="num">Cotizadas</th>
-          <th class="num">Rechazadas</th><th class="num">FTL</th><th class="num">LTL</th>
+          <th class="num">Info. Pendiente</th><th class="num">Rechazadas</th><th class="num">FTL</th><th class="num">LTL</th>
           <th class="num">Vigentes</th><th class="num">Ganadas</th><th class="num">Perdidas</th>
         </tr></thead>
         <tbody>

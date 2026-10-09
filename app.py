@@ -2476,7 +2476,7 @@ def formatear_duracion(delta):
 # que los equivalentes de siempre.
 CLASE_ESTADO_SOLICITUD = {
     "por cotizar": "solicitud", "cotización en curso": "en-proceso", "cotizada": "cotizado",
-    "información faltante": "faltante",
+    "información faltante": "faltante", "información pendiente": "faltante",
 }
 
 
@@ -6745,7 +6745,7 @@ def construir_cotizaciones_crm(
         )
         pricing_estado = (
             "nuevo" if pricing_no_visto
-            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Cotizada", "Rechazada", "Información Faltante")
+            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Cotizada", "Rechazada", "Información Faltante", "Información Pendiente")
             else "pendiente" if r["pricing_estado_mas_reciente"]
             else None
         )
@@ -10797,8 +10797,8 @@ def transporte_terrestre_ver(solicitud_id):
     return render_template("transporte_terrestre_pdf_ver.html", fila=fila, idioma=idioma, t=TRANSPORTE_TERRESTRE_TEXTOS[idioma])
 
 
-ESTADOS_SOLICITUD_TRANSPORTE_NACIONAL = ["Solicitud", "En proceso", "Cotizado", "Rechazada"]
-ESTADOS_FINALES_TRANSPORTE_NACIONAL = ["Cotizado", "Rechazada"]
+ESTADOS_SOLICITUD_TRANSPORTE_NACIONAL = ["Solicitud", "En proceso", "Cotizado", "Información Pendiente", "Rechazada"]
+ESTADOS_FINALES_TRANSPORTE_NACIONAL = ["Cotizado", "Información Pendiente", "Rechazada"]
 
 # "Nueva para Pricing": pendiente de contestar y el operativo no la ha
 # abierto desde que se creó o desde que el vendedor la regresó con
@@ -10850,15 +10850,15 @@ def transporte_nacional():
     def grupo_tn(f):
         if f["estado"] in ("Solicitud", "En proceso"):
             return "por_cotizar"
-        return {"Cotizado": "cotizada", "Rechazada": "rechazada"}.get(f["estado"], "otro")
+        return {"Cotizado": "cotizada", "Rechazada": "rechazada", "Información Pendiente": "pendiente_info"}.get(f["estado"], "otro")
 
     # Estadístico por usuario (del mes elegido, antes de filtrar por
     # solicitante): mismas cifras que las tarjetas.
     estadistico_usuarios = {}
     for f in filas:
         u = estadistico_usuarios.setdefault(f["creado_por"] or "—", {
-            "usuario": f["creado_por"] or "—", "total": 0, "por_cotizar": 0, "cotizada": 0, "rechazada": 0,
-            "ftl": 0, "ltl": 0, "vigente": 0, "ganada": 0, "perdida": 0,
+            "usuario": f["creado_por"] or "—", "total": 0, "por_cotizar": 0, "cotizada": 0, "pendiente_info": 0,
+            "rechazada": 0, "ftl": 0, "ltl": 0, "vigente": 0, "ganada": 0, "perdida": 0,
         })
         u["total"] += 1
         g = grupo_tn(f)
@@ -10887,6 +10887,7 @@ def transporte_nacional():
         ("", "Solicitudes", "", len(filas)),
         ("grupo:por_cotizar", "Por cotizar", "pendiente", contar(lambda f: f["grupo"] == "por_cotizar")),
         ("grupo:cotizada", "Cotizadas", "cotizada", contar(lambda f: f["grupo"] == "cotizada")),
+        ("grupo:pendiente_info", "Información Pendiente", "faltante", contar(lambda f: f["grupo"] == "pendiente_info")),
         ("grupo:rechazada", "Rechazadas", "perdida", contar(lambda f: f["grupo"] == "rechazada")),
         ("tipo:FTL", "FTL", "", contar(lambda f: f["tipo_servicio"] == "FTL")),
         ("tipo:LTL", "LTL", "", contar(lambda f: f["tipo_servicio"] == "LTL")),
@@ -10988,7 +10989,7 @@ def transporte_nacional_archivo(archivo_id):
 def transporte_nacional_responder(solicitud_id):
     estado = request.form.get("estado", "").strip()
     if estado not in ESTADOS_FINALES_TRANSPORTE_NACIONAL:
-        flash("Elige Cotizado o Rechazada para guardar la respuesta.")
+        flash("Elige Cotizado, Información Pendiente o Rechazada para guardar la respuesta.")
         return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
     respuesta = (request.form.get("respuesta_transporte_nacional", "") or "").strip()[:4000] or None
     operativo_raw = (request.form.get("operativo_asignado_id", "") or "").strip()

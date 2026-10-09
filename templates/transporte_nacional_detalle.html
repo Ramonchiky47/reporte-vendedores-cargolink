@@ -13,6 +13,7 @@
   .pricing-badge.en-proceso { background: #dbeafe; color: var(--accent-dark); }
   .pricing-badge.cotizado { background: var(--ok-wash); color: var(--ok); }
   .pricing-badge.rechazada { background: var(--danger-wash); color: var(--danger-dark); }
+  .pricing-badge.faltante { background: #ede9fe; color: #5b21b6; }
 
   .pd-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1.5rem; align-items: start; }
   @media (max-width: 860px) { .pd-grid { grid-template-columns: 1fr; } }
@@ -148,7 +149,7 @@
                 document.getElementById('pd-respuesta').rows = this.value === 'Cotizado' ? 10 : 5;
               ">
                 {% if fila.estado not in estados %}
-                <option value="" disabled selected>Selecciona Cotizado o Rechazada...</option>
+                <option value="" disabled selected>Selecciona el estado...</option>
                 {% endif %}
                 {% for opcion in estados %}
                 <option value="{{ opcion }}" {{ 'selected' if opcion == fila.estado else '' }}>{{ opcion }}</option>
@@ -158,7 +159,7 @@
 
             <div class="campo">
               <label>Nueva respuesta para el vendedor</label>
-              <textarea name="respuesta_transporte_nacional" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, condiciones o motivo de rechazo..."></textarea>
+              <textarea name="respuesta_transporte_nacional" id="pd-respuesta" rows="{{ 10 if fila.estado == 'Cotizado' else 5 }}" placeholder="Escribe la cotización, la información que falta o el motivo de rechazo..."></textarea>
             </div>
 
             <div class="campo">
