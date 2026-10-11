@@ -10773,7 +10773,9 @@ def generar_pdf_transporte_terrestre(db, fila, idioma="es"):
     return None if resultado.err else buffer.getvalue()
 
 
-CORREOS_AVISO_TRANSPORTE_TERRESTRE = ["arnold.cano@av2logistics.com", "avillanueva@av2logistics.com", "ramon.villanueva@av2logistics.com"]
+# Aviso de solicitud nueva de Transporte Terrestre Internacional: el primero
+# es el destinatario (Laura Chávez, Pricing) y el resto va en copia.
+CORREOS_AVISO_TRANSPORTE_TERRESTRE = ["operaciones13@av2logistics.com", "ramon.villanueva@av2logistics.com"]
 
 
 def avisar_nueva_solicitud_transporte_terrestre(solicitud_id):
