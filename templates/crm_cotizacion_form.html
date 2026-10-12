@@ -105,6 +105,15 @@
   .dlg-nuevo-contacto__cab { display: flex; justify-content: space-between; align-items: center; padding: .7rem 1rem; border-bottom: 1px solid #e5e7eb; }
   .dlg-nuevo-contacto__cerrar { background: none; border: none; font-size: 1.5rem; line-height: 1; cursor: pointer; color: #888; }
   .dlg-nuevo-contacto iframe { flex: 1 1 auto; width: 100%; border: none; }
+  .dlg-error-guardar { border: none; border-radius: 12px; padding: 1.2rem 1.4rem; width: min(520px, calc(100% - 32px)); box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+  .dlg-error-guardar::backdrop { background: rgba(15,23,42,.45); }
+  .dlg-error-guardar h3 { margin: 0 0 .4rem; color: #b91c1c; font-size: 1.05rem; }
+  .dlg-error-guardar p { margin: 0 0 .4rem; font-size: .88rem; color: #444; }
+  .dlg-error-guardar ul { margin: 0 0 1rem; padding-left: 1.2rem; font-size: .88rem; color: #222; }
+  .dlg-error-guardar ul li { margin: .2rem 0; }
+  .dlg-error-guardar__acciones { display: flex; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }
+  .dlg-error-btn { padding: .5rem 1rem; border-radius: 6px; border: 1px solid #1565c0; background: #1565c0; color: #fff; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; }
+  .dlg-error-btn.secundario { background: #fff; color: #555; border-color: #ccc; }
 {% endblock %}
 {% block crm_content %}
   <div class="fila-encabezado-cotizacion">
@@ -143,6 +152,15 @@
     <p class="id-cotizacion">Se generará un ID único de 6 dígitos al guardar.</p>
   {% endif %}
 
+  <dialog id="dlg-error-guardar" class="dlg-error-guardar">
+    <h3>No se grabará la cotización</h3>
+    <p>No se puede guardar por lo siguiente:</p>
+    <ul id="dlg-error-guardar-lista"></ul>
+    <div class="dlg-error-guardar__acciones">
+      <button type="button" class="dlg-error-btn secundario" id="dlg-error-cancelar">Cancelar y salir sin guardar</button>
+      <button type="button" class="dlg-error-btn" id="dlg-error-aceptar">Aceptar y corregir</button>
+    </div>
+  </dialog>
   <form class="form-cotizacion" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="nombre_cotizacion">Nombre de la cotización</label>
@@ -827,7 +845,32 @@
           aviso.className = 'flash';
           aviso.textContent = 'No se guardará la cotización: falta capturar ' + faltantes.join(', ') + '.';
           form.parentNode.insertBefore(aviso, form);
-          aviso.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Ventana emergente con los motivos: Aceptar regresa al formulario
+          // (al primer campo con error) para corregir; Cancelar sale sin guardar.
+          const dlgError = document.getElementById('dlg-error-guardar');
+          const listaError = document.getElementById('dlg-error-guardar-lista');
+          listaError.innerHTML = '';
+          faltantes.forEach((f) => { const li = document.createElement('li'); li.textContent = f; listaError.appendChild(li); });
+          dlgError.showModal();
+        }
+      });
+    })();
+
+    (function () {
+      const dlgError = document.getElementById('dlg-error-guardar');
+      document.getElementById('dlg-error-aceptar').addEventListener('click', () => {
+        dlgError.close();
+        const primero = document.querySelector('.campo-con-error');
+        if (primero) { primero.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (primero.focus) primero.focus(); }
+      });
+      document.getElementById('dlg-error-cancelar').addEventListener('click', () => {
+        dlgError.close();
+        window.__salirSinGuardar = true;
+        // Dentro del modal de la lista de Cotizaciones, cierra el modal; si no, regresa a la lista.
+        if (window.parent !== window && typeof window.parent.cerrarModalCotizacion === 'function') {
+          window.parent.cerrarModalCotizacion();
+        } else {
+          window.location.href = '{{ url_for("crm_seccion", slug="cotizaciones") }}';
         }
       });
     })();
@@ -854,7 +897,7 @@
       form.addEventListener('submit', () => { formularioModificado = false; });
 
       window.addEventListener('beforeunload', (e) => {
-        if (!formularioModificado) return;
+        if (!formularioModificado || window.__salirSinGuardar) return;
         e.preventDefault();
         e.returnValue = '';
       });
