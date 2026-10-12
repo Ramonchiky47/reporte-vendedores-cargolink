@@ -104,8 +104,10 @@
     var corte = filtro ? filtro.indexOf(':') : -1;
     var campo = corte >= 0 ? filtro.slice(0, corte) : null;
     var valor = corte >= 0 ? filtro.slice(corte + 1) : null;
+    // Sin tarjeta elegida se aplica el filtro propio de la bandeja
+    // (window.filtroExtraFila, p. ej. casillas de estatus), si lo hay.
     document.querySelectorAll('tr.fila-pricing').forEach(function (tr) {
-      tr.hidden = campo ? tr.dataset[campo] !== valor : false;
+      tr.hidden = campo ? tr.dataset[campo] !== valor : (typeof window.filtroExtraFila === 'function' && !window.filtroExtraFila(tr));
     });
     var etiqueta = '';
     document.querySelectorAll('.tb-kpi').forEach(function (b) {
