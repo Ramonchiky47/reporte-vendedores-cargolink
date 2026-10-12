@@ -582,6 +582,7 @@
 
         const tdProducto = document.createElement('td');
         const selectCategoria = document.createElement('select');
+        selectCategoria.classList.add('linea-categoria');
         selectCategoria.style.marginBottom = '0.3rem';
         selectCategoria.innerHTML = '<option value="">-- Producto --</option>' +
           `<option value="__SIN_PRODUCTO__"${datos.producto_texto ? ' selected' : ''}>SIN PRODUCTO</option>` +
@@ -791,6 +792,32 @@
           faltantes.push('Fecha de vencimiento');
           marcarError(fechaVencimientoLibre);
         }
+
+        // Conceptos: un renglón que se empezó a capturar debe quedar completo;
+        // antes el servidor lo descartaba en silencio (producto sin elegir o
+        // precio vacío) y la cotización se guardaba con menos conceptos.
+        const numeroValido = (v) => {
+          const limpio = (v || '').replace(/,/g, '').replace(/[^0-9.\-]/g, '');
+          return limpio !== '' && !isNaN(parseFloat(limpio));
+        };
+        document.querySelectorAll('#cuerpo-lineas-producto tr').forEach((fila, idx) => {
+          const selCategoria = fila.querySelector('.linea-categoria');
+          const selProducto = fila.querySelector('.linea-producto');
+          const txtProducto = fila.querySelector('.linea-producto-texto');
+          const inCantidad = fila.querySelector('.linea-cantidad');
+          const inPrecio = fila.querySelector('.linea-precio');
+          const categoria = selCategoria ? selCategoria.value : '';
+          const tocada = categoria || (inPrecio && inPrecio.value.trim()) || (txtProducto && txtProducto.value.trim());
+          if (!tocada) return;
+          const problemas = [];
+          if (!categoria) { problemas.push('producto'); marcarError(selCategoria); }
+          else if (categoria === '__SIN_PRODUCTO__') {
+            if (!txtProducto.value.trim()) { problemas.push('nombre del concepto'); marcarError(txtProducto); }
+          } else if (!selProducto.value) { problemas.push('concepto'); marcarError(selProducto); }
+          if (!numeroValido(inCantidad.value)) { problemas.push('cantidad'); marcarError(inCantidad); }
+          if (!numeroValido(inPrecio.value)) { problemas.push('precio'); marcarError(inPrecio); }
+          if (problemas.length) faltantes.push('Concepto ' + (idx + 1) + ': ' + problemas.join(', '));
+        });
 
         if (faltantes.length) {
           e.preventDefault();

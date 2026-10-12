@@ -8993,7 +8993,10 @@ def opciones_contactos_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=N
 
 
 def parse_numero_formato_miles(texto):
-    texto = (texto or "").strip().replace(",", "")
+    # Se toleran "$", espacios y la moneda escrita ("$5,150", "5150 USD",
+    # "1 pz"): antes un precio así se descartaba en silencio y el concepto
+    # no se guardaba, aunque la pantalla sí lo sumaba en el total.
+    texto = re.sub(r"[^0-9.\-]", "", (texto or "").strip().replace(",", ""))
     if not texto:
         return None, None
     try:
