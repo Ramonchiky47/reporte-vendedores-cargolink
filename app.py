@@ -10173,6 +10173,9 @@ def crm_solicitud_transporte_nacional_nueva(cotizacion_id):
         db.commit()
         db.close()
         flash(f"Solicitud {referencia} enviada a Transporte Nacional.")
+        error_aviso = avisar_nueva_solicitud_transporte_nacional(solicitud_id)
+        if error_aviso:
+            flash(f"La solicitud se guardó, pero no se pudo enviar el correo a Pricing ({error_aviso}).")
         for error in errores_archivos:
             flash(f"Archivo no adjuntado — {error}.")
         return redirect(url_for("crm_cotizacion_detalle", cotizacion_id=cotizacion_id))
@@ -10776,9 +10779,14 @@ def generar_pdf_transporte_terrestre(db, fila, idioma="es"):
     return None if resultado.err else buffer.getvalue()
 
 
-# Aviso de solicitud nueva de Transporte Terrestre Internacional: el primero
-# es el destinatario (Laura Chávez, Pricing) y el resto va en copia.
-CORREOS_AVISO_TRANSPORTE_TERRESTRE = ["operaciones13@av2logistics.com", "ramon.villanueva@av2logistics.com"]
+# Avisos por correo de solicitudes nuevas a Pricing: el primero es el
+# destinatario y el resto va en copia.
+# Terrestre Internacional → Arnold Cano y Armando Villanueva Silva.
+CORREOS_AVISO_TRANSPORTE_TERRESTRE = [
+    "arnold.cano@av2logistics.com", "avillanueva@av2logistics.com", "ramon.villanueva@av2logistics.com",
+]
+# Transporte Nacional → Laura Chávez.
+CORREOS_AVISO_TRANSPORTE_NACIONAL = ["operaciones13@av2logistics.com", "ramon.villanueva@av2logistics.com"]
 
 
 def avisar_nueva_solicitud_transporte_terrestre(solicitud_id):
@@ -11189,6 +11197,72 @@ def puede_ver_solicitud_transporte_nacional(db, fila):
     return cotizacion_visible_para_usuario(db, fila["cotizacion_id"])
 
 
+def generar_pdf_transporte_nacional(db, fila):
+    """PDF (bytes) de una solicitud de Transporte Nacional — lo usan la
+    descarga/vista y el aviso por correo al crearla."""
+    operativo = None
+    if fila["operativo_asignado_id"]:
+        operativo = db.execute(
+            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
+        ).fetchone()
+    respuestas = db.execute("""
+        SELECT respuesta, respondido_por, creado_en
+        FROM crm_solicitudes_transporte_nacional_respuestas
+        WHERE solicitud_id = %s
+        ORDER BY creado_en ASC
+    """, (fila["id"],)).fetchall()
+    html = render_template(
+        "transporte_nacional_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
+        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL),
+    )
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    return None if resultado.err else buffer.getvalue()
+
+
+def avisar_nueva_solicitud_transporte_nacional(solicitud_id):
+    """Manda el PDF de una solicitud nueva de Transporte Nacional a Pricing
+    (CORREOS_AVISO_TRANSPORTE_NACIONAL). Regresa None o el texto del error."""
+    db = get_db()
+    try:
+        fila = db.execute("""
+            SELECT s.*, co.id AS cotizacion_id, co.id_cotizacion, ac.razon_social AS cliente_nombre
+            FROM crm_solicitudes_transporte_nacional s
+            LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
+            LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+            WHERE s.id = %s
+        """, (solicitud_id,)).fetchone()
+        if fila is None:
+            return "solicitud no encontrada"
+        pdf = generar_pdf_transporte_nacional(db, fila)
+    finally:
+        db.close()
+    if pdf is None:
+        return "no se pudo generar el PDF"
+    enlace = url_for("transporte_nacional_detalle", solicitud_id=solicitud_id, _external=True)
+    cuerpo = render_template_string("""
+        <p>Se recibió una nueva solicitud de <b>Transporte Nacional</b>.</p>
+        <table style="border-collapse:collapse;font-size:14px;">
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Referencia</td><td><b>{{ f.referencia }}</b></td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Cotización</td><td>{{ f.id_cotizacion or '—' }}{% if f.cliente_nombre %} · {{ f.cliente_nombre }}{% endif %}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Solicitó</td><td>{{ f.creado_por or '—' }}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">Servicio</td><td>{{ f.tipo_servicio or '—' }}{% if f.unidad_dedicada %} · {{ f.unidad_dedicada }}{% endif %}</td></tr>
+          <tr><td style="padding:2px 12px 2px 0;color:#666;">CP Origen → Destino</td><td>{{ f.cp_origen or '—' }} → {{ f.cp_destino or '—' }}</td></tr>
+        </table>
+        <p>Adjunto el PDF de la solicitud. Para contestarla: <a href="{{ enlace }}">{{ enlace }}</a></p>
+    """, f=fila, enlace=enlace)
+    try:
+        enviar_correo_smtp(
+            CORREOS_AVISO_TRANSPORTE_NACIONAL[0],
+            f"Nueva solicitud Transporte Nacional {fila['referencia']}",
+            cuerpo, adjuntos=[(f"{fila['referencia']}.pdf", pdf)], cc=CORREOS_AVISO_TRANSPORTE_NACIONAL[1:],
+        )
+    except Exception as exc:
+        app.logger.exception("No se pudo enviar el aviso de la solicitud %s", fila["referencia"])
+        return str(exc)
+    return None
+
+
 @app.route("/transporte-nacional/<int:solicitud_id>/pdf")
 @login_required
 def transporte_nacional_pdf(solicitud_id):
@@ -11207,29 +11281,12 @@ def transporte_nacional_pdf(solicitud_id):
         db.close()
         flash("Solicitud no encontrada.")
         return redirect(url_for(primera_pagina_permitida()))
-    operativo = None
-    if fila["operativo_asignado_id"]:
-        operativo = db.execute(
-            "SELECT nombre_operativo FROM catalogo_operativos WHERE id = %s", (fila["operativo_asignado_id"],)
-        ).fetchone()
-    respuestas = db.execute("""
-        SELECT respuesta, respondido_por, creado_en
-        FROM crm_solicitudes_transporte_nacional_respuestas
-        WHERE solicitud_id = %s
-        ORDER BY creado_en ASC
-    """, (solicitud_id,)).fetchall()
+    pdf = generar_pdf_transporte_nacional(db, fila)
     db.close()
-
-    html = render_template(
-        "transporte_nacional_pdf.html", fila=fila, operativo=operativo["nombre_operativo"] if operativo else None,
-        respuestas=respuestas, generado_en=datetime.now(TZ_LOCAL),
-    )
-    buffer = io.BytesIO()
-    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
-    if resultado.err:
+    if pdf is None:
         flash("No se pudo generar el PDF de la solicitud.")
         return redirect(url_for("transporte_nacional_detalle", solicitud_id=solicitud_id))
-    buffer.seek(0)
+    buffer = io.BytesIO(pdf)
     return send_file(
         buffer, as_attachment=request.args.get("descargar") == "1",
         download_name=f"{fila['referencia']}.pdf", mimetype="application/pdf",
