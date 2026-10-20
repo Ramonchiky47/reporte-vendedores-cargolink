@@ -10925,13 +10925,17 @@ def transporte_nacional():
     # búsqueda se usa el filtro de Mes.
     busqueda = (request.args.get("q", "") or "").strip()[:100]
     if busqueda:
-        patron = f"%{busqueda}%"
-        filtro_sql = """(
-            s.referencia ILIKE %s OR coalesce(s.creado_por, '') ILIKE %s OR coalesce(co.id_cotizacion, '') ILIKE %s
-            OR coalesce(ac.razon_social, '') ILIKE %s
-            OR to_char(s.creado_en AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD DD/MM/YYYY DD-MM-YYYY') ILIKE %s
-        )"""
-        filtro_params = (patron,) * 5
+        # Búsqueda no exacta: cada palabra puede estar en cualquier campo y en
+        # cualquier orden ("inside 20/10", "laura ftl"), sin importar
+        # mayúsculas ni acentos.
+        sin_acentos = "translate(lower({}), 'áéíóúüñ', 'aeiouun')"
+        texto_fila = sin_acentos.format("""concat_ws(' ',
+            s.referencia, s.creado_por, co.id_cotizacion, ac.razon_social, op.nombre_operativo,
+            s.proveedor, s.observaciones, s.tipo_servicio, s.estado, s.cp_origen, s.cp_destino,
+            to_char(s.creado_en AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD DD/MM/YYYY DD-MM-YYYY'))""")
+        palabras = [w for w in busqueda.split() if w][:8]
+        filtro_sql = "(" + " AND ".join(f"{texto_fila} LIKE {sin_acentos.format('%s')}" for _ in palabras) + ")"
+        filtro_params = tuple(f"%{w}%" for w in palabras)
     else:
         filtro_sql = """(s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
           AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s"""
