@@ -10920,6 +10920,22 @@ def transporte_nacional():
     anio_sel, mes_num_sel = (int(x) for x in mes_seleccionado.split("-"))
     fecha_inicio_mes = date(anio_sel, mes_num_sel, 1)
     fecha_fin_mes_excl = date(anio_sel + (mes_num_sel == 12), mes_num_sel % 12 + 1, 1)
+    # Buscador (q): busca en TODOS los meses y estatus por TN, cotización,
+    # cliente, quien solicitó o fecha (2026-10-20, 20/10/2026, 20-10). Sin
+    # búsqueda se usa el filtro de Mes.
+    busqueda = (request.args.get("q", "") or "").strip()[:100]
+    if busqueda:
+        patron = f"%{busqueda}%"
+        filtro_sql = """(
+            s.referencia ILIKE %s OR coalesce(s.creado_por, '') ILIKE %s OR coalesce(co.id_cotizacion, '') ILIKE %s
+            OR coalesce(ac.razon_social, '') ILIKE %s
+            OR to_char(s.creado_en AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD DD/MM/YYYY DD-MM-YYYY') ILIKE %s
+        )"""
+        filtro_params = (patron,) * 5
+    else:
+        filtro_sql = """(s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
+          AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s"""
+        filtro_params = (fecha_inicio_mes, fecha_fin_mes_excl)
     db = get_db()
     filas = db.execute("""
         SELECT
@@ -10936,10 +10952,9 @@ def transporte_nacional():
         LEFT JOIN crm_cotizaciones co ON co.id = s.cotizacion_id
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN catalogo_operativos op ON op.id = s.operativo_asignado_id
-        WHERE (s.creado_en AT TIME ZONE 'America/Mexico_City') >= %s
-          AND (s.creado_en AT TIME ZONE 'America/Mexico_City') < %s
+        WHERE """ + filtro_sql + """
         ORDER BY (s.estado = 'Solicitud') DESC, (s.estado = 'En proceso') DESC, s.creado_en DESC
-    """, (fecha_inicio_mes, fecha_fin_mes_excl)).fetchall()
+    """, filtro_params).fetchall()
     db.close()
     filas = agregar_estatus_cotizacion_solicitudes(filas)
 
@@ -10999,7 +11014,8 @@ def transporte_nacional():
         # Las cotizadas se ocultan de la tabla salvo que se marque "Mostrar
         # cotizadas" (siguen contando en las tarjetas). Si el vendedor la
         # regresa con comentarios, vuelve a "Solicitud" y reaparece sola.
-        mostrar_cotizadas=request.args.get("mostrar_cotizadas") == "1",
+        mostrar_cotizadas=bool(busqueda) or request.args.get("mostrar_cotizadas") == "1",
+        busqueda=busqueda,
     )
 
 

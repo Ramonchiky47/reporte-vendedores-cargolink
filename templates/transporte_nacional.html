@@ -66,7 +66,13 @@
   .tn-kpi.ganada { background: linear-gradient(180deg, #dcfce7, #fff 70%); border-color: #4ade80; }
   .tn-kpi.perdida { background: linear-gradient(180deg, #fee2e2, #fff 70%); border-color: #fca5a5; }
   .tn-kpi.vigente { background: linear-gradient(180deg, #e3f2fd, #fff 70%); border-color: #90caf9; }
-  .tn-check-cotizadas { display: inline-flex; align-items: center; gap: .35rem; font-size: .82rem !important; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .tn-check-cotizadas { display: inline-flex !important; align-items: center; gap: .35rem; font-size: .82rem !important; font-weight: 600; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .tn-check-cotizadas input { width: auto !important; margin: 0; }
+  .tn-buscador { display: flex; gap: .5rem; align-items: center; margin: 0 0 .8rem; flex-wrap: wrap; }
+  .tn-buscador input { flex: 1 1 420px; padding: .55rem .8rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .9rem; background: #fff; }
+  .tn-buscador button { padding: .55rem 1.1rem; border-radius: 8px; font-size: .88rem; }
+  .tn-buscador__limpiar { font-size: .85rem; font-weight: 600; }
+  .tn-buscador__aviso { margin: -.3rem 0 .9rem; font-size: .85rem; color: var(--ink-2); }
   .tn-aviso-ocultas { font-size: .78rem; color: #b45309; font-weight: 600; }
   .tn-btn-regresar { padding: .38rem .8rem; border-radius: 7px; background: var(--accent-dark); color: #fff; font-size: .82rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
   .tn-btn-regresar:hover { filter: brightness(1.1); }
@@ -95,6 +101,14 @@
     <h2 style="margin: 0 0 .2rem;">Transporte Nacional</h2>
     <p class="hint" style="margin: 0 0 1rem;">Solicitudes de Transporte Nacional de todas las cotizaciones. Clic en una fila para revisarla y contestarla.</p>
 
+    <form class="tn-buscador" method="get" role="search">
+      <input type="search" name="q" value="{{ busqueda }}" placeholder="Buscar por TN, cotización, cliente, quien solicitó o fecha (2026-10-20 / 20/10/2026)..." autocomplete="off">
+      <button type="submit">Buscar</button>
+      {% if busqueda %}<a class="tn-buscador__limpiar" href="{{ url_for('transporte_nacional') }}">Limpiar búsqueda</a>{% endif %}
+    </form>
+    {% if busqueda %}
+    <p class="tn-buscador__aviso">Resultados de <b>"{{ busqueda }}"</b> en todos los meses y estatus: {{ filas|length }} solicitud{{ 'es' if filas|length != 1 else '' }}.</p>
+    {% endif %}
     <form class="tn-filtros" method="get">
       <label for="tn-mes">Mes:</label>
       <select id="tn-mes" name="mes" onchange="this.form.submit()">
