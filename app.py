@@ -10785,8 +10785,10 @@ def generar_pdf_transporte_terrestre(db, fila, idioma="es"):
 CORREOS_AVISO_TRANSPORTE_TERRESTRE = [
     "arnold.cano@av2logistics.com", "avillanueva@av2logistics.com", "ramon.villanueva@av2logistics.com",
 ]
-# Transporte Nacional → Laura Chávez.
-CORREOS_AVISO_TRANSPORTE_NACIONAL = ["operaciones13@av2logistics.com", "ramon.villanueva@av2logistics.com"]
+# Transporte Nacional → Laura Chávez y Kassandra.
+CORREOS_AVISO_TRANSPORTE_NACIONAL = [
+    "operaciones13@av2logistics.com", "operaciones16@av2logistics.com", "ramon.villanueva@av2logistics.com",
+]
 
 
 def avisar_nueva_solicitud_transporte_terrestre(solicitud_id):
