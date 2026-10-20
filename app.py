@@ -8925,7 +8925,11 @@ def opciones_clientes_cotizacion_crm(plazas_permitidas=None, vendedor_forzado=No
     for r in clientes_raw:
         vkey = normalizar(r["vendedor"])
         plaza = plaza_por_vendedor.get(vkey, "#N/D")
-        if plazas_permitidas is not None and plaza not in plazas_permitidas:
+        # Un desarrollador con "solo su información" siempre puede cotizar a
+        # SUS clientes, aunque el vendedor del cliente no tenga plaza o esté
+        # en otra (p. ej. un vendedor nuevo todavía sin catálogo).
+        es_cliente_propio = desarrollador_forzado is not None and coincide_desarrollador(desarrollador_forzado, r["desarrollador"])
+        if plazas_permitidas is not None and plaza not in plazas_permitidas and not es_cliente_propio:
             continue
         if vendedor_forzado_norm is not None and vkey != vendedor_forzado_norm:
             continue
