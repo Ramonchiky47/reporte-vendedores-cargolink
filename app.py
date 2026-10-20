@@ -11178,6 +11178,9 @@ def transporte_nacional_reenviar(solicitud_id):
         db.commit()
         db.close()
         flash(f"Solicitud {fila['referencia']} regresada a Transporte Nacional con tus comentarios.")
+        error_aviso = avisar_nueva_solicitud_transporte_nacional(solicitud_id, comentario=comentario)
+        if error_aviso:
+            flash(f"Se guardaron tus comentarios, pero no se pudo enviar el correo a Pricing ({error_aviso}).")
         for error in errores_archivos:
             flash(f"Archivo no adjuntado — {error}.")
         if fila["cotizacion_id"]:
@@ -11242,9 +11245,11 @@ def generar_pdf_transporte_nacional(db, fila):
     return None if resultado.err else buffer.getvalue()
 
 
-def avisar_nueva_solicitud_transporte_nacional(solicitud_id):
-    """Manda el PDF de una solicitud nueva de Transporte Nacional a Pricing
-    (CORREOS_AVISO_TRANSPORTE_NACIONAL). Regresa None o el texto del error."""
+def avisar_nueva_solicitud_transporte_nacional(solicitud_id, comentario=None):
+    """Manda el PDF de una solicitud de Transporte Nacional a Pricing
+    (CORREOS_AVISO_TRANSPORTE_NACIONAL). Con `comentario` es el aviso de
+    "Retroalimentación de cotización" (el vendedor la regresó con
+    comentarios); sin él, el de solicitud nueva. Regresa None o el error."""
     db = get_db()
     try:
         fila = db.execute("""
@@ -11263,7 +11268,12 @@ def avisar_nueva_solicitud_transporte_nacional(solicitud_id):
         return "no se pudo generar el PDF"
     enlace = url_for("transporte_nacional_detalle", solicitud_id=solicitud_id, _external=True)
     cuerpo = render_template_string("""
+        {% if comentario %}
+        <p><b>Retroalimentación de cotización</b> — el área comercial regresó la solicitud de <b>Transporte Nacional</b> con estos comentarios:</p>
+        <div style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px 14px;margin:0 0 12px;white-space:pre-line;font-size:14px;">{{ comentario }}</div>
+        {% else %}
         <p>Se recibió una nueva solicitud de <b>Transporte Nacional</b>.</p>
+        {% endif %}
         <table style="border-collapse:collapse;font-size:14px;">
           <tr><td style="padding:2px 12px 2px 0;color:#666;">Referencia</td><td><b>{{ f.referencia }}</b></td></tr>
           <tr><td style="padding:2px 12px 2px 0;color:#666;">Cotización</td><td>{{ f.id_cotizacion or '—' }}{% if f.cliente_nombre %} · {{ f.cliente_nombre }}{% endif %}</td></tr>
@@ -11272,11 +11282,12 @@ def avisar_nueva_solicitud_transporte_nacional(solicitud_id):
           <tr><td style="padding:2px 12px 2px 0;color:#666;">CP Origen → Destino</td><td>{{ f.cp_origen or '—' }} → {{ f.cp_destino or '—' }}</td></tr>
         </table>
         <p>Adjunto el PDF de la solicitud. Para contestarla: <a href="{{ enlace }}">{{ enlace }}</a></p>
-    """, f=fila, enlace=enlace)
+    """, f=fila, enlace=enlace, comentario=comentario)
     try:
         enviar_correo_smtp(
             CORREOS_AVISO_TRANSPORTE_NACIONAL[0],
-            f"Nueva solicitud Transporte Nacional {fila['referencia']}",
+            (f"Retroalimentación de cotización · Transporte Nacional {fila['referencia']}" if comentario
+             else f"Nueva solicitud Transporte Nacional {fila['referencia']}"),
             cuerpo, adjuntos=[(f"{fila['referencia']}.pdf", pdf)], cc=CORREOS_AVISO_TRANSPORTE_NACIONAL[1:],
         )
     except Exception as exc:
