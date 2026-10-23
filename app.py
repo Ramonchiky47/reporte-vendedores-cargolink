@@ -6655,9 +6655,8 @@ def construir_cotizaciones_crm(
                co.estibable, co.tiempo_traslado, co.via, co.seguro_mercancia,
                co.profit_estimado, co.tipo_cambio, co.descripcion, co.estatus,
                f.nombre_firma, cu.email AS creador_correo, crp.vendedor_asociado AS creador_vendedor_asociado, crp.desarrollador_asociado AS creador_desarrollador_asociado,
-               sp.estado_mas_reciente AS pricing_estado_mas_reciente,
-               sp.visto_por_vendedor_en AS pricing_visto_en,
-               sp.ultima_respuesta_en AS pricing_ultima_respuesta_en
+               sp.hay_no_visto AS pricing_hay_no_visto, sp.hay_abierta AS pricing_hay_abierta,
+               sp.total_solicitudes AS pricing_total_solicitudes
         FROM crm_cotizaciones co
         LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
         LEFT JOIN crm_contactos ct ON ct.id = co.contacto_id
@@ -6672,25 +6671,30 @@ def construir_cotizaciones_crm(
             -- Internacional — antes solo se veía la de Marítimo/Aéreo, así
             -- que una solicitud de Terrestre nunca prendía el indicador
             -- "Pricing" (New/Pendiente/Ok) en el listado de Cotizaciones.
-            SELECT estado_mas_reciente, visto_por_vendedor_en, ultima_respuesta_en
+            -- Todas las solicitudes de Pricing de la cotización (Marítimo/Aéreo,
+            -- Terrestre Internacional y Nacional), no solo la más reciente:
+            -- antes una solicitud nueva pendiente "tapaba" la respuesta de otra.
+            SELECT
+                bool_or(ultima_respuesta_en IS NOT NULL
+                        AND (visto_por_vendedor_en IS NULL OR visto_por_vendedor_en < ultima_respuesta_en)) AS hay_no_visto,
+                bool_or(estado_mas_reciente NOT IN ('Cotizado', 'Cotizada', 'Rechazada', 'Información Faltante', 'Información Pendiente')) AS hay_abierta,
+                count(*) AS total_solicitudes
             FROM (
-                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
-                       (SELECT max(creado_en) FROM crm_solicitudes_pricing_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                SELECT s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
+                       coalesce((SELECT max(creado_en) FROM crm_solicitudes_pricing_respuestas WHERE solicitud_id = s.id), s.respondido_en) AS ultima_respuesta_en
                 FROM crm_solicitudes_maritimo_aereo s
                 WHERE s.cotizacion_id = co.id
                 UNION ALL
-                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
-                       (SELECT max(creado_en) FROM crm_solicitudes_transporte_terrestre_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                SELECT s.estado, s.visto_por_vendedor_en,
+                       coalesce((SELECT max(creado_en) FROM crm_solicitudes_transporte_terrestre_respuestas WHERE solicitud_id = s.id), s.respondido_en)
                 FROM crm_solicitudes_transporte_terrestre s
                 WHERE s.cotizacion_id = co.id
                 UNION ALL
-                SELECT s.creado_en, s.estado AS estado_mas_reciente, s.visto_por_vendedor_en,
-                       (SELECT max(creado_en) FROM crm_solicitudes_transporte_nacional_respuestas WHERE solicitud_id = s.id) AS ultima_respuesta_en
+                SELECT s.estado, s.visto_por_vendedor_en,
+                       coalesce((SELECT max(creado_en) FROM crm_solicitudes_transporte_nacional_respuestas WHERE solicitud_id = s.id), s.respondido_en)
                 FROM crm_solicitudes_transporte_nacional s
                 WHERE s.cotizacion_id = co.id
             ) combinado
-            ORDER BY creado_en DESC
-            LIMIT 1
         ) sp ON true
         ORDER BY co.fecha_creacion DESC, co.id DESC
     """).fetchall()
@@ -6811,15 +6815,11 @@ def construir_cotizaciones_crm(
 
         contacto_texto = f"{r['contacto_nombre']} {r['contacto_apellido'] or ''}".strip() if r["contacto_id"] else ""
 
-        pricing_no_visto = bool(
-            r["pricing_ultima_respuesta_en"]
-            and (not r["pricing_visto_en"] or r["pricing_visto_en"] < r["pricing_ultima_respuesta_en"])
-        )
         pricing_estado = (
-            "nuevo" if pricing_no_visto
-            else "respondida" if r["pricing_estado_mas_reciente"] in ("Cotizado", "Cotizada", "Rechazada", "Información Faltante", "Información Pendiente")
-            else "pendiente" if r["pricing_estado_mas_reciente"]
-            else None
+            None if not r["pricing_total_solicitudes"]
+            else "nuevo" if r["pricing_hay_no_visto"]
+            else "pendiente" if r["pricing_hay_abierta"]
+            else "respondida"
         )
         # Quién creó la cotización, con la misma identidad que usa CRM →
         # Inicio para contarla (vendedor/desarrollador asociado a la cuenta,
