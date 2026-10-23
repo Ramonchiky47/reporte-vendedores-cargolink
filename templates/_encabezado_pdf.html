@@ -1,0 +1,16 @@
+{# Encabezado común de los PDF de AV2: logo a la izquierda, razón social,
+   dirección y RFC al centro, y barra vino debajo. #}
+<table style="width: 100%; border-collapse: collapse;">
+  <tr>
+    <td style="width: 34%; border: none; padding: 0 0 4px; vertical-align: middle;">
+      {% if logo_av2_data_uri %}<img src="{{ logo_av2_data_uri }}" style="width: 215px; height: 57px;">{% else %}<b style="font-size: 14pt; color: #7a1f2c;">AV2 LOGISTICS</b>{% endif %}
+    </td>
+    <td style="width: 66%; border: none; padding: 0 0 4px; text-align: center; vertical-align: middle;">
+      <p style="margin: 0; font-size: 15pt; font-weight: bold; color: #111827;">AV2 LOGISTICS</p>
+      <p style="margin: 2px 0 0; font-size: 7pt; font-weight: bold; color: #111827;">AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
+      <p style="margin: 0; font-size: 7pt; font-weight: bold; color: #111827;">ZAPOPAN, JALISCO</p>
+      <p style="margin: 0; font-size: 7pt; font-weight: bold; color: #111827;">R.F.C ALO171009TZ1</p>
+    </td>
+  </tr>
+</table>
+<table style="width: 100%; border-collapse: collapse; margin: 4px 0 8px;"><tr><td style="background-color: #7a1f1f; height: 7px; font-size: 1px; line-height: 1px; padding: 0; border: none;">&nbsp;</td></tr></table>

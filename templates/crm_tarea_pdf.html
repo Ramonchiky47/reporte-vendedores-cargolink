@@ -43,21 +43,7 @@
 </style>
 </head>
 <body>
-  <table class="tabla-encabezado">
-    <tr>
-      <td style="width:48px;"><table class="logo-badge-tabla"><tr><td class="logo-badge">AV2</td></tr></table></td>
-      <td class="marca-nombre">
-        <p class="marca-h1"><b>AV2 LOGISTICS</b></p>
-        <p class="marca-slogan">In logistics, your peace is our responsibility</p>
-      </td>
-      <td class="direccion-empresa" align="right">
-        <p class="destacado"><b>Av Universidad No. 1011, Col. Puerta de Hierro</b></p>
-        <p>CP 45116, Zapopan, Jalisco</p>
-        <p>R.F.C ALO171009TZ1</p>
-      </td>
-    </tr>
-  </table>
-  <table class="regla-vino"><tr><td>&nbsp;</td></tr></table>
+  {% include "_encabezado_pdf.html" %}
 
   <table class="eyebrow-tabla"><tr><td class="eyebrow">MINUTA DE REUNIÓN — {{ doc.actividad|upper }}</td></tr></table>
 

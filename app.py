@@ -2459,6 +2459,15 @@ except Exception as e:
 app = Flask(__name__)
 app.secret_key = get_secret_key()
 
+# Logo de AV2 (static/logo_av2.png) embebido como data URI para el encabezado
+# común de todos los PDF (templates/_encabezado_pdf.html): así xhtml2pdf no
+# depende de servir archivos estáticos.
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "logo_av2.png"), "rb") as _logo:
+        app.jinja_env.globals["logo_av2_data_uri"] = "data:image/png;base64," + base64.b64encode(_logo.read()).decode("ascii")
+except OSError:
+    app.jinja_env.globals["logo_av2_data_uri"] = ""
+
 # EN_VERCEL: solo exigimos cookies "Secure" en producción (HTTPS). En local
 # (HTTP en 127.0.0.1) exigirlo rompería el login, porque el navegador nunca
 # manda una cookie Secure sobre una conexión sin TLS.
