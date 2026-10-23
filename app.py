@@ -228,6 +228,21 @@ def init_db():
     # Operativo(s) que reciben por default las solicitudes de Transporte
     # Nacional (catalogo_operativos lo administra otra pantalla/app).
     db.execute("ALTER TABLE IF EXISTS catalogo_operativos ADD COLUMN IF NOT EXISTS default_transporte_nacional boolean not null default false;")
+    # Historial de cambios de bookings entre actualizaciones (ver
+    # registrar_cambios_bookings): eliminado / nuevo / monto / vendedor.
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS reporte_bookings_cambios (
+            id bigint generated always as identity primary key,
+            detectado_en timestamptz not null default now(),
+            referencia text not null,
+            tipo text not null,
+            vendedor_antes text, vendedor_despues text,
+            profit_antes numeric, profit_despues numeric,
+            venta_antes numeric, venta_despues numeric,
+            cliente text, fecha_booking timestamptz
+        );
+    """)
+    db.execute("CREATE INDEX IF NOT EXISTS idx_reporte_bookings_cambios_fecha ON reporte_bookings_cambios (detectado_en);")
     # Transporte Terrestre Internacional: aviso de "nueva" para Pricing y
     # archivos adjuntos (vendedor al solicitar / Pricing al responder), igual
     # que Transporte Nacional. Las solicitudes que ya estaban contestadas se
@@ -3656,6 +3671,46 @@ def dashboard():
     return render_template("dashboard.html", resultado=session.pop("resultado", None))
 
 
+def registrar_cambios_bookings(cur, fecha_inicio, fecha_fin, bookings_nuevos):
+    """Compara reporte_bookings (rango actual) contra la descarga nueva y
+    guarda las diferencias en reporte_bookings_cambios."""
+    anteriores = {
+        r["referencia"]: r for r in cur.execute(
+            "SELECT referencia, vendedor, cliente_servicio, fecha, venta, profit FROM reporte_bookings "
+            "WHERE fecha >= %s AND fecha < (%s::date + interval '1 day')", (fecha_inicio, fecha_fin),
+        ).fetchall()
+    }
+    nuevos = {b["referencia"]: b for b in bookings_nuevos if b.get("referencia")}
+
+    def num(v):
+        try:
+            return round(float(v or 0), 2)
+        except (TypeError, ValueError):
+            return 0.0
+
+    cambios = []
+    for ref, a in anteriores.items():
+        n = nuevos.get(ref)
+        if n is None:
+            cambios.append((ref, "eliminado", a["vendedor"], None, num(a["profit"]), None, num(a["venta"]), None, a["cliente_servicio"], a["fecha"]))
+            continue
+        cambio_monto = abs(num(a["profit"]) - num(n["profit"])) >= 0.01 or abs(num(a["venta"]) - num(n["venta"])) >= 0.01
+        cambio_vendedor = normalizar(a["vendedor"] or "") != normalizar(n["vendedor"] or "")
+        if cambio_monto or cambio_vendedor:
+            cambios.append((ref, "vendedor" if cambio_vendedor and not cambio_monto else "monto", a["vendedor"], n["vendedor"],
+                            num(a["profit"]), num(n["profit"]), num(a["venta"]), num(n["venta"]), n["cliente_servicio"], n["fecha"]))
+    if anteriores:  # en la primera carga no tiene sentido marcar todo como "nuevo"
+        for ref, n in nuevos.items():
+            if ref not in anteriores:
+                cambios.append((ref, "nuevo", None, n["vendedor"], None, num(n["profit"]), None, num(n["venta"]), n["cliente_servicio"], n["fecha"]))
+    if cambios:
+        cur.executemany(
+            "INSERT INTO reporte_bookings_cambios (referencia, tipo, vendedor_antes, vendedor_despues, profit_antes, "
+            "profit_despues, venta_antes, venta_despues, cliente, fecha_booking) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            cambios,
+        )
+
+
 def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
     """Descarga bookings de CargoLink y reemplaza reporte_bookings solo para
     el rango [fecha_inicio, fecha_fin] — lo que ya existe fuera de ese rango
@@ -3674,6 +3729,16 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
 
     db = get_db()
     cur = db.cursor()
+    # Registro de cambios: antes de reemplazar el rango se compara lo que
+    # había contra lo que llega de CargoLink y se guarda qué booking
+    # desapareció, apareció, cambió de profit/venta o de vendedor — para
+    # poder explicar después por qué bajó o subió el profit de alguien.
+    try:
+        registrar_cambios_bookings(cur, fecha_inicio, fecha_fin, bookings)
+    except Exception as e:
+        print(f"Aviso: no se pudo registrar el historial de cambios de bookings ({e}).")
+        db.rollback()
+        cur = db.cursor()
     cur.execute(
         "DELETE FROM reporte_bookings WHERE fecha >= %s AND fecha < (%s::date + interval '1 day')",
         (fecha_inicio, fecha_fin),
