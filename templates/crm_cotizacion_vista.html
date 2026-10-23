@@ -30,6 +30,13 @@
     display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
     padding-bottom: 1rem; margin-bottom: 1.2rem; border-bottom: 2px solid var(--vino);
   }
+  .encabezado-av2 { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .encabezado-av2__logo { flex: 0 0 34%; }
+  .encabezado-av2__logo img { width: 100%; max-width: 260px; height: auto; display: block; }
+  .encabezado-av2__datos { flex: 1 1 260px; text-align: center; }
+  .encabezado-av2__datos h1 { margin: 0 0 .3rem; font-size: 1.6rem; font-weight: 800; color: #111827; }
+  .encabezado-av2__datos p { margin: 0; font-size: .78rem; font-weight: 700; color: #111827; }
+  .encabezado-av2__barra { height: 8px; background: #7a1f1f; margin: .6rem 0 1rem; }
   .marca { display: flex; align-items: center; gap: 0.85rem; }
   .logo-badge {
     width: 52px; height: 52px; border-radius: 12px; background: var(--vino); color: #fff;
@@ -126,20 +133,16 @@
   </div>
 
   <div class="hoja">
-    <div class="encabezado">
-      <div class="marca">
-        <div class="logo-badge">AV2</div>
-        <div class="marca-nombre">
-          <h1>AV2 LOGISTICS</h1>
-          <p>In logistics, your peace is our responsibility</p>
-        </div>
-      </div>
-      <div class="direccion-empresa">
-        <strong>Av Universidad No. 1011, Col. Puerta de Hierro</strong><br>
-        CP 45116, Zapopan, Jalisco<br>
-        R.F.C ALO171009TZ1
+    <div class="encabezado-av2">
+      <div class="encabezado-av2__logo">{% if logo_av2_data_uri %}<img src="{{ logo_av2_data_uri }}" alt="AV2 Logistics">{% else %}<b>AV2 LOGISTICS</b>{% endif %}</div>
+      <div class="encabezado-av2__datos">
+        <h1>AV2 LOGISTICS</h1>
+        <p>AV UNIVERSIDAD NO. 1011 COL. PUERTA DE HIERRO CP. 45116</p>
+        <p>ZAPOPAN, JALISCO</p>
+        <p>R.F.C ALO171009TZ1</p>
       </div>
     </div>
+    <div class="encabezado-av2__barra"></div>
 
     <p class="agradecimiento">{{ t.agradecemos }}</p>
 
