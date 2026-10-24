@@ -86,6 +86,65 @@
   .com-cliente-detalle { display: none; padding: 0 0 .75rem 1.6rem; }
   .com-cliente-detalle.abierto { display: block; }
 
+  /* ---- Detalle de vendedor / desarrollador ---- */
+  .cd-head { display: flex; align-items: center; gap: .9rem; margin: 0 0 1.1rem; padding-right: 13rem; }
+  .cd-avatar { width: 46px; height: 46px; border-radius: 50%; background: #007CC3; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1rem; flex: none; }
+  .cd-head .kicker { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); }
+  .cd-head h2 { margin: .1rem 0 0; font-size: 1.3rem; color: var(--ink); letter-spacing: -.01em; }
+  .cd-kpis { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 1.2rem; }
+  .cd-kpi { padding: .85rem 1rem; border-right: 1px solid var(--border); }
+  .cd-kpi:last-child { border-right: none; background: linear-gradient(180deg, #eef7fd, #fff 80%); }
+  .cd-kpi .etq { font-size: .66rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .cd-kpi .val { font-size: 1.2rem; font-weight: 800; color: var(--ink); margin-top: .2rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cd-kpi:last-child .val { color: #007CC3; font-size: 1.35rem; }
+  .cd-kpi .sub { font-size: .7rem; color: var(--ink-3); margin-top: .1rem; }
+  .cd-barra { display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; margin-bottom: .7rem; }
+  .cd-barra .com-subtabs { margin: 0; display: inline-flex; gap: 0; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .cd-barra .com-subtab { border: none; background: transparent; padding: .38rem .85rem; border-radius: 7px; font-size: .8rem; }
+  .cd-barra .com-subtab:hover { background: #f1f5f9; }
+  .cd-barra .com-subtab.active { background: var(--ink); color: #fff; }
+  .cd-buscar { padding: .42rem .65rem; border: 1px solid var(--border-strong); border-radius: 8px; font-size: .82rem; width: 240px; }
+  .cd-tabla { width: 100%; border-collapse: collapse; font-size: .83rem; font-variant-numeric: tabular-nums; }
+  .cd-tabla th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: var(--ink-3); font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; text-align: right; padding: .55rem .75rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .cd-tabla td { padding: .55rem .75rem; text-align: right; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+  .cd-tabla th.izq, .cd-tabla td.izq { text-align: left; }
+  .cd-tabla td.cli { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+  .cd-tabla td.bk { font-weight: 700; color: #007CC3; }
+  .cd-tabla td.com { font-weight: 700; color: var(--ink); }
+  .cd-tabla td.pct { color: var(--ink-3); }
+  .cd-tabla tbody tr[data-booking] { cursor: pointer; }
+  .cd-tabla tbody tr[data-booking]:hover td { background: #f8fbff; }
+  .cd-tabla tbody tr[data-booking]:hover td.bk { text-decoration: underline; }
+  .cd-tabla tr.neg td { background: #fef2f2; }
+  .cd-tabla tr.neg td.prof, .cd-tabla tr.neg td.com { color: #b91c1c; }
+  .cd-tabla tfoot td { background: #f8fafc; font-weight: 800; border-top: 1px solid #cbd5e1; padding: .65rem .75rem; }
+  .cd-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .cd-scroll .cd-tabla tbody tr:last-child td { border-bottom: none; }
+  .cd-cliente { border: 1px solid var(--border); border-radius: 10px; margin-bottom: .5rem; overflow: hidden; }
+  .cd-cliente .com-cliente-header { display: grid; grid-template-columns: 16px 1fr 150px 110px; gap: .9rem; align-items: center; padding: .7rem .9rem; font-size: .84rem; }
+  .cd-cliente .com-cliente-header:hover { color: inherit; background: #f8fbff; }
+  .cd-cliente .nombre small { display: block; font-size: .72rem; font-weight: 500; color: var(--ink-3); margin-top: .1rem; }
+  .cd-cliente .part { height: 7px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+  .cd-cliente .part i { display: block; height: 100%; background: #007CC3; border-radius: 4px; }
+  .cd-cliente .monto { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .cd-cliente .monto small { display: block; font-size: .7rem; color: var(--ink-3); font-weight: 600; }
+  .cd-cliente .com-cliente-detalle { padding: 0; border-top: 1px solid var(--border); }
+  @media (max-width: 760px) {
+    .cd-head { padding-right: 0; margin-top: 2.2rem; }
+    .cd-kpis { grid-template-columns: repeat(2, 1fr); }
+    .cd-kpi { border-bottom: 1px solid var(--border); }
+    .cd-kpi:nth-child(2n) { border-right: none; }
+    .cd-kpi:last-child { grid-column: span 2; border-bottom: none; }
+    .cd-buscar { width: 100%; }
+    .cd-kpi { padding: .7rem .75rem; }
+    .cd-kpi .val { font-size: 1rem; }
+    .cd-kpi:last-child .val { font-size: 1.2rem; }
+    .cd-head h2 { font-size: 1.1rem; }
+    .com-modal-overlay { padding: 2vh .5rem; }
+    .com-modal-body { padding: 1rem .9rem 1.2rem; }
+    .cd-cliente .com-cliente-header { grid-template-columns: 16px 1fr 100px; }
+    .cd-cliente .part { display: none; }
+  }
   .com-booking-overlay { z-index: 60; }
   .com-booking-panel { max-width: 720px; }
   .com-booking-titulo { font-size: 1.05rem; font-weight: 700; color: var(--ink); margin: 0; }
@@ -823,18 +882,6 @@
   }
   function fmtPct(n) { return n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%"; }
 
-  function tablaBookings(filas, campoTotal, etiqueta) {
-    return `
-      <table>
-        <thead><tr><th>Booking</th><th>Profit</th><th>${etiqueta}</th></tr></thead>
-        <tbody>
-          ${filas.map((b) => `
-            <tr data-booking="${b.booking}"><td>${b.booking}</td><td>${fmtMoneda(b.profit)}</td><td>${fmtMoneda(b[campoTotal])}</td></tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
-  }
 
   let reporteActual = null;
 
@@ -852,15 +899,31 @@
     reporteActual = { nombre, etiqueta, campoTotal, bookings, stats: { cantidad: bookings.length, ventaTotal, profitTotal, margen, comision } };
     linkExportar.href = URL_EXPORTAR + "?" + new URLSearchParams({ folio: FOLIO_ACTUAL, campo, nombre }).toString();
 
-    const mitad = Math.ceil(bookings.length / 2);
-    const columnaIzq = bookings.slice(0, mitad);
-    const columnaDer = bookings.slice(mitad);
-    const vistaBookingHtml = `
-      <div class="com-reporte-cols">
-        ${tablaBookings(columnaIzq, campoTotal, "Comisión")}
-        ${tablaBookings(columnaDer, campoTotal, "Comisión")}
-      </div>
-    `;
+    const campoPct = campo === "vendedor" ? "pct_vendedor" : "pct_desarrollador";
+    const esc = (t) => String(t == null ? "" : t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const fmtF = (f) => { if (!f) return "—"; const [a, m, d] = f.split("-"); return `${d}/${m}/${a.slice(2)}`; };
+    function tablaDetalle(filas, conTotal) {
+      const tot = filas.reduce((a, b) => { a.p += b.profit; a.c += b[campoTotal]; return a; }, { p: 0, c: 0 });
+      return `
+        <table class="cd-tabla">
+          <thead><tr><th class="izq">Booking</th><th class="izq">Cliente</th><th class="izq">Fecha</th><th>Profit</th><th>% Com.</th><th>Comisión</th></tr></thead>
+          <tbody>
+            ${filas.map((b) => `
+              <tr data-booking="${esc(b.booking)}" class="${b.profit < 0 ? "neg" : ""}" data-busca="${esc((b.booking + " " + (b.cliente || "")).toLowerCase())}">
+                <td class="izq bk">${esc(b.booking)}</td>
+                <td class="izq cli" title="${esc(b.cliente || "")}">${esc(b.cliente || "—")}</td>
+                <td class="izq">${fmtF(b.fecha)}</td>
+                <td class="prof">${fmtMoneda(b.profit)}</td>
+                <td class="pct">${b[campoPct] != null ? b[campoPct] + "%" : "—"}</td>
+                <td class="com">${fmtMoneda(b[campoTotal])}</td>
+              </tr>`).join("")}
+          </tbody>
+          ${conTotal ? `<tfoot><tr><td class="izq" colspan="3">Total · ${filas.length} booking(s)</td><td>${fmtMoneda(tot.p)}</td><td></td><td>${fmtMoneda(tot.c)}</td></tr></tfoot>` : ""}
+        </table>`;
+    }
+    const ordenados = bookings.slice().sort((a, b) => b[campoTotal] - a[campoTotal]);
+    const negativos = bookings.filter((b) => b.profit < 0).length;
+    const vistaBookingHtml = `<div class="cd-scroll">${tablaDetalle(ordenados, true)}</div>`;
 
     // ---- agrupado por cliente, para el desglose "Por Cliente" dentro de este vendedor/desarrollador ----
     const porCliente = new Map();
@@ -874,48 +937,56 @@
       g.bookings.push(b);
     });
     const clientesOrdenados = Array.from(porCliente.values()).sort((a, b) => b.comision - a.comision);
+    const maxCom = Math.max(...clientesOrdenados.map((g) => g.comision), 1);
 
     const clienteListaHtml = clientesOrdenados.map((g, i) => `
-      <div class="com-cliente-item" data-cliente-idx="${i}">
+      <div class="com-cliente-item cd-cliente" data-cliente-idx="${i}" data-busca="${esc(g.cliente.toLowerCase())}">
         <div class="com-cliente-header" data-cliente-toggle="${i}">
           <span class="flecha">▸</span>
-          <span class="nombre">${g.cliente}</span>
-          <span class="meta">${g.cantBook} booking(s) · Profit ${fmtMoneda(g.profit)}</span>
-          <span class="monto">${fmtMoneda(g.comision)}</span>
+          <span class="nombre"><b>${esc(g.cliente)}</b><small>${g.cantBook} booking(s) · Profit ${fmtMoneda(g.profit)}</small></span>
+          <span class="part"><i style="width:${Math.max(g.comision / maxCom * 100, 1)}%"></i></span>
+          <span class="monto">${fmtMoneda(g.comision)}<small>${comision ? (g.comision / comision * 100).toFixed(1) : 0}% del total</small></span>
         </div>
         <div class="com-cliente-detalle" id="com-cliente-detalle-${i}">
-          ${tablaBookings(g.bookings, campoTotal, "Comisión")}
+          ${tablaDetalle(g.bookings.slice().sort((a, b) => b[campoTotal] - a[campoTotal]), false)}
         </div>
       </div>
     `).join("");
 
-    const subvistasHtml = `
-      <div class="com-subtabs">
-        <button type="button" class="com-subtab active" data-subvista="booking">Por Booking</button>
-        <button type="button" class="com-subtab" data-subvista="cliente">Por Cliente (${clientesOrdenados.length})</button>
+    const iniciales = nombre.split(/\s+/).filter(Boolean).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
+    contenido.innerHTML = `
+      <div class="cd-head">
+        <div class="cd-avatar">${esc(iniciales)}</div>
+        <div>
+          <div class="kicker">${etiqueta} · Comisiones ${esc(DESCRIPCION || "")}</div>
+          <h2>${esc(nombre)}</h2>
+        </div>
+      </div>
+      <div class="cd-kpis">
+        <div class="cd-kpi"><div class="etq">Bookings</div><div class="val">${bookings.length}</div>${negativos ? `<div class="sub" style="color:#b91c1c;">${negativos} con profit negativo</div>` : ""}</div>
+        <div class="cd-kpi"><div class="etq">Venta total USD</div><div class="val">${fmtMoneda(ventaTotal)}</div></div>
+        <div class="cd-kpi"><div class="etq">Profit USD</div><div class="val">${fmtMoneda(profitTotal)}</div></div>
+        <div class="cd-kpi"><div class="etq">Margen</div><div class="val">${fmtPct(margen)}</div></div>
+        <div class="cd-kpi"><div class="etq">Comisión</div><div class="val">${fmtMoneda(comision)}</div><div class="sub">${profitTotal ? fmtPct(comision / profitTotal * 100) : "—"} del profit</div></div>
+      </div>
+      <div class="cd-barra">
+        <div class="com-subtabs">
+          <button type="button" class="com-subtab active" data-subvista="booking">Por booking (${bookings.length})</button>
+          <button type="button" class="com-subtab" data-subvista="cliente">Por cliente (${clientesOrdenados.length})</button>
+        </div>
+        <input type="search" class="cd-buscar" id="cd-buscar" placeholder="Buscar booking o cliente…" autocomplete="off">
       </div>
       <div class="com-subvista activa" data-subvista-panel="booking">${vistaBookingHtml}</div>
       <div class="com-subvista" data-subvista-panel="cliente">${clienteListaHtml}</div>
     `;
-
-    contenido.innerHTML = `
-      <p class="com-reporte-titulo">Comisiones ${DESCRIPCION ? DESCRIPCION : ""}</p>
-      <div class="com-reporte-vendedor">
-        <div class="etq">${etiqueta}</div>
-        <div class="val">${nombre}</div>
-      </div>
-      <div class="com-reporte-stats">
-        <table>
-          <tr><td>Cantidad de Booking</td><td>${bookings.length}</td></tr>
-          <tr><td>Venta Total USD</td><td>${fmtMoneda(ventaTotal)}</td></tr>
-          <tr><td>Profit USD</td><td>${fmtMoneda(profitTotal)}</td></tr>
-          <tr><td>Margen</td><td>${fmtPct(margen)}</td></tr>
-          <tr><td>Comisión</td><td>${fmtMoneda(comision)}</td></tr>
-        </table>
-      </div>
-
-      ${subvistasHtml}
-    `;
+    document.getElementById("cd-buscar").addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      contenido.querySelectorAll('[data-subvista-panel="booking"] tbody tr').forEach((tr) => { tr.hidden = q && !tr.dataset.busca.includes(q); });
+      contenido.querySelectorAll(".cd-cliente").forEach((c) => {
+        const coincide = !q || c.dataset.busca.includes(q) || Array.from(c.querySelectorAll("tr[data-busca]")).some((tr) => tr.dataset.busca.includes(q));
+        c.hidden = !coincide;
+      });
+    });
     modal.classList.add("abierto");
   }
 
