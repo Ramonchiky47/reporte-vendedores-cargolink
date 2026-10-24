@@ -6,34 +6,95 @@
   :root {
     --rp-accent: #007CC3;
     --rp-accent-wash: rgba(0, 124, 195, .10);
-    --rp-muted-line: #94a3b8;
+    --rp-muted-line: #cbd5e1;
     --rp-ink: #0f172a;
     --rp-ink-2: #475569;
     --rp-ink-3: #94a3b8;
     --rp-grid: #e2e8f0;
     --rp-surface: #ffffff;
+    --rp-up: #15803d;
+    --rp-down: #b91c1c;
   }
-  main { max-width: 1120px; }
+  main { max-width: 1240px; }
 
-  .rp-filtros {
-    display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+  /* Encabezado */
+  .rp-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.4rem; }
+  .rp-head h1 { margin: 0; font-size: 1.55rem; color: var(--rp-ink); letter-spacing: -.01em; }
+  .rp-head p { margin: .25rem 0 0; font-size: .85rem; color: var(--rp-ink-2); }
+  .rp-seccion { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 2rem 0 .8rem; }
+  .rp-seccion h2 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--rp-ink-2); font-weight: 700; }
+  .rp-seccion .nota { font-size: .76rem; color: var(--rp-ink-3); }
+
+  /* Reportes detallados */
+  .rp-accesos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+  .rp-acceso {
+    display: flex; flex-direction: column; gap: .55rem; background: #fff; border: 1px solid var(--rp-grid);
+    border-radius: 12px; padding: 1.1rem 1.15rem; text-decoration: none; color: inherit;
+    transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
   }
-  .rp-filtros .field { min-width: 160px; }
-  .rp-filtros .hint-inline { font-size: .78rem; color: var(--rp-ink-3); margin: 0 0 .1rem; flex-basis: 100%; }
+  .rp-acceso:hover { border-color: var(--rp-accent); box-shadow: 0 6px 18px rgba(15,23,42,.08); transform: translateY(-1px); }
+  .rp-acceso .ico { width: 36px; height: 36px; border-radius: 10px; background: var(--rp-accent-wash); color: var(--rp-accent); display: flex; align-items: center; justify-content: center; }
+  .rp-acceso .ico svg { width: 19px; height: 19px; }
+  .rp-acceso b { font-size: .93rem; color: var(--rp-ink); }
+  .rp-acceso span { font-size: .78rem; color: var(--rp-ink-2); line-height: 1.45; flex: 1; }
+  .rp-acceso .ir { font-size: .78rem; font-weight: 700; color: var(--rp-accent); }
 
-  .rp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-  .rp-kpi { background: #fff; border-radius: 12px; padding: 1.1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .rp-kpi .label { font-size: .74rem; color: var(--rp-ink-2); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
-  .rp-kpi .value { font-size: 1.5rem; font-weight: 700; color: var(--rp-ink); margin-top: .2rem; }
+  /* Barra de periodo */
+  .rp-periodo { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .rp-chips { display: inline-flex; background: #fff; border: 1px solid var(--rp-grid); border-radius: 10px; padding: 3px; }
+  .rp-chips button {
+    background: transparent; color: var(--rp-ink-2); border: none; padding: .38rem .75rem; font-size: .8rem;
+    font-weight: 600; border-radius: 7px;
+  }
+  .rp-chips button:hover { background: #f1f5f9; color: var(--rp-ink); }
+  .rp-chips button.activo { background: var(--rp-ink); color: #fff; }
+  .rp-fechas { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; color: var(--rp-ink-3); }
+  .rp-fechas input { width: auto; padding: .34rem .5rem; font-size: .8rem; border-radius: 8px; }
 
-  .rp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.5rem; }
-  .rp-card { position: relative; }
-  .rp-card .sub { font-size: .78rem; color: var(--rp-ink-3); margin: -.5rem 0 1rem; }
-  .rp-card.wide { grid-column: 1 / -1; }
+  /* KPIs */
+  .rp-kpis { display: grid; grid-template-columns: repeat(6, 1fr); background: #fff; border: 1px solid var(--rp-grid); border-radius: 12px; overflow: hidden; }
+  .rp-kpi { padding: 1.05rem 1.2rem; border-right: 1px solid var(--rp-grid); }
+  .rp-kpi:last-child { border-right: none; }
+  .rp-kpi .label { font-size: .7rem; color: var(--rp-ink-2); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .rp-kpi .value { font-size: 1.55rem; font-weight: 800; color: var(--rp-ink); margin-top: .3rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .rp-kpi .delta { font-size: .74rem; margin-top: .2rem; color: var(--rp-ink-3); font-variant-numeric: tabular-nums; }
+  .rp-kpi .delta b.up { color: var(--rp-up); }
+  .rp-kpi .delta b.down { color: var(--rp-down); }
+  .rp-kpi .meter { height: 5px; background: #eef2f7; border-radius: 3px; margin-top: .5rem; overflow: hidden; }
+  .rp-kpi .meter i { display: block; height: 100%; background: var(--rp-accent); border-radius: 3px; }
 
-  .rp-legend { display: flex; gap: 1.1rem; font-size: .78rem; color: var(--rp-ink-2); margin-bottom: .6rem; }
+  /* Tarjetas de gráficas */
+  .rp-card { background: #fff; border: 1px solid var(--rp-grid); border-radius: 12px; padding: 1.2rem 1.35rem 1.1rem; }
+  .rp-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .9rem; }
+  .rp-card-head h3 { margin: 0; font-size: .98rem; color: var(--rp-ink); }
+  .rp-card-head .sub { font-size: .76rem; color: var(--rp-ink-3); margin-top: .2rem; }
+  .rp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+
+  .rp-legend { display: flex; gap: 1.1rem; font-size: .76rem; color: var(--rp-ink-2); align-items: center; }
   .rp-legend span { display: inline-flex; align-items: center; gap: .4rem; }
-  .rp-legend i { width: 14px; height: 2px; border-radius: 2px; display: inline-block; }
+  .rp-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .rp-resumen-mes { display: flex; gap: 1.4rem; font-size: .78rem; color: var(--rp-ink-2); flex-wrap: wrap; }
+  .rp-resumen-mes b { color: var(--rp-ink); font-variant-numeric: tabular-nums; }
+
+  /* Rankings */
+  .rp-rank { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .rp-rank td { padding: .42rem .35rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+  .rp-rank tr:last-child td { border-bottom: none; }
+  .rp-rank tbody tr:hover { background: #f8fafc; }
+  .rp-rank .pos { width: 22px; color: var(--rp-ink-3); font-weight: 700; font-size: .74rem; text-align: right; }
+  .rp-rank .nom { color: var(--rp-ink); max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rp-rank .barra { width: 34%; }
+  .rp-rank .pista { height: 7px; background: #eef2f7; border-radius: 4px; overflow: hidden; }
+  .rp-rank .pista i { display: block; height: 100%; background: var(--rp-accent); border-radius: 4px; }
+  .rp-rank tr.otros .pista i { background: var(--rp-ink-3); }
+  .rp-rank tr.otros .nom { color: var(--rp-ink-2); font-style: italic; }
+  .rp-rank .num { text-align: right; font-weight: 700; color: var(--rp-ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rp-rank .pct { text-align: right; color: var(--rp-ink-3); width: 44px; font-size: .76rem; font-variant-numeric: tabular-nums; }
+
+  .rp-mezcla { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: .2rem 0 1rem; background: #eef2f7; }
+  .rp-mezcla i { display: block; height: 100%; }
+  .rp-mezcla i + i { border-left: 2px solid #fff; }
+  .rp-punto { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: .45rem; vertical-align: 0; }
 
   .rp-tooltip {
     position: fixed; pointer-events: none; background: #0f172a; color: #fff; font-size: .76rem;
@@ -42,120 +103,126 @@
   }
   .rp-tooltip.visible { opacity: 1; }
   .rp-tooltip .t-title { font-weight: 700; margin-bottom: .2rem; }
-  .rp-tooltip .t-row { display: flex; gap: .5rem; justify-content: space-between; }
+  .rp-tooltip .t-row { display: flex; gap: .9rem; justify-content: space-between; }
   .rp-tooltip .t-row .t-val { font-weight: 700; }
 
   .rp-bar-row { cursor: default; }
   .rp-bar-row:hover rect.rp-bar { filter: brightness(1.08); }
-  .rp-bar-label { font-size: .72rem; fill: var(--rp-ink-2); }
-  .rp-bar-value { font-size: .72rem; fill: var(--rp-ink); font-weight: 700; }
-  .rp-axis-line { stroke: var(--rp-grid); stroke-width: 1; }
-  .rp-grid-line { stroke: var(--rp-grid); stroke-width: 1; }
-  .rp-crosshair { stroke: var(--rp-ink-3); stroke-width: 1; opacity: 0; }
-
+  .rp-bar-label { font-size: .7rem; fill: var(--rp-ink-3); }
+  .rp-grid-line { stroke: #eef2f7; stroke-width: 1; }
   .rp-empty { color: var(--rp-ink-3); font-size: .85rem; padding: 2rem 0; text-align: center; }
 
-  .rp-tabla-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
-  .rp-tabla-header .sub { font-size: .78rem; color: var(--rp-ink-3); margin: .3rem 0 0; }
+  @media (max-width: 1100px) {
+    .rp-kpis { grid-template-columns: repeat(3, 1fr); }
+    .rp-kpi:nth-child(3) { border-right: none; }
+    .rp-kpi:nth-child(-n+3) { border-bottom: 1px solid var(--rp-grid); }
+    .rp-accesos { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 760px) {
+    .rp-grid { grid-template-columns: 1fr; }
+    .rp-kpis { grid-template-columns: repeat(2, 1fr); }
+    .rp-accesos { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 {% block content %}
+  <div class="rp-head">
+    <div>
+      <h1>Reportes comerciales</h1>
+      <p>Venta, profit y presupuesto con base en los bookings, más los reportes detallados por vendedor, cliente y operación.</p>
+    </div>
+  </div>
+
+  <div class="rp-seccion"><h2>Reportes detallados</h2></div>
+  <div class="rp-accesos">
+    <a class="rp-acceso" href="{{ url_for('reportes_por_vendedor') }}">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg></div>
+      <b>Por vendedor</b>
+      <span>Venta, profit, margen, bookings y clientes mes a mes, con filtro por plaza y vendedor.</span>
+      <div class="ir">Abrir reporte →</div>
+    </a>
+    <a class="rp-acceso" href="{{ url_for('reportes_clientes_mensual') }}">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11M15 9v11"/></svg></div>
+      <b>Mensual por cliente</b>
+      <span>Cantidad de bookings o profit por cliente, de enero a diciembre, ordenado de mayor a menor.</span>
+      <div class="ir">Abrir reporte →</div>
+    </a>
+    <a class="rp-acceso" href="{{ url_for('reportes_reactivacion') }}">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></div>
+      <b>Clientes por reactivar y recurrentes</b>
+      <span>Clientes sin booking en más de un mes, con propuesta semanal, y carta de servicio para los recurrentes.</span>
+      <div class="ir">Ver clientes →</div>
+    </a>
+    <a class="rp-acceso" href="{{ url_for('reportes_aereo') }}">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 13.5 3 11l1.5-1.5 8 1 4-4.5c1-1 2.6-1.3 3.2-.7.6.6.3 2.2-.7 3.2l-4.5 4 1 8L14 22l-2.5-7.5"/></svg></div>
+      <b>Aéreos</b>
+      <span>Operaciones de exportación (AE) e importación (AI) del año en curso, con detalle por embarque.</span>
+      <div class="ir">Abrir reporte →</div>
+    </a>
+  </div>
+
 {% if not hay_datos %}
-  <div class="card">
-    <p class="empty">Todavía no hay datos para graficar. Genera un reporte primero en "Reporte" o "Dashboard".</p>
+  <div class="card" style="margin-top: 1.5rem;">
+    <p class="empty">Todavía no hay datos para graficar. Genera un reporte primero en "Actualización".</p>
   </div>
 {% else %}
-  <div class="card">
-    <h2>Reportes</h2>
-    <div class="rp-filtros">
-      <p class="hint-inline">El filtro de fecha aplica a todas las gráficas de abajo, excepto a "Profit mensual" (siempre muestra el histórico completo).</p>
-      <div class="field">
-        <label for="rp-desde">Desde</label>
-        <input type="date" id="rp-desde">
+  <div class="rp-seccion">
+    <h2>Indicadores del periodo</h2>
+    <div class="rp-periodo">
+      <div class="rp-chips" id="rp-chips">
+        <button type="button" data-rango="mes">Mes actual</button>
+        <button type="button" data-rango="trimestre">Trimestre</button>
+        <button type="button" data-rango="anio">Año en curso</button>
+        <button type="button" data-rango="12m">Últimos 12 meses</button>
+        <button type="button" data-rango="todo">Todo</button>
       </div>
-      <div class="field">
-        <label for="rp-hasta">Hasta</label>
-        <input type="date" id="rp-hasta">
+      <div class="rp-fechas">
+        <input type="date" id="rp-desde" aria-label="Desde"> – <input type="date" id="rp-hasta" aria-label="Hasta">
       </div>
-      <button type="button" class="btn secondary" id="rp-reset">Todo el histórico</button>
     </div>
+  </div>
 
-    <div class="rp-kpis" id="rp-kpis"></div>
+  <div class="rp-kpis" id="rp-kpis"></div>
+
+  <div class="rp-card" style="margin-top: 1rem;">
+    <div class="rp-card-head">
+      <div>
+        <h3>Profit vs presupuesto mensual</h3>
+        <div class="sub" id="rp-mensual-sub"></div>
+      </div>
+      <div class="rp-periodo">
+        <div class="rp-legend">
+          <span><i style="background: var(--rp-accent);"></i> Profit</span>
+          <span><i style="background: var(--rp-muted-line);"></i> Presupuesto</span>
+        </div>
+        <div class="rp-chips" id="rp-chips-mensual">
+          <button type="button" data-vista="anio" class="activo">Año en curso</button>
+          <button type="button" data-vista="todo">Histórico</button>
+        </div>
+      </div>
+    </div>
+    <div class="rp-resumen-mes" id="rp-resumen-mes"></div>
+    <div id="rp-chart-mensual" style="margin-top: .6rem;"></div>
   </div>
 
   <div class="rp-grid">
-    <div class="card rp-card wide">
-      <h2>Profit vs Presupuesto mensual</h2>
-      <p class="sub">Histórico completo, no se filtra por fecha</p>
-      <div class="rp-legend">
-        <span><i style="background: var(--rp-accent);"></i> Profit</span>
-        <span><i style="background: var(--rp-muted-line);"></i> Presupuesto</span>
-      </div>
-      <div id="rp-chart-mensual"></div>
-    </div>
-
-    <div class="card rp-card">
-      <h2>Top clientes por profit</h2>
-      <p class="sub">Los 10 con mayor profit en el rango filtrado</p>
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Top 10 clientes</h3><div class="sub">Por profit en el periodo · % del total</div></div></div>
       <div id="rp-chart-clientes"></div>
     </div>
-
-    <div class="card rp-card">
-      <h2>Profit por tipo de venta</h2>
-      <p class="sub">Cliente propio / Agente extranjero, en el rango filtrado</p>
-      <div id="rp-chart-tipo"></div>
-    </div>
-
-    <div class="card rp-card">
-      <h2>Profit por plaza</h2>
-      <p class="sub">Según catálogo de vendedores, en el rango filtrado</p>
-      <div id="rp-chart-plaza"></div>
-    </div>
-
-    <div class="card rp-card">
-      <h2>Top vendedores por profit</h2>
-      <p class="sub">Los 10 con mayor profit en el rango filtrado</p>
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Top 10 vendedores</h3><div class="sub">Por profit en el periodo · % del total</div></div></div>
       <div id="rp-chart-vendedores"></div>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="rp-tabla-header">
-      <div>
-        <h2>Reporte por vendedor</h2>
-        <p class="sub">Venta, profit, margen, bookings y clientes — mensual, de enero a la fecha, con filtro por Plaza y Vendedor.</p>
-      </div>
-      <a class="btn secondary" href="{{ url_for('reportes_por_vendedor') }}">Ver reporte por vendedor</a>
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Profit por plaza</h3><div class="sub">Según catálogo de vendedores</div></div></div>
+      <div id="rp-chart-plaza"></div>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="rp-tabla-header">
-      <div>
-        <h2>Cant Booking / Profit mensual por cliente</h2>
-        <p class="sub">Clientes asignados por vendedor, Ene-Dic y Total, ordenado descendente. Alterna entre Cant Booking e Importe de Profit.</p>
-      </div>
-      <a class="btn secondary" href="{{ url_for('reportes_clientes_mensual') }}">Ver reporte mensual por cliente</a>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="rp-tabla-header">
-      <div>
-        <h2>Clientes por reactivar y recurrentes</h2>
-        <p class="sub">Por plaza y vendedor, con la venta del año en curso por mes. Informe semanal para los clientes sin booking en más de un mes (5 propuestas) y carta de servicio para los recurrentes.</p>
-      </div>
-      <a class="btn secondary" href="{{ url_for('reportes_reactivacion') }}">Ver clientes</a>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="rp-tabla-header">
-      <div>
-        <h2>Reportes Aéreos</h2>
-        <p class="sub">Operaciones AE (Aéreo Exportación) e AI (Aéreo Importación) del año en curso, con detalle por embarque.</p>
-      </div>
-      <a class="btn secondary" href="{{ url_for('reportes_aereo') }}">Ver Reportes Aéreos</a>
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Mezcla por tipo de venta</h3><div class="sub">Cliente propio / Agente extranjero</div></div></div>
+      <div id="rp-chart-tipo"></div>
+      <div class="rp-card-head" style="margin-top: 1.4rem;"><div><h3>Profit por tipo de servicio</h3><div class="sub">Según la referencia del booking</div></div></div>
+      <div id="rp-chart-servicio"></div>
     </div>
   </div>
 
@@ -168,6 +235,8 @@
   const TODOS = JSON.parse(document.getElementById("datos-reportes").textContent);
   const PRESUPUESTO = JSON.parse(document.getElementById("datos-presupuesto").textContent);
   const tooltip = document.getElementById("rp-tooltip");
+  const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  const COLORES_TIPO = ["#007CC3", "#7dd3fc", "#94a3b8", "#cbd5e1"];
 
   function fmtMoneda(n) {
     const signo = n < 0 ? "-" : "";
@@ -181,11 +250,16 @@
     return fmtMoneda(n);
   }
   function fmtEntero(n) { return n.toLocaleString("es-MX"); }
+  function fmtPct(n) { return Math.round(n * 100) + "%"; }
   function escaparHtml(s) {
     const d = document.createElement("div");
     d.textContent = s;
     return d.innerHTML;
   }
+  function iso(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function restarAnio(fechaIso) { return (parseInt(fechaIso.slice(0, 4), 10) - 1) + fechaIso.slice(4); }
 
   function mostrarTooltip(x, y, titulo, filas) {
     const filasHtml = filas.map((f) =>
@@ -199,7 +273,6 @@
   }
   function ocultarTooltip() { tooltip.classList.remove("visible"); }
 
-  // ---- KPIs + agregaciones por dimension (respetan el filtro de fecha) ----
   function agruparYSumar(filas, campo, topN) {
     const mapa = new Map();
     for (const f of filas) {
@@ -213,103 +286,127 @@
     const ordenado = Array.from(mapa.values()).sort((a, b) => b.profit - a.profit);
     if (ordenado.length <= topN) return ordenado;
     const top = ordenado.slice(0, topN);
-    const resto = ordenado.slice(topN);
-    const otros = resto.reduce((acc, r) => {
+    const otros = ordenado.slice(topN).reduce((acc, r) => {
       acc.venta += r.venta; acc.profit += r.profit; acc.cant += r.cant; return acc;
-    }, { nombre: "Otros", venta: 0, profit: 0, cant: 0 });
+    }, { nombre: "Otros", venta: 0, profit: 0, cant: 0, otros: true });
     top.push(otros);
     return top;
   }
 
-  function renderKpis(filas) {
-    const totalVenta = filas.reduce((a, f) => a + f.venta, 0);
-    const totalProfit = filas.reduce((a, f) => a + f.profit, 0);
-    const margen = totalVenta ? (totalProfit / totalVenta) : 0;
-    const cont = document.getElementById("rp-kpis");
-    cont.innerHTML = `
-      <div class="rp-kpi"><div class="label">Bookings</div><div class="value">${fmtEntero(filas.length)}</div></div>
-      <div class="rp-kpi"><div class="label">Venta</div><div class="value">${fmtMonedaCompacta(totalVenta)}</div></div>
-      <div class="rp-kpi"><div class="label">Profit</div><div class="value">${fmtMonedaCompacta(totalProfit)}</div></div>
-      <div class="rp-kpi"><div class="label">Margen</div><div class="value">${Math.round(margen * 100)}%</div></div>
+  function totales(filas) {
+    const venta = filas.reduce((a, f) => a + f.venta, 0);
+    const profit = filas.reduce((a, f) => a + f.profit, 0);
+    return { venta, profit, cant: filas.length, clientes: new Set(filas.map((f) => f.cliente)).size };
+  }
+
+  function presupuestoEntre(desde, hasta) {
+    const mi = desde.slice(0, 7), mf = hasta.slice(0, 7);
+    return PRESUPUESTO.filter((p) => p.mes >= mi && p.mes <= mf).reduce((a, p) => a + p.ppto, 0);
+  }
+
+  // ---- KPIs con comparativo contra el mismo periodo del año anterior ----
+  function renderKpis(filas, desde, hasta) {
+    const t = totales(filas);
+    const margen = t.venta ? t.profit / t.venta : 0;
+    const desdeAnt = restarAnio(desde), hastaAnt = restarAnio(hasta);
+    const hayAnterior = desdeAnt >= fechaMin;
+    const ant = hayAnterior ? totales(TODOS.filter((f) => f.fecha >= desdeAnt && f.fecha <= hastaAnt)) : null;
+    const margenAnt = ant && ant.venta ? ant.profit / ant.venta : 0;
+    const ppto = presupuestoEntre(desde, hasta);
+    const cumplimiento = ppto ? t.profit / ppto : null;
+
+    function delta(actual, anterior, esPuntos) {
+      if (!ant) return '<div class="delta">Sin comparativo del año anterior</div>';
+      if (esPuntos) {
+        const pts = Math.round((actual - anterior) * 1000) / 10;
+        const cls = pts >= 0 ? "up" : "down";
+        return `<div class="delta"><b class="${cls}">${pts >= 0 ? "▲" : "▼"} ${Math.abs(pts).toFixed(1)} pts</b> vs año anterior</div>`;
+      }
+      if (!anterior) return '<div class="delta">Sin datos el año anterior</div>';
+      const v = (actual - anterior) / Math.abs(anterior);
+      const cls = v >= 0 ? "up" : "down";
+      return `<div class="delta"><b class="${cls}">${v >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))}%</b> vs año anterior</div>`;
+    }
+
+    document.getElementById("rp-kpis").innerHTML = `
+      <div class="rp-kpi"><div class="label">Profit</div><div class="value">${fmtMonedaCompacta(t.profit)}</div>${delta(t.profit, ant && ant.profit)}</div>
+      <div class="rp-kpi"><div class="label">Venta</div><div class="value">${fmtMonedaCompacta(t.venta)}</div>${delta(t.venta, ant && ant.venta)}</div>
+      <div class="rp-kpi"><div class="label">Margen</div><div class="value">${fmtPct(margen)}</div>${delta(margen, margenAnt, true)}</div>
+      <div class="rp-kpi"><div class="label">Bookings</div><div class="value">${fmtEntero(t.cant)}</div>${delta(t.cant, ant && ant.cant)}</div>
+      <div class="rp-kpi"><div class="label">Clientes con booking</div><div class="value">${fmtEntero(t.clientes)}</div>${delta(t.clientes, ant && ant.clientes)}</div>
+      <div class="rp-kpi"><div class="label">Vs presupuesto</div>
+        <div class="value">${cumplimiento === null ? "—" : fmtPct(cumplimiento)}</div>
+        ${cumplimiento === null
+          ? '<div class="delta">Sin presupuesto en el periodo</div>'
+          : `<div class="meter"><i style="width:${Math.min(cumplimiento, 1) * 100}%;${cumplimiento >= 1 ? "background:var(--rp-up);" : ""}"></i></div><div class="delta">Presupuesto ${fmtMonedaCompacta(ppto)}</div>`}
+      </div>
     `;
   }
 
-  // ---- Gráfica de barras horizontales (magnitud, un solo hue) ----
-  function renderBarChart(contenedorId, filas) {
+  // ---- Ranking: tabla con barra, monto y % del total ----
+  function renderRanking(contenedorId, filas) {
     const cont = document.getElementById(contenedorId);
-    cont.innerHTML = "";
     if (filas.length === 0) {
-      cont.innerHTML = '<p class="rp-empty">Sin datos en este rango.</p>';
+      cont.innerHTML = '<p class="rp-empty">Sin datos en este periodo.</p>';
       return;
     }
-    const ancho = cont.clientWidth || 380;
-    const altoFila = 28;
-    const alto = filas.length * altoFila + 10;
-    const maxProfit = Math.max(...filas.map((f) => f.profit), 1);
-    const margenIzq = 4;
-    const margenDer = 90;
-    const anchoBarraMax = ancho - margenIzq - margenDer;
-
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("height", alto);
-    svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
-
+    const total = filas.reduce((a, f) => a + f.profit, 0) || 1;
+    const max = Math.max(...filas.filter((f) => !f.otros).map((f) => f.profit), 1);
+    const tbody = document.createElement("tbody");
     filas.forEach((f, i) => {
-      const y = i * altoFila;
-      const w = Math.max((f.profit / maxProfit) * anchoBarraMax, 2);
-      const grupo = document.createElementNS(svg.namespaceURI, "g");
-      grupo.setAttribute("class", "rp-bar-row");
-
-      const nombre = document.createElementNS(svg.namespaceURI, "text");
-      nombre.setAttribute("x", margenIzq);
-      nombre.setAttribute("y", y + 12);
-      nombre.setAttribute("class", "rp-bar-label");
-      nombre.textContent = f.nombre.length > 26 ? f.nombre.slice(0, 25) + "…" : f.nombre;
-      grupo.appendChild(nombre);
-
-      const rect = document.createElementNS(svg.namespaceURI, "rect");
-      rect.setAttribute("class", "rp-bar");
-      rect.setAttribute("x", margenIzq);
-      rect.setAttribute("y", y + 16);
-      rect.setAttribute("width", w);
-      rect.setAttribute("height", 8);
-      rect.setAttribute("rx", 4);
-      rect.setAttribute("fill", "var(--rp-accent)");
-      grupo.appendChild(rect);
-
-      const valor = document.createElementNS(svg.namespaceURI, "text");
-      valor.setAttribute("x", margenIzq + w + 8);
-      valor.setAttribute("y", y + 23);
-      valor.setAttribute("class", "rp-bar-value");
-      valor.textContent = fmtMonedaCompacta(f.profit);
-      grupo.appendChild(valor);
-
-      const hit = document.createElementNS(svg.namespaceURI, "rect");
-      hit.setAttribute("x", 0);
-      hit.setAttribute("y", y);
-      hit.setAttribute("width", ancho);
-      hit.setAttribute("height", altoFila);
-      hit.setAttribute("fill", "transparent");
-      grupo.appendChild(hit);
-
-      grupo.addEventListener("pointermove", (e) => {
-        mostrarTooltip(e.clientX, e.clientY, f.nombre, [
-          { label: "Profit", valor: fmtMoneda(f.profit) },
-          { label: "Venta", valor: fmtMoneda(f.venta) },
-          { label: "Bookings", valor: fmtEntero(f.cant) },
-        ]);
-      });
-      grupo.addEventListener("pointerleave", ocultarTooltip);
-
-      svg.appendChild(grupo);
+      const tr = document.createElement("tr");
+      if (f.otros) tr.className = "otros";
+      const ancho = Math.max(Math.min(f.profit / max, 1) * 100, 1);
+      tr.innerHTML = `
+        <td class="pos">${f.otros ? "" : i + 1}</td>
+        <td class="nom"></td>
+        <td class="barra"><div class="pista"><i style="width:${ancho}%"></i></div></td>
+        <td class="num">${fmtMonedaCompacta(f.profit)}</td>
+        <td class="pct">${(f.profit / total * 100).toFixed(1)}%</td>`;
+      tr.querySelector(".nom").textContent = f.nombre;
+      tr.addEventListener("pointermove", (e) => mostrarTooltip(e.clientX, e.clientY, f.nombre, [
+        { label: "Profit", valor: fmtMoneda(f.profit) },
+        { label: "Venta", valor: fmtMoneda(f.venta) },
+        { label: "Margen", valor: f.venta ? fmtPct(f.profit / f.venta) : "—" },
+        { label: "Bookings", valor: fmtEntero(f.cant) },
+      ]));
+      tr.addEventListener("pointerleave", ocultarTooltip);
+      tbody.appendChild(tr);
     });
-
-    cont.appendChild(svg);
+    const tabla = document.createElement("table");
+    tabla.className = "rp-rank";
+    tabla.appendChild(tbody);
+    cont.innerHTML = "";
+    cont.appendChild(tabla);
   }
 
-  // ---- Gráfica de barras verticales agrupadas: Profit vs Presupuesto, mensual, histórico completo ----
-  function renderBarChartMensualComparativo(contenedorId, serie) {
+  // ---- Mezcla por tipo de venta: barra apilada + tabla ----
+  function renderMezcla(contenedorId, filas) {
+    const cont = document.getElementById(contenedorId);
+    if (filas.length === 0) {
+      cont.innerHTML = '<p class="rp-empty">Sin datos en este periodo.</p>';
+      return;
+    }
+    const total = filas.reduce((a, f) => a + f.profit, 0) || 1;
+    const positivos = filas.filter((f) => f.profit > 0);
+    const totalPos = positivos.reduce((a, f) => a + f.profit, 0) || 1;
+    const barra = positivos.map((f) =>
+      `<i style="width:${f.profit / totalPos * 100}%;background:${COLORES_TIPO[filas.indexOf(f) % COLORES_TIPO.length]}"></i>`
+    ).join("");
+    const filasHtml = filas.map((f, i) => `
+      <tr>
+        <td class="nom"><span class="rp-punto" style="background:${COLORES_TIPO[i % COLORES_TIPO.length]}"></span><span class="txt"></span></td>
+        <td class="num">${fmtMonedaCompacta(f.profit)}</td>
+        <td class="pct">${(f.profit / total * 100).toFixed(1)}%</td>
+        <td class="num" style="font-weight:500;color:var(--rp-ink-2)">${fmtEntero(f.cant)} bookings</td>
+        <td class="pct" style="width:auto;white-space:nowrap">mg ${f.venta ? fmtPct(f.profit / f.venta) : "—"}</td>
+      </tr>`).join("");
+    cont.innerHTML = `<div class="rp-mezcla">${barra}</div><table class="rp-rank"><tbody>${filasHtml}</tbody></table>`;
+    cont.querySelectorAll(".txt").forEach((el, i) => { el.textContent = filas[i].nombre; });
+  }
+
+  // ---- Barras verticales agrupadas: Profit vs Presupuesto ----
+  function renderBarChartMensualComparativo(contenedorId, serie, mesActual) {
     const cont = document.getElementById(contenedorId);
     cont.innerHTML = "";
     if (serie.length === 0) {
@@ -317,15 +414,14 @@
       return;
     }
     const ancho = cont.clientWidth || 900;
-    const alto = 280;
-    const margen = { top: 16, right: 16, bottom: 28, left: 56 };
+    const alto = 260;
+    const margen = { top: 14, right: 8, bottom: 26, left: 52 };
     const anchoPlot = ancho - margen.left - margen.right;
     const altoPlot = alto - margen.top - margen.bottom;
 
     const maxValor = Math.max(...serie.map((s) => Math.max(s.profit, s.ppto)), 1);
-    const pasoY = maxValor / 4;
     const anchoGrupo = anchoPlot / serie.length;
-    const anchoBarra = Math.min(anchoGrupo * 0.32, 40);
+    const anchoBarra = Math.min(anchoGrupo * 0.32, 26);
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "100%");
@@ -333,7 +429,7 @@
     svg.setAttribute("viewBox", `0 0 ${ancho} ${alto}`);
 
     for (let i = 0; i <= 4; i++) {
-      const valor = pasoY * i;
+      const valor = maxValor / 4 * i;
       const yy = margen.top + altoPlot - (valor / maxValor) * altoPlot;
       const linea = document.createElementNS(svg.namespaceURI, "line");
       linea.setAttribute("x1", margen.left);
@@ -352,57 +448,60 @@
       svg.appendChild(etiqueta);
     }
 
-    function dibujarBarra(x, valor, color, hitLabel) {
-      const h = Math.max((valor / maxValor) * altoPlot, valor > 0 ? 2 : 0);
-      const y = margen.top + altoPlot - h;
-      const grupo = document.createElementNS(svg.namespaceURI, "g");
-      grupo.setAttribute("class", "rp-bar-row");
-
-      const rect = document.createElementNS(svg.namespaceURI, "rect");
-      rect.setAttribute("class", "rp-bar");
-      rect.setAttribute("x", x);
-      rect.setAttribute("y", y);
-      rect.setAttribute("width", anchoBarra);
-      rect.setAttribute("height", h);
-      rect.setAttribute("rx", 3);
-      rect.setAttribute("fill", color);
-      grupo.appendChild(rect);
-
-      const hit = document.createElementNS(svg.namespaceURI, "rect");
-      hit.setAttribute("x", x);
-      hit.setAttribute("y", margen.top);
-      hit.setAttribute("width", anchoBarra);
-      hit.setAttribute("height", altoPlot);
-      hit.setAttribute("fill", "transparent");
-      hit.addEventListener("pointermove", (e) => mostrarTooltip(e.clientX, e.clientY, hitLabel.mes, hitLabel.filas));
-      hit.addEventListener("pointerleave", ocultarTooltip);
-      grupo.appendChild(hit);
-
-      svg.appendChild(grupo);
-    }
-
     serie.forEach((s, i) => {
       const xGrupo = margen.left + i * anchoGrupo;
-      const xProfit = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
-      const xPpto = xGrupo + anchoGrupo / 2 + 2;
-      const hitLabel = {
-        mes: s.mes,
-        filas: [
-          { label: "Profit", valor: fmtMoneda(s.profit) },
-          { label: "Presupuesto", valor: fmtMoneda(s.ppto) },
-        ],
-      };
-      dibujarBarra(xProfit, s.profit, "var(--rp-accent)", hitLabel);
-      dibujarBarra(xPpto, s.ppto, "var(--rp-muted-line)", hitLabel);
+      const filasTip = [
+        { label: "Profit", valor: fmtMoneda(s.profit) },
+        { label: "Presupuesto", valor: fmtMoneda(s.ppto) },
+        { label: "Cumplimiento", valor: s.ppto ? fmtPct(s.profit / s.ppto) : "—" },
+      ];
+      const titulo = MESES[parseInt(s.mes.slice(5), 10) - 1] + " " + s.mes.slice(0, 4);
 
-      const mostrarEtiqueta = serie.length <= 14 || i % Math.ceil(serie.length / 12) === 0;
-      if (mostrarEtiqueta) {
+      if (s.mes === mesActual) {
+        const fondo = document.createElementNS(svg.namespaceURI, "rect");
+        fondo.setAttribute("x", xGrupo + 2);
+        fondo.setAttribute("y", margen.top);
+        fondo.setAttribute("width", anchoGrupo - 4);
+        fondo.setAttribute("height", altoPlot);
+        fondo.setAttribute("rx", 6);
+        fondo.setAttribute("fill", "var(--rp-accent-wash)");
+        svg.appendChild(fondo);
+      }
+
+      [[s.profit, "var(--rp-accent)", xGrupo + anchoGrupo / 2 - anchoBarra - 1.5],
+       [s.ppto, "var(--rp-muted-line)", xGrupo + anchoGrupo / 2 + 1.5]].forEach(([valor, color, x]) => {
+        const h = Math.max((valor / maxValor) * altoPlot, valor > 0 ? 2 : 0);
+        const rect = document.createElementNS(svg.namespaceURI, "rect");
+        rect.setAttribute("class", "rp-bar");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", margen.top + altoPlot - h);
+        rect.setAttribute("width", anchoBarra);
+        rect.setAttribute("height", h);
+        rect.setAttribute("rx", 3);
+        rect.setAttribute("fill", color);
+        svg.appendChild(rect);
+      });
+
+      const hit = document.createElementNS(svg.namespaceURI, "rect");
+      hit.setAttribute("class", "rp-bar-row");
+      hit.setAttribute("x", xGrupo);
+      hit.setAttribute("y", margen.top);
+      hit.setAttribute("width", anchoGrupo);
+      hit.setAttribute("height", altoPlot);
+      hit.setAttribute("fill", "transparent");
+      hit.addEventListener("pointermove", (e) => mostrarTooltip(e.clientX, e.clientY, titulo, filasTip));
+      hit.addEventListener("pointerleave", ocultarTooltip);
+      svg.appendChild(hit);
+
+      const cadaCuanto = Math.ceil(serie.length / 14);
+      if (i % cadaCuanto === 0) {
         const etiquetaMes = document.createElementNS(svg.namespaceURI, "text");
         etiquetaMes.setAttribute("x", xGrupo + anchoGrupo / 2);
         etiquetaMes.setAttribute("y", alto - 6);
         etiquetaMes.setAttribute("text-anchor", "middle");
         etiquetaMes.setAttribute("class", "rp-bar-label");
-        etiquetaMes.textContent = s.mes.slice(2);
+        const nombreMes = MESES[parseInt(s.mes.slice(5), 10) - 1];
+        etiquetaMes.textContent = serie.length > 12 ? nombreMes + " " + s.mes.slice(2, 4) : nombreMes;
         svg.appendChild(etiquetaMes);
       }
     });
@@ -410,65 +509,99 @@
     cont.appendChild(svg);
   }
 
-  function agregarProfitPorMes(filas) {
-    const mapa = new Map();
-    for (const f of filas) {
-      if (!mapa.has(f.mes)) mapa.set(f.mes, 0);
-      mapa.set(f.mes, mapa.get(f.mes) + f.profit);
+  function serieMensual(vista) {
+    const profitPorMes = new Map();
+    for (const f of TODOS) profitPorMes.set(f.mes, (profitPorMes.get(f.mes) || 0) + f.profit);
+    const pptoPorMes = new Map(PRESUPUESTO.map((p) => [p.mes, p.ppto]));
+    let meses;
+    if (vista === "anio") {
+      meses = MESES.map((_, i) => anioActual + "-" + String(i + 1).padStart(2, "0"));
+    } else {
+      meses = Array.from(new Set([...profitPorMes.keys(), ...pptoPorMes.keys()])).sort();
     }
-    return mapa;
+    return meses.map((mes) => ({ mes, profit: profitPorMes.get(mes) || 0, ppto: pptoPorMes.get(mes) || 0 }));
   }
 
-  function combinarProfitYPresupuesto(filas, presupuesto) {
-    const profitPorMes = agregarProfitPorMes(filas);
-    const pptoPorMes = new Map(presupuesto.map((p) => [p.mes, p.ppto]));
-    const meses = new Set([...profitPorMes.keys(), ...pptoPorMes.keys()]);
-    return Array.from(meses).sort().map((mes) => ({
-      mes,
-      profit: profitPorMes.get(mes) || 0,
-      ppto: pptoPorMes.get(mes) || 0,
-    }));
+  // La gráfica mensual tiene su propio selector (año en curso / histórico), independiente del periodo.
+  let vistaMensual = "anio";
+  function renderMensual() {
+    const serie = serieMensual(vistaMensual);
+    const hastaMes = serie.filter((s) => s.mes <= mesActual);
+    const profit = hastaMes.reduce((a, s) => a + s.profit, 0);
+    const ppto = hastaMes.reduce((a, s) => a + s.ppto, 0);
+    const etiqueta = vistaMensual === "anio" ? anioActual + " a la fecha" : "Histórico";
+    document.getElementById("rp-mensual-sub").textContent = vistaMensual === "anio"
+      ? "Enero a diciembre " + anioActual + " · el mes en curso va resaltado"
+      : "Todos los meses con datos";
+    document.getElementById("rp-resumen-mes").innerHTML = `
+      <span>Profit ${escaparHtml(etiqueta)}: <b>${fmtMoneda(profit)}</b></span>
+      <span>Presupuesto: <b>${fmtMoneda(ppto)}</b></span>
+      <span>Cumplimiento: <b>${ppto ? fmtPct(profit / ppto) : "—"}</b></span>`;
+    renderBarChartMensualComparativo("rp-chart-mensual", serie, mesActual);
   }
 
-  function renderTodo(filasFiltradas) {
-    renderKpis(filasFiltradas);
-    renderBarChart("rp-chart-clientes", agruparYSumar(filasFiltradas, "cliente", 10));
-    renderBarChart("rp-chart-tipo", agruparYSumar(filasFiltradas, "tipo", 10));
-    renderBarChart("rp-chart-plaza", agruparYSumar(filasFiltradas, "plaza", 10));
-    renderBarChart("rp-chart-vendedores", agruparYSumar(filasFiltradas, "vendedor", 10));
-  }
-
-  // La gráfica mensual siempre usa el histórico completo, sin importar el filtro.
-  renderBarChartMensualComparativo("rp-chart-mensual", combinarProfitYPresupuesto(TODOS, PRESUPUESTO));
-
+  const hoy = new Date();
+  const anioActual = hoy.getFullYear();
+  const mesActual = iso(hoy).slice(0, 7);
   const inputDesde = document.getElementById("rp-desde");
   const inputHasta = document.getElementById("rp-hasta");
-
   const fechas = TODOS.map((f) => f.fecha).sort();
   const fechaMin = fechas[0];
-  const fechaMax = fechas[fechas.length - 1];
-  inputDesde.value = fechaMin;
-  inputHasta.value = fechaMax;
+  const fechaMax = fechas[fechas.length - 1] > iso(hoy) ? fechas[fechas.length - 1] : iso(hoy);
   inputDesde.min = fechaMin; inputDesde.max = fechaMax;
   inputHasta.min = fechaMin; inputHasta.max = fechaMax;
+
+  function rangoPreset(nombre) {
+    const h = iso(hoy);
+    if (nombre === "mes") return [mesActual + "-01", h];
+    if (nombre === "trimestre") {
+      const mesIni = Math.floor(hoy.getMonth() / 3) * 3;
+      return [iso(new Date(anioActual, mesIni, 1)), h];
+    }
+    if (nombre === "anio") return [anioActual + "-01-01", h];
+    if (nombre === "12m") return [iso(new Date(anioActual, hoy.getMonth() - 11, 1)), h];
+    return [fechaMin, fechaMax];
+  }
+
+  const chips = document.querySelectorAll("#rp-chips button");
+  function marcarChip(nombre) {
+    chips.forEach((b) => b.classList.toggle("activo", b.dataset.rango === nombre));
+  }
 
   function aplicarFiltro() {
     const desde = inputDesde.value || fechaMin;
     const hasta = inputHasta.value || fechaMax;
     const filtradas = TODOS.filter((f) => f.fecha >= desde && f.fecha <= hasta);
-    renderTodo(filtradas);
+    renderKpis(filtradas, desde, hasta);
+    renderRanking("rp-chart-clientes", agruparYSumar(filtradas, "cliente", 10));
+    renderRanking("rp-chart-vendedores", agruparYSumar(filtradas, "vendedor", 10));
+    renderRanking("rp-chart-plaza", agruparYSumar(filtradas, "plaza", 15));
+    renderMezcla("rp-chart-tipo", agruparYSumar(filtradas, "tipo", 4));
+    renderRanking("rp-chart-servicio", agruparYSumar(filtradas, "tipoServicio", 6));
   }
 
-  inputDesde.addEventListener("change", aplicarFiltro);
-  inputHasta.addEventListener("change", aplicarFiltro);
-  document.getElementById("rp-reset").addEventListener("click", () => {
-    inputDesde.value = fechaMin;
-    inputHasta.value = fechaMax;
+  chips.forEach((b) => b.addEventListener("click", () => {
+    const [d, h] = rangoPreset(b.dataset.rango);
+    inputDesde.value = d;
+    inputHasta.value = h;
+    marcarChip(b.dataset.rango);
     aplicarFiltro();
-  });
+  }));
+  [inputDesde, inputHasta].forEach((inp) => inp.addEventListener("change", () => { marcarChip(null); aplicarFiltro(); }));
 
+  document.querySelectorAll("#rp-chips-mensual button").forEach((b) => b.addEventListener("click", () => {
+    vistaMensual = b.dataset.vista;
+    document.querySelectorAll("#rp-chips-mensual button").forEach((x) => x.classList.toggle("activo", x === b));
+    renderMensual();
+  }));
+
+  const [d0, h0] = rangoPreset("anio");
+  inputDesde.value = d0;
+  inputHasta.value = h0;
+  marcarChip("anio");
   aplicarFiltro();
-  window.addEventListener("resize", aplicarFiltro);
+  renderMensual();
+  window.addEventListener("resize", renderMensual);
 })();
 </script>
 {% endif %}
