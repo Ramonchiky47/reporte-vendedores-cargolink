@@ -101,6 +101,65 @@
   }
   .modal-cerrar:hover { background: #f1f5f9; color: #0f172a; }
   .modal-body { padding: 1rem 1.5rem 1.5rem; overflow-y: auto; }
+
+  /* ---- Diseño ---- */
+  main { max-width: 1240px; }
+  .vp-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .vp-head h1 { margin: 0; font-size: 1.55rem; color: #0f172a; letter-spacing: -.01em; }
+  .vp-head .meta { margin-top: .3rem; font-size: .8rem; }
+  .vp-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: .7rem .9rem; margin-bottom: 1rem;
+  }
+  .vp-periodo { display: flex; align-items: center; gap: .6rem; }
+  .vp-periodo label { margin: 0; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; white-space: nowrap; }
+  .vp-periodo select#filtro-mes, .vp-periodo input#filtro-dia { width: 210px; padding: .45rem .6rem; font-size: .88rem; }
+  .vp-acciones { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+  .vp-acciones .btn, .vp-acciones button {
+    background: #fff; color: #334155; border: 1px solid #cbd5e1; padding: .45rem .8rem; font-size: .8rem; font-weight: 600; border-radius: 8px;
+  }
+  .vp-acciones .btn:hover, .vp-acciones button:hover { border-color: #007CC3; color: #007CC3; background: #f5fbff; }
+  .vp-acciones .vp-sep { width: 1px; height: 22px; background: #e2e8f0; margin: 0 .2rem; }
+  .vp-acciones .vp-primario { background: #007CC3; color: #fff; border-color: #007CC3; }
+  .vp-acciones .vp-primario:hover { background: #0069a3; color: #fff; }
+
+  .vp-kpis { display: grid; grid-template-columns: repeat(6, 1fr); background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 1rem; }
+  .vp-kpi { padding: .95rem 1.1rem; border-right: 1px solid #e2e8f0; }
+  .vp-kpi:last-child { border-right: none; }
+  .vp-kpi .etq { font-size: .68rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .05em; }
+  .vp-kpi .val { font-size: 1.35rem; font-weight: 800; color: #0f172a; margin-top: .25rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vp-kpi .val.pos { color: #15803d; } .vp-kpi .val.neg { color: #b91c1c; }
+  .vp-kpi .medidor { height: 5px; background: #eef2f7; border-radius: 3px; margin-top: .45rem; overflow: hidden; }
+  .vp-kpi .medidor i { display: block; height: 100%; border-radius: 3px; }
+  @media (max-width: 1000px) { .vp-kpis { grid-template-columns: repeat(3, 1fr); } }
+
+  .vp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.15rem 1.3rem; margin-bottom: 1rem; }
+  .vp-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .8rem; }
+  .vp-card-head h2 { margin: 0; font-size: 1rem; color: #0f172a; }
+  .vp-card-head p.subt { margin: 0; }
+
+  #tabla-plaza { font-size: .86rem; }
+  table.reporte thead th { background: #f8fafc; padding: .6rem .75rem; border-bottom: 1px solid #e2e8f0; }
+  table.reporte thead th:first-child { border-radius: 8px 0 0 0; }
+  table.reporte thead th:last-child { border-radius: 0 8px 0 0; }
+  table.reporte tbody td { padding: .62rem .75rem; border-bottom: 1px solid #f1f5f9; }
+  table.reporte tbody tr:hover td { background: #f8fbff; }
+  table.reporte tfoot td { background: #f8fafc; border-top: 1px solid #cbd5e1; padding: .7rem .75rem; }
+  table.reporte td.dif.neg { box-shadow: none; }
+  table.reporte tbody tr.margen-bajo td:first-child { box-shadow: none; }
+  table.reporte tbody tr.clicable td:first-child { text-decoration: none; }
+  table.reporte tbody tr.clicable td:first-child::after { content: " ›"; color: #cbd5e1; font-weight: 700; }
+  table.reporte tbody tr.clicable:hover td:first-child::after { color: #007CC3; }
+  td.alc .alc-box { display: inline-flex; align-items: center; gap: .55rem; justify-content: flex-end; }
+  td.alc .alc-barra { width: 64px; height: 6px; background: #eef2f7; border-radius: 3px; overflow: hidden; display: inline-block; }
+  td.alc .alc-barra i { display: block; height: 100%; border-radius: 3px; }
+  td.alc .alc-num { min-width: 42px; text-align: right; font-weight: 700; }
+  td.alc.ok .alc-num { color: #15803d; } td.alc.medio .alc-num { color: #b45309; } td.alc.bajo .alc-num { color: #b91c1c; }
+  td.dif .dif-pill { display: inline-block; padding: .14rem .55rem; border-radius: 999px; font-size: .82em; }
+  td.dif.pos .dif-pill { background: #dcfce7; color: #166534; }
+  td.dif.neg .dif-pill { background: #fee2e2; color: #b91c1c; }
+  tfoot td.dif .dif-pill { font-size: .9em; }
+  .vp-nota { font-size: .76rem; color: #64748b; line-height: 1.55; margin: .2rem .2rem 1.5rem; }
 </style>
 {% endblock %}
 {% block content %}
@@ -109,56 +168,61 @@
       <p class="empty">Todavía no hay ningún reporte generado.</p>
     </div>
 {% else %}
-    <div class="card">
-      <div class="header-row">
-        <div class="header-titulo">
-          <h2>Venta Diaria</h2>
-          <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
-        </div>
-        <div class="header-botones">
-          <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
-          <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
-          <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
-          <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
-          {% if puede_exportar %}<button type="button" class="btn secondary" id="btn-exportar-plaza">Exportar</button>{% endif %}
-          {% if puede_actualizar %}
-          <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn small">Actualizar</button>
-          </form>
-          {% endif %}
-        </div>
-      </div>
-      <div class="filtro-dia-bloque">
-        <h3>Fecha</h3>
-        <input type="date" id="filtro-dia" min="{{ datos.dia_min }}" max="{{ datos.dia_max }}" value="{{ datos.dia_actual }}">
+    <div class="vp-head">
+      <div>
+        <h1>Venta Diaria</h1>
+        <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
       </div>
     </div>
 
-    <div class="card">
-      <p class="subt" id="subt-plaza"></p>
+    <div class="vp-toolbar">
+      <div class="vp-periodo">
+        <label for="filtro-dia">Fecha</label>
+        <input type="date" id="filtro-dia" min="{{ datos.dia_min }}" max="{{ datos.dia_max }}" value="{{ datos.dia_actual }}">
+      </div>
+      <div class="vp-acciones">
+        <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
+        <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
+        <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
+        <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
+        {% if puede_exportar or puede_actualizar %}<span class="vp-sep"></span>{% endif %}
+        {% if puede_exportar %}<button type="button" class="btn" id="btn-exportar-plaza">Exportar</button>{% endif %}
+        {% if puede_actualizar %}
+        <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn vp-primario">Actualizar</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="vp-kpis" id="kpis-plaza"></div>
+
+    <div class="vp-card">
+      <div class="vp-card-head">
+        <h2>Resultado por plaza</h2>
+        <p class="subt" id="subt-plaza"></p>
+      </div>
       <div class="tabla-scroll"><table class="reporte" id="tabla-plaza"></table></div>
     </div>
 
-    <div class="card">
+    <div class="vp-card">
       <div class="grafica-header">
-        <h2 style="margin:0;">Profit vs Presupuesto por Plaza</h2>
+        <h2 style="margin:0; font-size:1rem;">Profit vs Presupuesto por Plaza</h2>
         <div class="grafica-leyenda">
           <span><i style="background:#007CC3;"></i> Profit</span>
-          <span><i style="background:#94a3b8;"></i> Presupuesto</span>
+          <span><i style="background:#cbd5e1;"></i> Presupuesto</span>
         </div>
       </div>
       <div id="grafica-plaza"></div>
     </div>
 
-    <div class="card">
-      <p class="nota">
-        % Alc Ppto = Profit ÷ Presupuesto · Dif Ppto = Profit − Presupuesto.
-        El Presupuesto no se captura por día: aquí es el presupuesto del mes de cada vendedor, prorrateado entre sus días.
-        "#N/D" agrupa vendedores con ventas o presupuesto sin una Plaza asignada todavía en el catálogo de Vendedores.
-        Haz clic en una Plaza para ver sus vendedores, y en un vendedor para ver el detalle de sus bookings del día.
-      </p>
-    </div>
+    <p class="vp-nota">
+      % Alc Ppto = Profit ÷ Presupuesto · Dif Ppto = Profit − Presupuesto.
+      El Presupuesto no se captura por día: aquí es el presupuesto del mes de cada vendedor, prorrateado entre sus días.
+      "#N/D" agrupa vendedores con ventas o presupuesto sin una Plaza asignada todavía en el catálogo de Vendedores.
+      Haz clic en una Plaza para ver sus vendedores, y en un vendedor para ver el detalle de sus bookings del día.
+    </p>
 
     <div class="modal-overlay" id="modal-detalle">
       <div class="modal-panel">
@@ -233,12 +297,17 @@
   function celdaPresupuesto(row) {
     const alc = row.ppto > 0 ? row.profit / row.ppto : null;
     const dif = row.profit - row.ppto;
-    const alcTd = alc === null ? '<td class="alc sinppto">—</td>' : `<td class="alc">${fmtPct(alc)}</td>`;
+    let alcTd = '<td class="alc sinppto">—</td>';
+    if (alc !== null) {
+      const nivel = alc >= 1 ? "ok" : (alc >= 0.7 ? "medio" : "bajo");
+      const color = { ok: "#16a34a", medio: "#f59e0b", bajo: "#ef4444" }[nivel];
+      alcTd = `<td class="alc ${nivel}"><span class="alc-box"><span class="alc-barra"><i style="width:${Math.max(Math.min(alc, 1) * 100, 2)}%;background:${color}"></i></span><span class="alc-num">${fmtPct(alc)}</span></span></td>`;
+    }
     const difClase = dif < 0 ? "neg" : "pos";
     return `
       <td>${row.ppto ? fmtMoneda(row.ppto) : "—"}</td>
       ${alcTd}
-      <td class="dif ${difClase}">${fmtMoneda(dif)}</td>
+      <td class="dif ${difClase}"><span class="dif-pill">${fmtMoneda(dif)}</span></td>
     `;
   }
 
@@ -324,7 +393,7 @@
         val.setAttribute("y", y - 5);
         val.setAttribute("text-anchor", "middle");
         val.setAttribute("class", "gp-bar-value");
-        val.textContent = fmtMonedaCompacta(valor);
+        val.textContent = valor < 1000 ? "$" + Math.round(valor) : fmtMonedaCompacta(valor);
         svg.appendChild(val);
       }
     }
@@ -334,7 +403,7 @@
       const xProfit = xGrupo + anchoGrupo / 2 - anchoBarra - 2;
       const xPpto = xGrupo + anchoGrupo / 2 + 2;
       dibujarBarra(xProfit, f.profit, "#007CC3", "gp-bar-profit", `${f.plaza} · Profit: ${fmtMoneda(f.profit)}`);
-      dibujarBarra(xPpto, f.ppto, "#94a3b8", "gp-bar-ppto", `${f.plaza} · Presupuesto: ${fmtMoneda(f.ppto)}`);
+      dibujarBarra(xPpto, f.ppto, "#cbd5e1", "gp-bar-ppto", `${f.plaza} · Presupuesto: ${fmtMoneda(f.ppto)}`);
 
       const etiquetaPlaza = document.createElementNS(svg.namespaceURI, "text");
       etiquetaPlaza.setAttribute("x", xGrupo + anchoGrupo / 2);
@@ -362,9 +431,21 @@
     if (filasAgregadas.length === 0) {
       tabla.innerHTML = '<caption>Sin datos para este día.</caption>';
       document.getElementById("subt-plaza").textContent = "";
+      document.getElementById("kpis-plaza").innerHTML = "";
       return;
     }
     const total = sumar(filas);
+    const alcTotal = total.ppto > 0 ? total.profit / total.ppto : null;
+    const difTotal = total.profit - total.ppto;
+    const colorAlc = alcTotal === null ? "#cbd5e1" : (alcTotal >= 1 ? "#16a34a" : (alcTotal >= 0.7 ? "#f59e0b" : "#ef4444"));
+    document.getElementById("kpis-plaza").innerHTML = `
+      <div class="vp-kpi"><div class="etq">Cant book</div><div class="val">${fmtEntero(total.cant_book)}</div></div>
+      <div class="vp-kpi"><div class="etq">Venta</div><div class="val">${fmtMoneda(total.venta)}</div></div>
+      <div class="vp-kpi"><div class="etq">Profit</div><div class="val">${fmtMoneda(total.profit)}</div></div>
+      <div class="vp-kpi"><div class="etq">Ppto</div><div class="val">${total.ppto ? fmtMoneda(total.ppto) : "—"}</div></div>
+      <div class="vp-kpi"><div class="etq">% Alc Ppto</div><div class="val">${alcTotal === null ? "—" : fmtPct(alcTotal)}</div>
+        <div class="medidor"><i style="width:${alcTotal === null ? 0 : Math.min(alcTotal, 1) * 100}%;background:${colorAlc}"></i></div></div>
+      <div class="vp-kpi"><div class="etq">Dif Ppto</div><div class="val ${difTotal < 0 ? "neg" : "pos"}">${fmtMoneda(difTotal)}</div></div>`;
     tabla.innerHTML = `
       <thead><tr><th>Plaza</th><th>Cant book</th><th>Venta</th><th>Profit</th><th>Ppto</th><th>% Alc Ppto</th><th>Dif Ppto</th></tr></thead>
       <tbody>${filasAgregadas.map((r) => `<tr class="clicable ${r.plaza === '#N/D' ? 'na' : ''}" data-plaza="${r.plaza.replace(/"/g, "&quot;")}"><td>${r.plaza}</td>${celdaMetricas(r)}</tr>`).join("")}</tbody>
