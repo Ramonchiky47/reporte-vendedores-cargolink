@@ -110,6 +110,10 @@
   .rp-bar-row:hover rect.rp-bar { filter: brightness(1.08); }
   .rp-bar-label { font-size: .7rem; fill: var(--rp-ink-3); }
   .rp-grid-line { stroke: #eef2f7; stroke-width: 1; }
+  .rp-ei-total { text-align: right; font-size: .74rem; color: var(--rp-ink-3); font-variant-numeric: tabular-nums; }
+  .rp-ei-total b { display: block; font-size: 1.15rem; color: var(--rp-ink); }
+  .rp-ei-total .up { color: var(--rp-up); font-weight: 700; }
+  .rp-ei-total .down { color: var(--rp-down); font-weight: 700; }
   .rp-empty { color: var(--rp-ink-3); font-size: .85rem; padding: 2rem 0; text-align: center; }
 
   @media (max-width: 1100px) {
@@ -203,6 +207,31 @@
     </div>
     <div class="rp-resumen-mes" id="rp-resumen-mes"></div>
     <div id="rp-chart-mensual" style="margin-top: .6rem;"></div>
+  </div>
+
+  <div class="rp-seccion" style="margin-top: 1.6rem;">
+    <h2>Exportación e importación vs año anterior</h2>
+    <div class="rp-periodo">
+      <div class="rp-legend">
+        <span><i style="background: var(--rp-accent);"></i> <span id="rp-ei-anio"></span></span>
+        <span><i style="background: #a5d4f0;"></i> <span id="rp-ei-anio-ant"></span></span>
+      </div>
+      <div class="rp-chips" id="rp-chips-ei">
+        <button type="button" data-metrica="profit" class="activo">Profit</button>
+        <button type="button" data-metrica="venta">Venta</button>
+        <button type="button" data-metrica="cant">Bookings</button>
+      </div>
+    </div>
+  </div>
+  <div class="rp-grid" style="margin-top: 0;">
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Exportación</h3><div class="sub">FCLE · LCLE · AE · FTLE · LTLE</div></div><div class="rp-ei-total" id="rp-ei-total-expo"></div></div>
+      <div id="rp-chart-expo"></div>
+    </div>
+    <div class="rp-card">
+      <div class="rp-card-head"><div><h3>Importación</h3><div class="sub">FCLI · LCLI · AI · FTLI · LTLI</div></div><div class="rp-ei-total" id="rp-ei-total-impo"></div></div>
+      <div id="rp-chart-impo"></div>
+    </div>
   </div>
 
   <div class="rp-grid">
@@ -406,7 +435,11 @@
   }
 
   // ---- Barras verticales agrupadas: Profit vs Presupuesto ----
-  function renderBarChartMensualComparativo(contenedorId, serie, mesActual) {
+  function renderBarChartMensualComparativo(contenedorId, serie, mesActual, opciones) {
+    const op = Object.assign({
+      etiquetaA: "Profit", etiquetaB: "Presupuesto", colorB: "var(--rp-muted-line)", alto: 260,
+      fmt: fmtMoneda, fmtEje: fmtMonedaCompacta, conCumplimiento: true,
+    }, opciones || {});
     const cont = document.getElementById(contenedorId);
     cont.innerHTML = "";
     if (serie.length === 0) {
@@ -414,7 +447,7 @@
       return;
     }
     const ancho = cont.clientWidth || 900;
-    const alto = 260;
+    const alto = op.alto;
     const margen = { top: 14, right: 8, bottom: 26, left: 52 };
     const anchoPlot = ancho - margen.left - margen.right;
     const altoPlot = alto - margen.top - margen.bottom;
@@ -444,16 +477,18 @@
       etiqueta.setAttribute("y", yy + 3);
       etiqueta.setAttribute("text-anchor", "end");
       etiqueta.setAttribute("class", "rp-bar-label");
-      etiqueta.textContent = fmtMonedaCompacta(valor);
+      etiqueta.textContent = op.fmtEje(valor);
       svg.appendChild(etiqueta);
     }
 
     serie.forEach((s, i) => {
       const xGrupo = margen.left + i * anchoGrupo;
       const filasTip = [
-        { label: "Profit", valor: fmtMoneda(s.profit) },
-        { label: "Presupuesto", valor: fmtMoneda(s.ppto) },
-        { label: "Cumplimiento", valor: s.ppto ? fmtPct(s.profit / s.ppto) : "—" },
+        { label: op.etiquetaA, valor: op.fmt(s.profit) },
+        { label: op.etiquetaB, valor: op.fmt(s.ppto) },
+        op.conCumplimiento
+          ? { label: "Cumplimiento", valor: s.ppto ? fmtPct(s.profit / s.ppto) : "—" }
+          : { label: "Variación", valor: s.ppto ? ((s.profit >= s.ppto ? "+" : "") + Math.round((s.profit - s.ppto) / Math.abs(s.ppto) * 100) + "%") : "—" },
       ];
       const titulo = MESES[parseInt(s.mes.slice(5), 10) - 1] + " " + s.mes.slice(0, 4);
 
@@ -469,7 +504,7 @@
       }
 
       [[s.profit, "var(--rp-accent)", xGrupo + anchoGrupo / 2 - anchoBarra - 1.5],
-       [s.ppto, "var(--rp-muted-line)", xGrupo + anchoGrupo / 2 + 1.5]].forEach(([valor, color, x]) => {
+       [s.ppto, op.colorB, xGrupo + anchoGrupo / 2 + 1.5]].forEach(([valor, color, x]) => {
         const h = Math.max((valor / maxValor) * altoPlot, valor > 0 ? 2 : 0);
         const rect = document.createElementNS(svg.namespaceURI, "rect");
         rect.setAttribute("class", "rp-bar");
@@ -540,6 +575,50 @@
     renderBarChartMensualComparativo("rp-chart-mensual", serie, mesActual);
   }
 
+  // ---- Exportación / Importación: año en curso vs año anterior, por mes ----
+  function sentidoOperacion(tipoServicio) {
+    const t = (tipoServicio || "").split("-")[0];
+    if (/^(FCL|LCL|FTL|LTL|A|C)I$/.test(t)) return "impo";
+    if (/^(FCL|LCL|FTL|LTL|A|C)E$/.test(t)) return "expo";
+    return null;
+  }
+  let metricaEI = "profit";
+  function renderExpoImpo() {
+    const anioAnt = anioActual - 1;
+    const hoyMd = iso(hoy).slice(5);
+    document.getElementById("rp-ei-anio").textContent = anioActual;
+    document.getElementById("rp-ei-anio-ant").textContent = anioAnt;
+    const esCant = metricaEI === "cant";
+    const fmt = esCant ? fmtEntero : fmtMoneda;
+    const fmtEje = esCant ? (n) => fmtEntero(Math.round(n)) : fmtMonedaCompacta;
+    const nombreMetrica = { profit: "Profit", venta: "Venta", cant: "Bookings" }[metricaEI];
+    ["expo", "impo"].forEach((sentido) => {
+      const actual = new Array(12).fill(0), anterior = new Array(12).fill(0);
+      let ytd = 0, ytdAnt = 0;
+      for (const f of TODOS) {
+        if (sentidoOperacion(f.tipoServicio) !== sentido) continue;
+        const anio = parseInt(f.fecha.slice(0, 4), 10);
+        if (anio !== anioActual && anio !== anioAnt) continue;
+        const valor = esCant ? 1 : f[metricaEI];
+        const m = parseInt(f.fecha.slice(5, 7), 10) - 1;
+        if (anio === anioActual) { actual[m] += valor; ytd += valor; }
+        else { anterior[m] += valor; if (f.fecha.slice(5) <= hoyMd) ytdAnt += valor; }
+      }
+      const serie = MESES.map((_, i) => ({ mes: anioActual + "-" + String(i + 1).padStart(2, "0"), profit: actual[i], ppto: anterior[i] }));
+      renderBarChartMensualComparativo("rp-chart-" + sentido, serie, mesActual, {
+        etiquetaA: nombreMetrica + " " + anioActual, etiquetaB: nombreMetrica + " " + anioAnt,
+        colorB: "#a5d4f0", alto: 220, fmt, fmtEje, conCumplimiento: false,
+      });
+      let variacion = "";
+      if (ytdAnt) {
+        const v = (ytd - ytdAnt) / Math.abs(ytdAnt);
+        variacion = `<span class="${v >= 0 ? "up" : "down"}">${v >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(v * 100))}%</span> vs ${fmt(ytdAnt)} a la misma fecha de ${anioAnt}`;
+      }
+      document.getElementById("rp-ei-total-" + sentido).innerHTML =
+        `<b>${fmt(ytd)}</b>${nombreMetrica} ${anioActual} a la fecha${variacion ? "<br>" + variacion : ""}`;
+    });
+  }
+
   const hoy = new Date();
   const anioActual = hoy.getFullYear();
   const mesActual = iso(hoy).slice(0, 7);
@@ -601,7 +680,13 @@
   marcarChip("anio");
   aplicarFiltro();
   renderMensual();
-  window.addEventListener("resize", renderMensual);
+  renderExpoImpo();
+  document.querySelectorAll("#rp-chips-ei button").forEach((b) => b.addEventListener("click", () => {
+    metricaEI = b.dataset.metrica;
+    document.querySelectorAll("#rp-chips-ei button").forEach((x) => x.classList.toggle("activo", x === b));
+    renderExpoImpo();
+  }));
+  window.addEventListener("resize", () => { renderMensual(); renderExpoImpo(); });
 })();
 </script>
 {% endif %}
