@@ -4164,9 +4164,13 @@ def comisiones():
         grupos = {}
         for f in filas:
             nombre = f[campo_nombre] or "(sin nombre)"
-            g = grupos.setdefault(nombre, {"nombre": nombre, "total": 0.0, "cant_book": 0})
+            g = grupos.setdefault(nombre, {"nombre": nombre, "total": 0.0, "cant_book": 0, "venta": 0.0, "profit": 0.0})
             g["total"] += float(f[campo_total])
             g["cant_book"] += 1
+            g["venta"] += reporte_por_booking.get(f["booking"], {}).get("venta") or 0.0
+            g["profit"] += float(f["profit"])
+        for g in grupos.values():
+            g["margen"] = (g["profit"] / g["venta"]) if g["venta"] else None
         return sorted(grupos.values(), key=lambda g: g["total"], reverse=True)
 
     por_vendedor = agrupar(filas, "vendedor", "total_vendedor")
