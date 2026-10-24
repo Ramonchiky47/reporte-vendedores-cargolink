@@ -4274,10 +4274,23 @@ def comisiones():
         if plaza:
             desarrolladores_por_oficina.setdefault(plaza, set()).add(r["desarrollador"])
     desarrolladores_por_oficina = {k: sorted(v) for k, v in desarrolladores_por_oficina.items()}
+    # Gráfica: los últimos 6 folios cargados, comisión de vendedor + desarrollador.
+    historial_folios = [
+        {
+            "folio": r["folio"], "descripcion": r["descripcion"], "bookings": r["bookings"],
+            "vendedor": float(r["vendedor"]), "desarrollador": float(r["desarrollador"]), "profit": float(r["profit"]),
+        }
+        for r in db.execute(
+            "SELECT folio, max(descripcion) AS descripcion, count(*) AS bookings, sum(total_vendedor) AS vendedor, "
+            "sum(total_desarrollador) AS desarrollador, sum(profit) AS profit "
+            "FROM comisiones_liquidacion_detalle WHERE folio >= 40 GROUP BY folio ORDER BY folio DESC LIMIT 6"
+        ).fetchall()
+    ][::-1]
     db.close()
 
     return render_template(
         "comisiones.html",
+        historial_folios=historial_folios,
         folios_disponibles=folios_disponibles,
         folios_cargolink=folios_cargolink,
         folio_actual=folio_actual,

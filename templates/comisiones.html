@@ -3,12 +3,6 @@
 {% set active = "comisiones" %}
 {% block extra_head %}
 <style>
-  @media (min-width: 761px) {
-    /* Deja un carril reservado a la derecha para que la cajita flotante de
-       "Buscar booking" nunca quede encima de las tablas — en vez de un ancho
-       fijo, empuja el contenido hacia el centro dejando espacio de sobra. */
-    main { padding-right: 220px; }
-  }
   /* Los campos de "Bookings por periodo/oficina/vendedor" traían flex:1 del
      .row genérico (se estiran a llenar el espacio libre), lo que en la fila
      donde solo caben Vendedor y Desarrollador los pegaba casi sin separación
@@ -157,48 +151,188 @@
   }
   .com-buscar-flotante .com-limpiar:hover { background: #f1f5f9; color: var(--danger-dark); }
   .com-buscar-resultados {
-    position: absolute; top: calc(100% + .4rem); right: 0; width: 460px; max-width: 80vw;
+    position: absolute; top: calc(100% + .4rem); right: 0; width: 680px; max-width: 90vw;
     max-height: 60vh; overflow-y: auto; background: #fff; border: 1px solid var(--border-strong);
     border-radius: 10px; box-shadow: 0 8px 24px rgba(15,23,42,.15); padding: .75rem; font-size: .76rem;
   }
   .com-buscar-resultados table { width: 100%; }
   .com-buscar-resultados th, .com-buscar-resultados td { padding: .35rem .5rem; white-space: nowrap; }
   @media (max-width: 760px) {
-    .com-buscar-flotante { position: static; margin-bottom: 1rem; box-shadow: none; }
     .com-buscar-resultados { position: static; width: 100%; max-width: none; margin-top: .5rem; }
+  }
+
+  /* ---- Diseño ---- */
+  main { max-width: 1240px; }
+  .cm-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .cm-head h1 { margin: 0; font-size: 1.55rem; color: var(--ink); letter-spacing: -.01em; }
+  .cm-head p { margin: .25rem 0 0; font-size: .85rem; color: var(--ink-2); }
+  .cm-head p b { color: var(--ink); }
+  .cm-toolbar {
+    display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap;
+    background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .65rem .85rem;
+  }
+  .cm-toolbar-izq { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .cm-toolbar label { margin: 0; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); }
+  .cm-toolbar select { padding: .45rem .6rem; border-radius: 8px; border: 1px solid var(--border-strong); font-weight: 600; font-size: .86rem; min-width: 240px; }
+  .cm-toolbar .btn { background: #fff; color: #334155; border: 1px solid var(--border-strong); padding: .45rem .8rem; font-size: .8rem; font-weight: 600; border-radius: 8px; }
+  .cm-toolbar .btn:hover { border-color: var(--accent); color: var(--accent); background: #f5fbff; }
+  .cm-admin-panel { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0 1.1rem; margin-top: .6rem; }
+  .cm-admin-panel .com-cargar-form { margin: 0; border-top: none; padding: 1rem 0; }
+  .com-buscar-flotante { position: relative; top: auto !important; right: auto; z-index: 40; box-shadow: none; border-color: var(--border); padding: .25rem .35rem; }
+  .com-buscar-flotante input[type="text"] { width: 200px; font-size: .82rem; padding: .4rem .6rem; }
+
+  .cm-seccion { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 1.6rem 0 .75rem; }
+  .cm-seccion h2 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-2); font-weight: 700; }
+
+  .cm-kpis { display: grid; grid-template-columns: repeat(4, 1fr); background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .cm-kpi { padding: 1rem 1.2rem; border-right: 1px solid var(--border); }
+  .cm-kpi:last-child { border-right: none; }
+  .cm-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .cm-kpi .val { font-size: 1.45rem; font-weight: 800; color: var(--ink); margin-top: .25rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+
+  .cm-grid { display: grid; grid-template-columns: minmax(300px, 1fr) 1.9fr; gap: 1rem; margin-top: 1rem; }
+  .cm-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 1.15rem 1.3rem; }
+  .cm-card h3 { margin: 0; font-size: .98rem; color: var(--ink); }
+  .cm-card .sub { font-size: .76rem; color: var(--ink-3); margin-top: .2rem; }
+  .cm-liq-total { margin: 1rem 0 1.1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+  .cm-liq-total .etq { font-size: .7rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .cm-liq-total .val { font-size: 2.1rem; font-weight: 800; color: var(--ink); letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .cm-liq-total .pct { font-size: .78rem; color: var(--ink-2); }
+  .cm-liq-barra { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #eef2f7; margin-bottom: .9rem; }
+  .cm-liq-barra i { display: block; height: 100%; }
+  .cm-liq-fila { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .55rem 0; }
+  .cm-liq-fila + .cm-liq-fila { border-top: 1px solid #f1f5f9; }
+  .cm-liq-fila .nom { display: flex; align-items: center; gap: .55rem; font-size: .86rem; color: var(--ink); font-weight: 600; }
+  .cm-liq-fila .nom small { display: block; font-size: .72rem; color: var(--ink-3); font-weight: 500; }
+  .cm-liq-fila .punto { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .cm-liq-fila .monto { font-size: 1.05rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+  .cm-liq-fila .monto small { display: block; font-size: .72rem; font-weight: 600; color: var(--ink-3); }
+
+  .cm-graf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .6rem; }
+  .cm-leyenda { display: flex; gap: 1rem; font-size: .76rem; color: var(--ink-2); }
+  .cm-leyenda span { display: inline-flex; align-items: center; gap: .4rem; }
+  .cm-leyenda i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .cm-graf-label { font-size: .7rem; fill: var(--ink-3); }
+  .cm-graf-total { font-size: .74rem; fill: var(--ink); font-weight: 800; }
+  .cm-graf-folio { font-size: .74rem; fill: var(--ink); font-weight: 700; }
+  .cm-graf-barra { cursor: pointer; }
+  .cm-graf-barra:hover rect { filter: brightness(1.08); }
+  .cm-graf-tip {
+    position: fixed; pointer-events: none; background: #0f172a; color: #fff; font-size: .76rem; padding: .5rem .65rem;
+    border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.25); opacity: 0; transform: translate(-50%, -100%); z-index: 80; white-space: nowrap;
+  }
+  .cm-graf-tip.visible { opacity: 1; }
+  .cm-graf-tip .t { font-weight: 700; margin-bottom: .2rem; }
+  .cm-graf-tip .r { display: flex; justify-content: space-between; gap: .9rem; }
+  .cm-graf-tip .r b { font-variant-numeric: tabular-nums; }
+
+  .cm-tabla-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .8rem; }
+  .com-tabs { display: inline-flex; gap: 0; margin: 0; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .com-tab { border: none; background: transparent; padding: .38rem .9rem; font-size: .8rem; border-radius: 7px; color: var(--ink-2); }
+  .com-tab:hover { background: #f1f5f9; color: var(--ink); }
+  .com-tab.active { background: var(--ink); color: #fff; }
+  .com-vista .card { border-radius: 12px; padding: 1.15rem 1.3rem; }
+  .com-vista .card h2 { font-size: .98rem; }
+  .com-resumen { font-size: .85rem; }
+  .com-resumen thead th { background: #f8fafc; color: var(--ink-3); font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; padding: .6rem .9rem; }
+  .com-resumen tbody td { padding: .6rem .9rem; border-bottom: 1px solid #f1f5f9; }
+  .com-resumen tbody tr:hover td { background: #f8fbff; }
+  .com-resumen tfoot td { background: #f8fafc; border-top: 1px solid #cbd5e1; padding: .7rem .9rem; }
+
+  @media (max-width: 900px) {
+    .cm-grid { grid-template-columns: 1fr; }
+    .cm-kpis { grid-template-columns: repeat(2, 1fr); }
+    .cm-kpi:nth-child(2) { border-right: none; }
+    .cm-kpi:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  }
+  @media (max-width: 640px) {
+    .cm-toolbar select { min-width: 0; width: 100%; }
+    .cm-toolbar-izq, .com-buscar-flotante { width: 100%; }
+    .com-buscar-flotante form { flex: 1; }
+    .com-buscar-flotante input[type="text"] { width: 100%; }
+    .cm-kpi .val { font-size: 1.1rem; }
+    .cm-liq-total .val { font-size: 1.6rem; }
   }
 </style>
 {% endblock %}
 {% block content %}
-    <div class="card">
-      <div class="com-header-row">
-        <div>
-          <h2>Comisiones</h2>
-          {% if folio_actual %}
-          <p class="com-descripcion" style="margin:0;">Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b></p>
-          {% else %}
-          <p class="empty" style="padding:0;">Todavía no hay ningún folio cargado.</p>
-          {% endif %}
-        </div>
-        <div class="com-header-actions">
-          {% if folios_disponibles|length > 1 %}
-          <form method="get" action="{{ url_for('comisiones') }}">
-            <select name="folio" onchange="this.form.submit()">
-              {% for f in folios_disponibles %}
-              <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
-              {% endfor %}
-            </select>
-          </form>
-          {% endif %}
-          {% if session.get('es_admin') %}
-          <button type="button" class="btn small secondary" id="com-toggle-cargar">+ Cargar folio</button>
-          {% if folio_actual %}
-          <button type="button" class="btn small secondary" id="com-toggle-cobros">+ Traer cobros</button>
-          {% endif %}
-          {% endif %}
-        </div>
+    <div class="cm-head">
+      <div>
+        <h1>Comisiones</h1>
+        {% if folio_actual %}
+        <p>Folio <b>{{ folio_actual }}</b> · <b>{{ descripcion }}</b> · liquidación de vendedores y desarrolladores</p>
+        {% else %}
+        <p>Todavía no hay ningún folio cargado.</p>
+        {% endif %}
       </div>
+    </div>
 
+    <div class="cm-toolbar">
+      <div class="cm-toolbar-izq">
+        {% if folios_disponibles|length > 1 %}
+        <form method="get" action="{{ url_for('comisiones') }}" style="display:flex; align-items:center; gap:.6rem;">
+          <label for="cm-folio">Folio</label>
+          <select id="cm-folio" name="folio" onchange="this.form.submit()">
+            {% for f in folios_disponibles %}
+            <option value="{{ f.folio }}" {{ 'selected' if f.folio == folio_actual else '' }}>Folio {{ f.folio }} · {{ f.descripcion }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% endif %}
+        {% if session.get('es_admin') %}
+        <button type="button" class="btn" id="com-toggle-cargar">+ Cargar folio</button>
+        {% if folio_actual %}
+        <button type="button" class="btn" id="com-toggle-cobros">+ Traer cobros</button>
+        {% endif %}
+        {% endif %}
+      </div>
+      <div class="com-buscar-flotante" id="com-buscar-flotante">
+      <div style="display:flex; align-items:center; gap:.3rem;">
+        <form method="get" action="{{ url_for('comisiones') }}" id="form-buscar-booking">
+          {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
+          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Buscar booking..." autocomplete="off" title="Buscar en qué folio se pagó un booking">
+          <button type="submit" title="Buscar">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+          {% if buscar_booking %}
+          <a class="com-limpiar" href="{{ url_for('comisiones', folio=folio_actual) }}" title="Limpiar">&times;</a>
+          {% endif %}
+        </form>
+        <button type="button" id="com-abrir-reporte" title="Buscar bookings por año, mes, oficina, vendedor o desarrollador">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        </button>
+      </div>
+      <div id="resultados-busqueda-booking">
+      {% if resultados_busqueda_booking is not none %}
+        {% if resultados_busqueda_booking %}
+        <div class="com-buscar-resultados">
+          <table>
+            <thead><tr><th>Folio</th><th>Booking</th><th>Vendedor</th><th>Com. Vendedor</th><th>Desarrollador</th><th>Com. Desarrollador</th></tr></thead>
+            <tbody>
+              {% for r in resultados_busqueda_booking %}
+              <tr>
+                <td><a href="{{ url_for('comisiones', folio=r.folio) }}">Folio {{ r.folio }}</a> · {{ r.descripcion }}</td>
+                <td>{{ r.booking }}</td>
+                <td>{{ r.vendedor or '—' }}</td>
+                <td>${{ "{:,.2f}".format(r.total_vendedor) }}</td>
+                <td>{{ r.desarrollador or '—' }}</td>
+                <td>${{ "{:,.2f}".format(r.total_desarrollador) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="com-buscar-resultados">
+          <p class="empty" style="margin:0;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
+        </div>
+        {% endif %}
+      {% endif %}
+      </div>
+    </div>
+    </div>
+
+    <div class="cm-admin-panel" id="cm-admin-panel" style="display:none;">
       {% if session.get('es_admin') %}
       <div class="com-cargar-form" id="com-cargar-form" style="display:none;">
         <p class="hint">Trae el detalle de un folio de Egresos → Liquidación de vendedores y lo guarda en esta app.</p>
@@ -251,50 +385,6 @@
       {% endif %}
     </div>
 
-    <div class="com-buscar-flotante" id="com-buscar-flotante">
-      <div style="display:flex; align-items:center; gap:.3rem;">
-        <form method="get" action="{{ url_for('comisiones') }}" id="form-buscar-booking">
-          {% if folio_actual %}<input type="hidden" name="folio" value="{{ folio_actual }}">{% endif %}
-          <input type="text" id="buscar-booking" name="buscar_booking" value="{{ buscar_booking or '' }}" placeholder="Buscar booking..." autocomplete="off" title="Buscar en qué folio se pagó un booking">
-          <button type="submit" title="Buscar">
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </button>
-          {% if buscar_booking %}
-          <a class="com-limpiar" href="{{ url_for('comisiones', folio=folio_actual) }}" title="Limpiar">&times;</a>
-          {% endif %}
-        </form>
-        <button type="button" id="com-abrir-reporte" title="Buscar bookings por año, mes, oficina, vendedor o desarrollador">
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-        </button>
-      </div>
-      <div id="resultados-busqueda-booking">
-      {% if resultados_busqueda_booking is not none %}
-        {% if resultados_busqueda_booking %}
-        <div class="com-buscar-resultados">
-          <table>
-            <thead><tr><th>Folio</th><th>Booking</th><th>Vendedor</th><th>Com. Vendedor</th><th>Desarrollador</th><th>Com. Desarrollador</th></tr></thead>
-            <tbody>
-              {% for r in resultados_busqueda_booking %}
-              <tr>
-                <td><a href="{{ url_for('comisiones', folio=r.folio) }}">Folio {{ r.folio }}</a> · {{ r.descripcion }}</td>
-                <td>{{ r.booking }}</td>
-                <td>{{ r.vendedor or '—' }}</td>
-                <td>${{ "{:,.2f}".format(r.total_vendedor) }}</td>
-                <td>{{ r.desarrollador or '—' }}</td>
-                <td>${{ "{:,.2f}".format(r.total_desarrollador) }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-        {% else %}
-        <div class="com-buscar-resultados">
-          <p class="empty" style="margin:0;">No encontré ningún booking que coincida con "{{ buscar_booking }}" en los folios cargados.</p>
-        </div>
-        {% endif %}
-      {% endif %}
-      </div>
-    </div>
     <script>
     (function () {
       var input = document.getElementById("buscar-booking");
@@ -305,21 +395,6 @@
         });
       }
 
-      // La cajita flotante va justo debajo del encabezado — pero el
-      // encabezado se parte en dos líneas (o más) según cuántos links de
-      // navegación quepan a lo ancho, así que su altura no es fija: se mide
-      // en vivo en vez de asumir un valor, para que nunca quede tapada.
-      var widget = document.getElementById("com-buscar-flotante");
-      var topbar = document.querySelector(".topbar");
-      if (widget && topbar) {
-        var posicionar = function () {
-          widget.style.top = (topbar.getBoundingClientRect().bottom + 12) + "px";
-        };
-        posicionar();
-        window.addEventListener("resize", posicionar);
-        window.addEventListener("load", posicionar);
-        if (document.fonts && document.fonts.ready) document.fonts.ready.then(posicionar);
-      }
     })();
     </script>
 
@@ -514,36 +589,120 @@
     </script>
 
     {% if folio_actual %}
-    <div class="com-kpis">
-      <div class="com-kpi"><div class="label">Bookings</div><div class="value">{{ filas|length }}</div></div>
-      <div class="com-kpi"><div class="label">Venta Total</div><div class="value">${{ "{:,.2f}".format(total_venta) }}</div></div>
-      <div class="com-kpi"><div class="label">Profit</div><div class="value">${{ "{:,.2f}".format(total_profit) }}</div></div>
-      <div class="com-kpi"><div class="label">Margen</div><div class="value">{{ "{:,.2f}".format(margen_total * 100) }}%</div></div>
+    <div class="cm-seccion"><h2>Resumen del folio</h2></div>
+    <div class="cm-kpis">
+      <div class="cm-kpi"><div class="etq">Bookings</div><div class="val">{{ "{:,}".format(filas|length) }}</div></div>
+      <div class="cm-kpi"><div class="etq">Venta total</div><div class="val">${{ "{:,.2f}".format(total_venta) }}</div></div>
+      <div class="cm-kpi"><div class="etq">Profit</div><div class="val">${{ "{:,.2f}".format(total_profit) }}</div></div>
+      <div class="cm-kpi"><div class="etq">Margen</div><div class="val">{{ "{:,.2f}".format(margen_total * 100) }}%</div></div>
     </div>
 
-    <div class="com-comisiones">
-      <div class="com-comision-card">
-        <div class="etiqueta">Comisión Vendedor</div>
-        <div class="monto">${{ "{:,.2f}".format(total_vendedor) }}</div>
-        <div class="caption">{{ por_vendedor|length }} vendedor(es)</div>
+    {% set pct_v = (total_vendedor / total_liquidar * 100) if total_liquidar else 0 %}
+    <div class="cm-grid">
+      <div class="cm-card">
+        <h3>Liquidación</h3>
+        <div class="sub">Folio {{ folio_actual }} · {{ descripcion }}</div>
+        <div class="cm-liq-total">
+          <div class="etq">Total a liquidar</div>
+          <div class="val">${{ "{:,.2f}".format(total_liquidar) }}</div>
+          <div class="pct">{{ "{:,.1f}".format(total_liquidar / total_profit * 100) if total_profit else '—' }}% del profit del folio</div>
+        </div>
+        <div class="cm-liq-barra"><i style="width:{{ pct_v }}%; background:#007CC3;"></i><i style="width:{{ 100 - pct_v }}%; background:#7dc3ea;"></i></div>
+        <div class="cm-liq-fila">
+          <div class="nom"><span class="punto" style="background:#007CC3;"></span><div>Comisión vendedor<small>{{ por_vendedor|length }} vendedor(es)</small></div></div>
+          <div class="monto">${{ "{:,.2f}".format(total_vendedor) }}<small>{{ "{:,.0f}".format(pct_v) }}%</small></div>
+        </div>
+        <div class="cm-liq-fila">
+          <div class="nom"><span class="punto" style="background:#7dc3ea;"></span><div>Comisión desarrollador<small>{{ por_desarrollador|length }} desarrollador(es)</small></div></div>
+          <div class="monto">${{ "{:,.2f}".format(total_desarrollador) }}<small>{{ "{:,.0f}".format(100 - pct_v) if total_liquidar else 0 }}%</small></div>
+        </div>
       </div>
-      <div class="com-comision-card">
-        <div class="etiqueta">Comisión Desarrollador</div>
-        <div class="monto">${{ "{:,.2f}".format(total_desarrollador) }}</div>
-        <div class="caption">{{ por_desarrollador|length }} desarrollador(es)</div>
-      </div>
-      <div class="com-comision-card total">
-        <div class="etiqueta">Total a Liquidar</div>
-        <div class="monto">${{ "{:,.2f}".format(total_liquidar) }}</div>
-        <div class="caption">Vendedor + Desarrollador</div>
+
+      <div class="cm-card">
+        <div class="cm-graf-head">
+          <div><h3>Comisiones de los últimos {{ historial_folios|length }} folios</h3><div class="sub">Vendedor + desarrollador · clic en una barra para abrir ese folio</div></div>
+          <div class="cm-leyenda"><span><i style="background:#007CC3;"></i> Vendedor</span><span><i style="background:#7dc3ea;"></i> Desarrollador</span></div>
+        </div>
+        <div id="cm-grafica"></div>
       </div>
     </div>
+    <div class="cm-graf-tip" id="cm-graf-tip"></div>
+    <script id="datos-historial-folios" type="application/json">{{ historial_folios|tojson }}</script>
+    <script>
+    (function () {
+      const datos = JSON.parse(document.getElementById("datos-historial-folios").textContent);
+      const folioActual = {{ folio_actual|tojson }};
+      const urlFolio = {{ url_for('comisiones')|tojson }};
+      const cont = document.getElementById("cm-grafica");
+      const tip = document.getElementById("cm-graf-tip");
+      const NS = "http://www.w3.org/2000/svg";
+      const fmt = (n) => "$" + n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmtK = (n) => n >= 1000 ? "$" + (n / 1000).toFixed(n >= 100000 ? 0 : 1) + "K" : "$" + Math.round(n);
+      function el(tag, attrs, texto) {
+        const e = document.createElementNS(NS, tag);
+        for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+        if (texto != null) e.textContent = texto;
+        return e;
+      }
+      function render() {
+        cont.innerHTML = "";
+        if (!datos.length) { cont.innerHTML = '<p class="empty">Sin folios cargados.</p>'; return; }
+        const ancho = cont.clientWidth || 640, alto = 250;
+        const m = { top: 22, right: 8, bottom: 40, left: 52 };
+        const aw = ancho - m.left - m.right, ah = alto - m.top - m.bottom;
+        const max = Math.max(...datos.map((d) => d.vendedor + d.desarrollador), 1) * 1.08;
+        const svg = el("svg", { width: "100%", height: alto, viewBox: `0 0 ${ancho} ${alto}` });
+        for (let i = 0; i <= 4; i++) {
+          const v = max / 4 * i, y = m.top + ah - v / max * ah;
+          svg.appendChild(el("line", { x1: m.left, x2: ancho - m.right, y1: y, y2: y, stroke: "#eef2f7" }));
+          svg.appendChild(el("text", { x: m.left - 8, y: y + 3, "text-anchor": "end", class: "cm-graf-label" }, fmtK(v)));
+        }
+        const paso = aw / datos.length, bw = Math.min(paso * 0.5, 56);
+        datos.forEach((d, i) => {
+          const x = m.left + i * paso + (paso - bw) / 2;
+          const hv = d.vendedor / max * ah, hd = d.desarrollador / max * ah;
+          const total = d.vendedor + d.desarrollador;
+          const g = el("g", { class: "cm-graf-barra" });
+          if (d.folio === folioActual) {
+            g.appendChild(el("rect", { x: m.left + i * paso + 4, y: m.top - 14, width: paso - 8, height: ah + 14, rx: 8, fill: "rgba(0,124,195,.07)" }));
+          }
+          g.appendChild(el("rect", { x, y: m.top + ah - hv, width: bw, height: Math.max(hv, 0), fill: "#007CC3" }));
+          g.appendChild(el("rect", { x, y: m.top + ah - hv - hd, width: bw, height: Math.max(hd, 0), rx: 4, fill: "#7dc3ea" }));
+          g.appendChild(el("text", { x: x + bw / 2, y: m.top + ah - hv - hd - 6, "text-anchor": "middle", class: "cm-graf-total", "font-size": paso < 70 ? "10" : null }, paso < 70 ? fmtK(total).replace(".0K", "K") : fmtK(total)));
+          const angosto = paso < 90;
+          g.appendChild(el("text", { x: x + bw / 2, y: alto - m.bottom + 16, "text-anchor": "middle", class: "cm-graf-folio" }, (angosto ? "F" : "Folio ") + d.folio));
+          if (!angosto) g.appendChild(el("text", { x: x + bw / 2, y: alto - m.bottom + 30, "text-anchor": "middle", class: "cm-graf-label" }, (d.descripcion || "").slice(0, 16)));
+          g.appendChild(el("rect", { x: m.left + i * paso, y: m.top - 14, width: paso, height: ah + m.bottom + 14, fill: "transparent" }));
+          g.addEventListener("pointermove", (e) => {
+            tip.innerHTML = `<div class="t"></div>
+              <div class="r"><span>Vendedor</span><b>${fmt(d.vendedor)}</b></div>
+              <div class="r"><span>Desarrollador</span><b>${fmt(d.desarrollador)}</b></div>
+              <div class="r"><span>Total</span><b>${fmt(total)}</b></div>
+              <div class="r"><span>Bookings</span><b>${d.bookings.toLocaleString("es-MX")}</b></div>
+              <div class="r"><span>% del profit</span><b>${d.profit ? (total / d.profit * 100).toFixed(1) + "%" : "—"}</b></div>`;
+            tip.querySelector(".t").textContent = "Folio " + d.folio + " · " + (d.descripcion || "");
+            tip.style.left = e.clientX + "px"; tip.style.top = (e.clientY - 10) + "px";
+            tip.classList.add("visible");
+          });
+          g.addEventListener("pointerleave", () => tip.classList.remove("visible"));
+          g.addEventListener("click", () => { window.location = urlFolio + "?folio=" + d.folio; });
+          svg.appendChild(g);
+        });
+        cont.appendChild(svg);
+      }
+      render();
+      window.addEventListener("resize", render);
+    })();
+    </script>
     {% endif %}
 
     {% if folio_actual %}
-    <div class="com-tabs">
-      <button type="button" class="com-tab active" data-vista="vendedor">Vendedor</button>
-      <button type="button" class="com-tab" data-vista="desarrollador">Desarrollador</button>
+    <div class="cm-seccion">
+      <h2>Detalle por persona</h2>
+      <div class="com-tabs">
+        <button type="button" class="com-tab active" data-vista="vendedor">Vendedor</button>
+        <button type="button" class="com-tab" data-vista="desarrollador">Desarrollador</button>
+      </div>
     </div>
 
     <div class="com-vista activa" id="com-vista-vendedor">
@@ -630,6 +789,8 @@
       const visible = form.style.display !== "none";
       form.style.display = visible ? "none" : "block";
       boton.textContent = (visible ? "+ " : "− ") + etiqueta;
+      const panel = document.getElementById("cm-admin-panel");
+      if (panel) panel.style.display = panel.querySelector('.com-cargar-form[style*="block"]') ? "block" : "none";
     });
   }
   conectarToggle("com-toggle-cargar", "com-cargar-form", "Cargar folio");
