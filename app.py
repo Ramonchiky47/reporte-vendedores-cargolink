@@ -19,7 +19,9 @@ import json
 import mimetypes
 import os
 import random
+import collections
 import re
+import statistics
 import threading
 import secrets
 import smtplib
@@ -12146,6 +12148,324 @@ def permisos_seguimientos(usuario_id):
     ).fetchone()
     db.close()
     return (bool(fila and fila["ver_seguimientos_todos"]), bool(fila and fila["ver_seguimientos_plaza"]))
+
+
+# ---------------------------------------------------------------------------
+# Reactivación de clientes: clientes que llevan más de un mes sin solicitar un
+# booking (y antes sí embarcaban), con un informe para enviarles que muestra sus
+# rutas habituales y la disponibilidad de la semana. Fuente: Seguimiento de
+# Importaciones (rutas) + Operaciones marítimas (datos de CargoLink) +
+# reporte_bookings (para descartar a quien sigue activo en otros servicios).
+# ---------------------------------------------------------------------------
+DIAS_SIN_BOOKING_REACTIVACION = 30
+DISENOS_INFORME_REACTIVACION = [
+    (1, "Ruta en portada"), (2, "Tablero ejecutivo"), (3, "Boletos de embarque"),
+    (4, "Carta de tu ejecutivo"), (5, "Infografía"),
+]
+CODIGOS_PUERTO = {
+    "XIAMEN": "XMN", "LAZARO CARDENAS": "LZC", "WUHAN": "WUH", "QINGDAO": "TAO", "NINGBO": "NGB", "SHANGHAI": "SHA",
+    "MANZANILLO": "ZLO", "VERACRUZ": "VER", "ALTAMIRA": "ATM", "TIANJIN": "TSN", "BUSAN": "PUS", "SHENZHEN": "SZX",
+    "YANTIAN": "YTN", "HAMBURGO": "HAM", "HAMBURG": "HAM", "VALENCIA": "VLC", "BARCELONA": "BCN", "ROTTERDAM": "RTM",
+    "GUANGZHOU": "CAN", "NANSHA": "NSA", "KAOHSIUNG": "KHH", "HONG KONG": "HKG", "PORT SAID": "PSD", "ISTANBUL": "IST",
+    "ESTAMBUL": "IST", "PROGRESO": "PGO", "ENSENADA": "ESE", "BREMERHAVEN": "BRV", "ANTWERP": "ANR", "AMBERES": "ANR",
+    "CHENNAI": "MAA", "NHAVA SHEVA": "NSA", "MUNDRA": "MUN", "BEIRUT": "BEY", "PUERTO CALDERA": "CAL", "LISBOA": "LIS",
+    "GENOVA": "GOA", "LONG BEACH": "LGB", "LOS ANGELES": "LAX", "HOUSTON": "HOU", "SANTOS": "SSZ", "CALLAO": "CLL",
+}
+_CORRECCIONES_PUERTO = {"WHUHAN": "WUHAN", "QINDAO": "QINGDAO", "QUINGDAO": "QINGDAO", "NINGPO": "NINGBO"}
+_MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _puerto_limpio(p):
+    """"WUHAN, CHINA", "QINDAO -", "Lazaro Cardenas - Mexico" -> nombre del puerto."""
+    t = (p or "").split(" - ")[0].split(",")[0]
+    t = re.sub(r"[\s\-]+$", "", t).strip()
+    t = _CORRECCIONES_PUERTO.get(t.upper(), t)
+    return t.title() if t else "—"
+
+
+@app.template_filter("codigo_puerto")
+def codigo_puerto(p):
+    t = (p or "").upper().strip()
+    return CODIGOS_PUERTO.get(t) or re.sub(r"[^A-Z]", "", t)[:3] or "—"
+
+
+def _naviera_corta(nombre, n=20):
+    nombre = re.sub(r"\b(S\.?A\.?( DE C\.?V\.?)?|SA DE CV|LTD|CORPORATION|SHIPPING|MEXICO|AG|INC|LIMITED|\(PRIVATE\))\b\.?", "", nombre or "").strip(" ,.-")
+    nombre = nombre.title() if nombre else "—"
+    return nombre if len(nombre) <= n else nombre[:n - 1].rstrip() + "…"
+
+
+def _fecha_corta(d, con_anio=True):
+    if not d:
+        return "—"
+    return f"{d.day} {_MESES_CORTOS[d.month - 1]}" + (f" {d.year}" if con_anio else "")
+
+
+def _nombre_asignado(valor):
+    """Nombres reales del vendedor/desarrollador asignados (sin cuentas genéricas)."""
+    genericos = {"AV2 VENTAS", "AV2VENTAS", "VENDEDOR VIRTUAL", "AV2 CUSTOMER", "AV2CUSTOMER"}
+    partes = []
+    for p in (valor or "").split(","):
+        t = re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", p)).strip()
+        if t and t.upper() not in genericos:
+            partes.append(t.title())
+    return ", ".join(partes) or None
+
+
+def clientes_por_reactivar(recurrentes=False):
+    """Clientes con 2+ embarques en el último año cuyo último booking (en el
+    Seguimiento y en reporte_bookings, cualquier servicio) fue hace más de
+    DIAS_SIN_BOOKING_REACTIVACION días. Respeta la visibilidad por plaza /
+    vendedor del usuario (por el vendedor asignado al cliente)."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    filas = db.execute("""
+        WITH seg AS (
+            SELECT upper(trim(client)) AS clave, min(client) AS cliente, count(*) AS embarques, max(fecha) AS ultimo
+            FROM seguimiento_importaciones
+            WHERE client IS NOT NULL AND trim(client) <> '' AND fecha >= %(desde)s
+            GROUP BY 1
+        ),
+        bk AS (SELECT upper(trim(cliente_servicio)) AS clave, max(fecha)::date AS ultimo FROM reporte_bookings GROUP BY 1)
+        SELECT seg.cliente, seg.embarques, seg.ultimo AS ultimo_seguimiento, bk.ultimo AS ultimo_booking,
+               ac.vendedor, ac.desarrollador
+        FROM seg
+        LEFT JOIN bk ON bk.clave = seg.clave
+        LEFT JOIN LATERAL (
+            SELECT vendedor, desarrollador FROM asignacion_de_clientes a WHERE upper(trim(a.razon_social)) = seg.clave LIMIT 1
+        ) ac ON true
+        WHERE seg.embarques >= 2
+    """, {"desde": hoy - timedelta(days=365)}).fetchall()
+    plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")}
+    # Venta del año en curso por mes (matriz Ene-Dic) por cliente.
+    ventas_anio = {}
+    for r in db.execute("""
+        SELECT upper(trim(cliente_servicio)) AS clave, extract(month FROM fecha)::int AS mes, sum(venta) AS venta
+        FROM reporte_bookings WHERE fecha >= %s AND fecha < %s GROUP BY 1, 2
+    """, (date(hoy.year, 1, 1), date(hoy.year + 1, 1, 1))).fetchall():
+        ventas_anio.setdefault(r["clave"], [0.0] * 12)[r["mes"] - 1] = float(r["venta"] or 0)
+    db.close()
+
+    plazas_permitidas = plazas_permitidas_usuario()
+    vendedor_forzado = vendedor_forzado_usuario()
+    desarrollador_forzado = desarrollador_forzado_usuario()
+    resultado = []
+    for f in filas:
+        ultimo = max(x for x in (f["ultimo_seguimiento"], f["ultimo_booking"]) if x)
+        dias = (hoy - ultimo).days
+        # recurrentes=True: los que SÍ han pedido booking en el último mes
+        # (para la carta de servicio); si no, los que llevan más de un mes sin.
+        if (dias <= DIAS_SIN_BOOKING_REACTIVACION) != recurrentes:
+            continue
+        if plazas_permitidas is not None and plaza_por_vendedor.get(normalizar(f["vendedor"] or "")) not in plazas_permitidas:
+            continue
+        if vendedor_forzado and normalizar(f["vendedor"] or "") != normalizar(vendedor_forzado):
+            continue
+        if desarrollador_forzado and not coincide_desarrollador(desarrollador_forzado, f["desarrollador"]):
+            continue
+        resultado.append({
+            "cliente": f["cliente"], "embarques": f["embarques"], "ultimo": ultimo, "ultimo_txt": _fecha_corta(ultimo),
+            "dias_sin": dias, "vendedor": _nombre_asignado(f["vendedor"]), "desarrollador": _nombre_asignado(f["desarrollador"]),
+            "plaza": plaza_por_vendedor.get(normalizar(f["vendedor"] or "")) or "",
+            "vendedor_original": (f["vendedor"] or "").strip(),
+            "ventas": ventas_anio.get(f["cliente"].strip().upper(), [0.0] * 12),
+        })
+    for r in resultado:
+        r["venta_total"] = sum(r["ventas"])
+    resultado.sort(key=lambda r: (-r["embarques"], r["dias_sin"]))
+    return resultado
+
+
+def datos_informe_reactivacion(cliente):
+    """Datos del informe de un cliente: rutas habituales (12 meses), actividad
+    por mes y últimos embarques. Contenedor y fechas se toman primero de
+    Operaciones marítimas (sincronizado con CargoLink)."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    filas = db.execute("""
+        SELECT s.fecha, s.booking, s.pol, s.pod, s.naviera, s.cantidad_contenedores_tipo AS equipo,
+               coalesce(om.etd_atd, s.etd_atd) AS etd_atd, coalesce(om.ata, om.eta, s.eta_ata) AS eta_ata
+        FROM seguimiento_importaciones s
+        LEFT JOIN operaciones_maritima om ON om.no_booking = s.booking
+        WHERE upper(trim(s.client)) = upper(trim(%s)) AND s.fecha >= %s
+        ORDER BY s.fecha DESC
+    """, (cliente, hoy - timedelta(days=365))).fetchall()
+    asig = db.execute(
+        "SELECT vendedor, desarrollador FROM asignacion_de_clientes WHERE upper(trim(razon_social)) = upper(trim(%s)) LIMIT 1",
+        (cliente,),
+    ).fetchone()
+    ultimo_bk = db.execute(
+        "SELECT max(fecha)::date AS u FROM reporte_bookings WHERE upper(trim(cliente_servicio)) = upper(trim(%s))", (cliente,),
+    ).fetchone()["u"]
+    db.close()
+    if not filas:
+        return None
+
+    def equipo_corto(e):
+        return (e or "—").replace("contenedores", "cont.").replace("contenedor", "cont.")
+
+    rutas = {}
+    for r in filas:
+        clave = (_puerto_limpio(r["pol"]), _puerto_limpio(r["pod"]))
+        rt = rutas.setdefault(clave, {"o": clave[0], "d": clave[1], "n": 0, "equipos": collections.Counter(),
+                                      "navieras": collections.Counter(), "transitos": [], "ultima": None})
+        rt["n"] += 1
+        if r["equipo"]:
+            rt["equipos"][equipo_corto(r["equipo"])] += 1
+        if r["naviera"]:
+            rt["navieras"][r["naviera"]] += 1
+        if r["etd_atd"] and r["eta_ata"] and r["eta_ata"] > r["etd_atd"]:
+            rt["transitos"].append((r["eta_ata"] - r["etd_atd"]).days)
+        rt["ultima"] = max(rt["ultima"] or r["fecha"], r["fecha"])
+    rutas = sorted(rutas.values(), key=lambda x: -x["n"])[:8]
+    for rt in rutas:
+        rt["equipo"] = rt["equipos"].most_common(1)[0][0] if rt["equipos"] else "—"
+        rt["naviera"] = _naviera_corta(rt["navieras"].most_common(1)[0][0]) if rt["navieras"] else "—"
+        rt["transito"] = f"{round(statistics.median(rt['transitos']))} días" if rt["transitos"] else "—"
+        rt["ultima_txt"] = _fecha_corta(rt["ultima"])
+
+    ultimo = max(x for x in (filas[0]["fecha"], ultimo_bk) if x)
+    meses = []
+    for i in range(11, -1, -1):
+        anio, mes = hoy.year, hoy.month - i
+        while mes <= 0:
+            mes += 12
+            anio -= 1
+        n = sum(1 for r in filas if r["fecha"].year == anio and r["fecha"].month == mes)
+        meses.append({"etq": f"{_MESES_CORTOS[mes - 1]} {str(anio)[2:]}", "n": n})
+    meses_activos = len({(r["fecha"].year, r["fecha"].month) for r in filas}) or 1
+    lunes = hoy - timedelta(days=hoy.weekday())
+    return {
+        "cliente": cliente, "rutas": rutas, "total": len(filas), "ultimo": ultimo, "ultimo_txt": _fecha_corta(ultimo),
+        "dias_sin": (hoy - ultimo).days, "promedio_mes": round(len(filas) / meses_activos, 1), "meses": meses,
+        "ultimos": [{
+            "fecha": _fecha_corta(r["fecha"]), "booking": r["booking"] or "—",
+            "ruta": f"{_puerto_limpio(r['pol'])} > {_puerto_limpio(r['pod'])}",
+            "naviera": _naviera_corta(r["naviera"]), "equipo": equipo_corto(r["equipo"]), "arribo": _fecha_corta(r["eta_ata"], False),
+        } for r in filas[:8]],
+        "vendedor": _nombre_asignado(asig and asig["vendedor"]),
+        "desarrollador": _nombre_asignado(asig and asig["desarrollador"]),
+        "semana": f"{_fecha_corta(lunes, False)} al {_fecha_corta(lunes + timedelta(days=6))}",
+        "generado": _fecha_corta(hoy),
+    }
+
+
+FASES_SERVICIO = ["Origen / Booking", "Zarpe", "Tránsito", "Pre-arribo", "Arribo", "Liberación y entrega", "Cierre"]
+
+
+def servicios_vigentes_cliente(cliente):
+    """Servicios en curso del cliente según el track de Seguimiento de
+    Importaciones (vista track_embarques) + datos de CargoLink. La etapa del
+    track se traduce a las 7 fases del recorrido que ve el cliente."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    filas = db.execute("""
+        SELECT t.no_booking, t.type, t.fecha, t.etapa, t.etd_atd, t.eta, t.ata, t.siguiente_hito, t.siguiente_fecha,
+               om.origen, om.destino, om.contenedores, coalesce(om.eta, t.eta) AS eta_cl, s.pol, s.pod, s.naviera, s.contenedor
+        FROM track_embarques t
+        LEFT JOIN operaciones_maritima om ON om.no_booking = t.no_booking
+        LEFT JOIN seguimiento_importaciones s ON s.booking = t.no_booking
+        WHERE upper(trim(t.cliente)) = upper(trim(%s))
+        ORDER BY coalesce(t.ata, t.eta, t.etd_atd, t.fecha) DESC
+    """, (cliente,)).fetchall()
+    db.close()
+    servicios = []
+    for f in filas:
+        eta = f["ata"] or f["eta_cl"]
+        etapa = f["etapa"] or ""
+        if etapa == "Por zarpar":
+            fase = 1 if not f["etd_atd"] or f["etd_atd"] > hoy else 2
+            estatus = "Por zarpar" + (f" · salida {_fecha_corta(f['etd_atd'])}" if f["etd_atd"] else " · salida por confirmar")
+        elif etapa == "En tránsito":
+            fase = 4 if eta and 0 <= (eta - hoy).days <= 7 else 3
+            estatus = "En tránsito" + (f" · arribo estimado {_fecha_corta(eta)}" if eta else "")
+        elif etapa == "En puerto":
+            fase = 5 if f["ata"] and (hoy - f["ata"]).days <= 2 else 6
+            estatus = "Arribó a puerto" + (f" el {_fecha_corta(f['ata'])}" if f["ata"] else "") + " · liberación y entrega"
+        elif etapa == "En demora":
+            fase = 6
+            estatus = "En puerto · liberación y entrega del contenedor"
+        else:
+            fase = 1
+            estatus = etapa or "En proceso"
+        servicios.append({
+            "booking": f["no_booking"], "tipo": "FCL" if (f["type"] or "").startswith("FCL") else "LCL" if (f["type"] or "").startswith("LCL") else (f["type"] or ""),
+            "ruta": f"{_puerto_limpio(f['origen'] or f['pol'])} > {_puerto_limpio(f['destino'] or f['pod'])}",
+            "contenedor": (f["contenedores"] or f["contenedor"] or "").strip() or "Por asignar",
+            "naviera": _naviera_corta(f["naviera"]) if f["naviera"] else "—",
+            "salida": _fecha_corta(f["etd_atd"]) if f["etd_atd"] else "Por confirmar",
+            "arribo": _fecha_corta(eta) if eta else "Por confirmar",
+            "fase": fase, "fase_nombre": FASES_SERVICIO[fase - 1], "estatus": estatus,
+        })
+    return servicios
+
+
+@app.route("/reportes/reactivacion")
+@reportes_required
+def reportes_reactivacion():
+    """Reportes → Clientes por reactivar: lista por plaza / vendedor con la venta
+    del año en curso por mes y, por cliente, el informe para enviarle (el
+    vendedor elige una de las 5 propuestas)."""
+    tipo = "recurrentes" if request.args.get("tipo") == "recurrentes" else "inactivos"
+    todos = clientes_por_reactivar(recurrentes=(tipo == "recurrentes"))
+    plazas = sorted({c["plaza"] for c in todos if c["plaza"]})
+    plaza = (request.args.get("plaza", "") or "").strip()
+    if plaza not in plazas:
+        plaza = ""
+    con_plaza = [c for c in todos if not plaza or c["plaza"] == plaza]
+    vendedores = sorted({c["vendedor_original"] for c in con_plaza if c["vendedor_original"]}, key=str.lower)
+    vendedor = (request.args.get("vendedor", "") or "").strip()
+    if vendedor not in vendedores:
+        vendedor = ""
+    clientes = [c for c in con_plaza if not vendedor or c["vendedor_original"] == vendedor]
+    hoy = datetime.now(TZ_LOCAL).date()
+    return render_template(
+        "reportes_reactivacion.html", tipo=tipo, clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
+        vendedor=vendedor, dias_minimos=DIAS_SIN_BOOKING_REACTIVACION, disenos=DISENOS_INFORME_REACTIVACION,
+        anio=hoy.year, meses=_MESES_CORTOS, mes_actual=hoy.month,
+        totales_mes=[sum(c["ventas"][i] for c in clientes) for i in range(12)],
+    )
+
+
+@app.route("/reportes/reactivacion/carta")
+@reportes_required
+def reportes_reactivacion_carta():
+    """Carta de servicio para clientes recurrentes: compromiso con el mejor
+    servicio + sus servicios vigentes con su estatus (track de Seguimiento)."""
+    cliente = (request.args.get("cliente", "") or "").strip()
+    permitido = {normalizar(c["cliente"]) for c in clientes_por_reactivar(recurrentes=True)}
+    if normalizar(cliente) not in permitido:
+        flash("Ese cliente no está en tu lista de clientes recurrentes.")
+        return redirect(url_for("reportes_reactivacion", tipo="recurrentes"))
+    d = datos_informe_reactivacion(cliente) or {"cliente": cliente, "rutas": [], "total": 0, "promedio_mes": 0}
+    hoy = datetime.now(TZ_LOCAL).date()
+    d.setdefault("generado", _fecha_corta(hoy))
+    servicios = servicios_vigentes_cliente(cliente)
+    return render_template(
+        "informe_reactivacion/carta_recurrente.html", d=d, servicios=servicios, fases=FASES_SERVICIO,
+        disenos=None, diseno=None,
+    )
+
+
+@app.route("/reportes/reactivacion/informe")
+@reportes_required
+def reportes_reactivacion_informe():
+    cliente = (request.args.get("cliente", "") or "").strip()
+    diseno = request.args.get("diseno", type=int) or 1
+    if diseno not in dict(DISENOS_INFORME_REACTIVACION):
+        diseno = 1
+    # Solo clientes que el usuario puede ver y que siguen siendo candidatos.
+    permitido = {normalizar(c["cliente"]) for c in clientes_por_reactivar()}
+    if normalizar(cliente) not in permitido:
+        flash("Ese cliente no está en tu lista de reactivación.")
+        return redirect(url_for("reportes_reactivacion"))
+    d = datos_informe_reactivacion(cliente)
+    if d is None:
+        flash("No hay embarques recientes de ese cliente para armar el informe.")
+        return redirect(url_for("reportes_reactivacion"))
+    return render_template(
+        f"informe_reactivacion/diseno_{diseno}.html", d=d, diseno=diseno, disenos=DISENOS_INFORME_REACTIVACION,
+    )
 
 
 @app.route("/crm/seguimientos")

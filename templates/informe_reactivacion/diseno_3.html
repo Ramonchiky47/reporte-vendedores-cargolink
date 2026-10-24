@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Informe semanal · {{ d.cliente }}</title>
+<style>
+  @page { size: Letter; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; background: #f6f1ec; }
+  .pagina { width: 8.5in; padding: 0.35in 0.5in 0.2in; }
+  .enc-blanco { background: #fff; border-radius: 14px; padding: 14px 18px 0; overflow: hidden; }
+  .intro { display: flex; gap: 18px; align-items: center; margin: 18px 0 14px; }
+  .intro .sello { flex: none; width: 92px; height: 92px; border-radius: 50%; border: 3px dashed #7a1f1f; color: #7a1f1f; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 800; transform: rotate(-8deg); }
+  .intro .sello b { font-size: 26px; line-height: 1; }
+  .intro .sello span { font-size: 8px; text-transform: uppercase; letter-spacing: 1px; text-align: center; }
+  .intro h1 { margin: 0 0 6px; font-size: 25px; color: #111827; line-height: 1.15; }
+  .intro p { margin: 0; font-size: 11.5px; color: #4b5563; line-height: 1.5; }
+  .boleto { display: flex; background: #fff; border-radius: 16px; margin-bottom: 11px; box-shadow: 0 3px 10px rgba(0,0,0,.06); overflow: hidden; position: relative; }
+  .boleto .lado { width: 30%; background: #7a1f1f; color: #fff; padding: 14px 16px; position: relative; }
+  .boleto .lado .tipo { font-size: 8.5px; letter-spacing: 1.5px; text-transform: uppercase; opacity: .8; font-weight: 700; }
+  .boleto .lado .codigos { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: 1px; }
+  .boleto .lado .codigos span { font-size: 15px; opacity: .7; margin: 0 4px; }
+  .boleto .lado .n { font-size: 10px; margin-top: 4px; opacity: .9; }
+  .boleto .corte { width: 0; border-left: 2px dashed #e5d5d5; margin: 10px 0; position: relative; }
+  .boleto .corte::before, .boleto .corte::after { content: ""; position: absolute; left: -11px; width: 20px; height: 20px; border-radius: 50%; background: #f6f1ec; }
+  .boleto .corte::before { top: -21px; } .boleto .corte::after { bottom: -21px; }
+  .boleto .cuerpo { flex: 1; padding: 13px 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; align-items: start; }
+  .campo .etq { font-size: 8px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .campo .val { font-size: 12px; font-weight: 700; color: #111827; margin-top: 2px; }
+  .campo .val.grande { font-size: 15px; }
+  .campo.ancho { grid-column: span 2; }
+  .pend { display: inline-block; font-size: 10px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 6px; padding: 2px 7px; }
+  .barras { grid-column: span 4; height: 22px; background: repeating-linear-gradient(90deg, #111827 0 2px, transparent 2px 4px, #111827 4px 5px, transparent 5px 8px); opacity: .18; border-radius: 3px; }
+  .resumen { display: flex; gap: 10px; margin: 6px 0 12px; }
+  .resumen div { flex: 1; background: #fff; border-radius: 12px; padding: 10px 14px; border-left: 4px solid #7a1f1f; }
+  .resumen b { display: block; font-size: 19px; color: #111827; }
+  .resumen span { font-size: 9.5px; color: #6b7280; text-transform: uppercase; letter-spacing: .6px; }
+  .cta { background: #111827; color: #fff; border-radius: 16px; padding: 16px 22px; display: flex; align-items: center; gap: 16px; margin-top: 4px; }
+  .cta h3 { margin: 0 0 3px; font-size: 16px; }
+  .cta p { margin: 0; font-size: 10.5px; opacity: .85; }
+  .cta .boton { margin-left: auto; background: #a8323a; padding: 11px 16px; border-radius: 10px; font-weight: 800; font-size: 11.5px; white-space: nowrap; }
+  .pie { margin-top: 8px; font-size: 8px; color: #9ca3af; text-align: center; }
+</style></head>
+<body>
+{% include "informe_reactivacion/_barra.html" %}<div class="pagina">
+  <div class="enc-blanco">{% include "informe_reactivacion/_encabezado.html" %}</div>
+  <div class="intro">
+    <div class="sello"><b>{{ d.rutas|length }}</b><span>rutas<br>con espacio</span></div>
+    <div>
+      <h1>Tus boletos para esta semana ya están listos</h1>
+      <p>{{ d.cliente|title }}, preparamos tus rutas de siempre para la semana del {{ d.semana }}. Solo elige la salida y nosotros nos encargamos del resto.</p>
+    </div>
+  </div>
+  <div class="resumen">
+    <div><b>{{ d.total }}</b><span>embarques en 12 meses</span></div>
+    <div><b>{{ d.ultimo_txt }}</b><span>tu última carga</span></div>
+    <div><b>{{ d.promedio_mes }}</b><span>embarques por mes</span></div>
+  </div>
+  {% for r in d.rutas[:5] %}
+  <div class="boleto">
+    <div class="lado">
+      <div class="tipo">Marítimo · FCL</div>
+      <div class="codigos">{{ r.o|codigo_puerto }}<span>→</span>{{ r.d|codigo_puerto }}</div>
+      <div class="n">{{ r.n }} embarques contigo</div>
+    </div>
+    <div class="corte"></div>
+    <div class="cuerpo">
+      <div class="campo ancho"><div class="etq">Origen → Destino</div><div class="val grande">{{ r.o }} → {{ r.d }}</div></div>
+      <div class="campo"><div class="etq">Tránsito</div><div class="val grande">{{ r.transito }}</div></div>
+      <div class="campo"><div class="etq">Equipo</div><div class="val">{{ r.equipo.split('(')[1].rstrip(')') if '(' in r.equipo else r.equipo }}</div></div>
+      <div class="campo ancho"><div class="etq">Naviera habitual</div><div class="val">{{ r.naviera }}</div></div>
+      <div class="campo"><div class="etq">Próxima salida</div><div class="val"><span class="pend">Por confirmar</span></div></div>
+      <div class="campo"><div class="etq">Reserva antes de</div><div class="val"><span class="pend">Por confirmar</span></div></div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="cta">
+    <div><h3>¿Abordamos tu siguiente carga?</h3><p>Responde este correo con la ruta que te interesa.{% if d.vendedor %} Tu ejecutivo: <b>{{ d.vendedor }}</b>{% endif %}{% if d.desarrollador %} · Desarrollo: <b>{{ d.desarrollador }}</b>{% endif %}</p></div>
+    <div class="boton">Reservar mi boleto →</div>
+  </div>
+  <div class="pie">Basado en tu historial con AV2 Logistics de los últimos 12 meses. Espacios sujetos a confirmación. av2logistics.com/terminos-y-condiciones · {{ d.generado }}</div>
+</div></body></html>

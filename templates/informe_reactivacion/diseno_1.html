@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Informe semanal · {{ d.cliente }}</title>
+<style>
+  @page { size: Letter; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; }
+  .pagina { width: 8.5in; padding: 0.4in 0.55in 0.2in; position: relative; }
+  .hero { margin-top: 18px; border-radius: 18px; overflow: hidden; background: linear-gradient(135deg, #5a1414 0%, #7a1f1f 45%, #a8323a 100%); color: #fff; padding: 26px 30px 22px; position: relative; }
+  .hero::after { content: ""; position: absolute; right: -60px; top: -60px; width: 260px; height: 260px; border-radius: 50%; background: rgba(255,255,255,.07); }
+  .etiqueta { display: inline-block; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.3); padding: 4px 12px; border-radius: 999px; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; font-weight: 700; }
+  .hero h1 { font-size: 30px; line-height: 1.12; margin: 12px 0 6px; font-weight: 800; max-width: 85%; }
+  .hero p { margin: 0; font-size: 12px; opacity: .9; max-width: 80%; line-height: 1.5; }
+  .ruta-svg { margin: 18px 0 4px; }
+  .cifras { display: flex; gap: 12px; margin-top: 14px; }
+  .cifra { flex: 1; background: rgba(255,255,255,.1); border-radius: 12px; padding: 12px 14px; }
+  .cifra b { display: block; font-size: 24px; font-weight: 800; }
+  .cifra span { font-size: 10px; opacity: .85; text-transform: uppercase; letter-spacing: .8px; }
+  h2 { font-size: 16px; color: #7a1f1f; margin: 18px 0 9px; display: flex; align-items: center; gap: 8px; }
+  h2::before { content: ""; width: 6px; height: 18px; background: #7a1f1f; border-radius: 3px; }
+  .rejilla { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tarjeta { border: 1px solid #ece3e3; border-radius: 14px; padding: 14px 16px; background: #fff; box-shadow: 0 2px 6px rgba(122,31,31,.06); }
+  .tarjeta .tray { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 15px; color: #111827; }
+  .tarjeta .tray .linea { flex: 1; border-top: 2px dashed #d9b7b7; position: relative; height: 0; }
+  .tarjeta .tray .linea::after { content: "⛴"; position: absolute; left: 45%; top: -11px; font-size: 13px; color: #7a1f1f; }
+  .tarjeta .ciudades { display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; margin-top: 2px; }
+  .tarjeta .datos { display: flex; gap: 14px; margin-top: 10px; font-size: 10.5px; color: #374151; }
+  .tarjeta .datos b { display: block; font-size: 13px; color: #111827; }
+  .chip { display: inline-block; margin-top: 10px; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: #fdf2f2; color: #7a1f1f; border: 1px dashed #e0b4b4; }
+  .cta { margin-top: 16px; border-radius: 16px; background: #111827; color: #fff; padding: 20px 26px; display: flex; align-items: center; gap: 20px; }
+  .cta h3 { margin: 0 0 4px; font-size: 18px; }
+  .cta p { margin: 0; font-size: 11px; opacity: .85; line-height: 1.5; }
+  .cta .boton { margin-left: auto; background: #a8323a; padding: 12px 18px; border-radius: 10px; font-weight: 800; font-size: 12px; white-space: nowrap; }
+  .pie { margin-top: 16px; font-size: 8px; color: #9ca3af; text-align: center; line-height: 1.5; }
+</style></head>
+<body>
+{% include "informe_reactivacion/_barra.html" %}<div class="pagina">
+  {% include "informe_reactivacion/_encabezado.html" %}
+  {% set r0 = d.rutas[0] %}
+  <div class="hero">
+    <span class="etiqueta">Informe semanal · {{ d.semana }}</span>
+    <h1>Tu ruta {{ r0.o }} → {{ r0.d }} tiene espacio esta semana</h1>
+    <p>{{ d.cliente|title }}: hace {{ d.dias_sin }} días que no movemos una carga juntos. Tenemos disponibilidad en las rutas que más utilizas — reserva hoy y asegura tu salida.</p>
+    <svg class="ruta-svg" width="100%" height="92" viewBox="0 0 640 92">
+      <path d="M40 70 C 200 -10, 440 -10, 600 70" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.5" stroke-dasharray="7 7"/>
+      <circle cx="40" cy="70" r="9" fill="#fff"/><circle cx="600" cy="70" r="9" fill="#fff"/>
+      <circle cx="40" cy="70" r="16" fill="none" stroke="rgba(255,255,255,.35)"/><circle cx="600" cy="70" r="16" fill="none" stroke="rgba(255,255,255,.35)"/>
+      <text x="40" y="40" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">{{ r0.o|codigo_puerto }}</text>
+      <text x="600" y="40" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">{{ r0.d|codigo_puerto }}</text>
+      <g transform="translate(300,10)"><rect x="-58" y="-2" width="116" height="26" rx="13" fill="rgba(255,255,255,.18)"/><text x="0" y="16" fill="#fff" font-size="12" font-weight="700" text-anchor="middle">⛴ {{ r0.transito }} de tránsito</text></g>
+      <text x="40" y="90" fill="rgba(255,255,255,.8)" font-size="11" text-anchor="middle">{{ r0.o }}</text>
+      <text x="600" y="90" fill="rgba(255,255,255,.8)" font-size="11" text-anchor="middle">{{ r0.d }}</text>
+    </svg>
+    <div class="cifras">
+      <div class="cifra"><b>{{ d.total }}</b><span>embarques en 12 meses</span></div>
+      <div class="cifra"><b>{{ r0.n }}</b><span>en tu ruta principal</span></div>
+      <div class="cifra"><b>{{ r0.equipo.split('(')[1].rstrip(')') if '(' in r0.equipo else r0.equipo }}</b><span>tu equipo habitual</span></div>
+    </div>
+  </div>
+
+  <h2>Tus rutas habituales</h2>
+  <div class="rejilla">
+    {% for r in d.rutas[:4] %}
+    <div class="tarjeta">
+      <div class="tray">{{ r.o|codigo_puerto }} <span class="linea"></span> {{ r.d|codigo_puerto }}</div>
+      <div class="ciudades"><span>{{ r.o }}</span><span>{{ r.d }}</span></div>
+      <div class="datos">
+        <div><b>{{ r.n }}</b>embarques</div>
+        <div><b>{{ r.transito }}</b>tránsito</div>
+        <div><b>{{ r.naviera }}</b>naviera</div>
+      </div>
+      <span class="chip">Próxima salida: por confirmar</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="cta">
+    <div>
+      <h3>¿Listo para tu siguiente carga?</h3>
+      <p>Responde este correo y te confirmamos espacio, salida y tarifa en menos de 24 horas.{% if d.vendedor %}<br>Tu ejecutivo: <b>{{ d.vendedor }}</b>{% endif %}{% if d.desarrollador %} · Desarrollo de cuenta: <b>{{ d.desarrollador }}</b>{% endif %}</p>
+    </div>
+    <div class="boton">Reservar espacio →</div>
+  </div>
+  <div class="pie">Información basada en tu historial con AV2 Logistics de los últimos 12 meses. Espacios sujetos a confirmación. Términos y condiciones: av2logistics.com/terminos-y-condiciones · Generado el {{ d.generado }}</div>
+</div></body></html>

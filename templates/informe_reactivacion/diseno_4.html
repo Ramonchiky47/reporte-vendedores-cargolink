@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Informe semanal · {{ d.cliente }}</title>
+<style>
+  @page { size: Letter; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; background: #fff; }
+  .pagina { width: 8.5in; padding: 0.4in 0.55in 0.2in; }
+  .cuerpo { display: grid; grid-template-columns: 1.55fr 1fr; gap: 26px; margin-top: 20px; }
+  .fecha { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1.2px; }
+  .carta h1 { font-family: Georgia, "Times New Roman", serif; font-size: 27px; color: #7a1f1f; line-height: 1.2; margin: 8px 0 14px; font-weight: 700; }
+  .carta p { font-size: 12px; line-height: 1.65; color: #374151; margin: 0 0 11px; }
+  .carta p b { color: #111827; }
+  .destacado { background: #fbf4f2; border-left: 4px solid #7a1f1f; border-radius: 0 12px 12px 0; padding: 14px 16px; margin: 14px 0; }
+  .destacado h3 { margin: 0 0 8px; font-size: 12px; color: #7a1f1f; text-transform: uppercase; letter-spacing: 1px; }
+  .ruta-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #f0e4e1; font-size: 11.5px; }
+  .ruta-item:last-child { border-bottom: none; }
+  .ruta-item b { color: #111827; }
+  .ruta-item .meta { font-size: 10px; color: #6b7280; }
+  .ruta-item .pend { font-size: 9.5px; font-weight: 700; color: #7a1f1f; border: 1px dashed #d8b4b4; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+  .firma { margin-top: 18px; display: flex; align-items: center; gap: 12px; }
+  .firma .avatar { width: 46px; height: 46px; border-radius: 50%; background: #7a1f1f; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; }
+  .firma .nombre { font-family: Georgia, serif; font-size: 16px; font-style: italic; color: #111827; }
+  .firma .puesto { font-size: 10px; color: #6b7280; }
+  .lateral { background: #111827; color: #fff; border-radius: 18px; padding: 20px 18px; }
+  .lateral h2 { margin: 0 0 14px; font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #fca5a5; }
+  .dato { margin-bottom: 14px; }
+  .dato b { display: block; font-size: 30px; font-weight: 800; line-height: 1; }
+  .dato span { font-size: 10px; color: #cbd5e1; }
+  .linea-tiempo { margin-top: 18px; border-left: 2px solid #374151; padding-left: 14px; }
+  .hito { position: relative; margin-bottom: 11px; }
+  .hito::before { content: ""; position: absolute; left: -20px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: #f87171; border: 2px solid #111827; }
+  .hito .f { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: .8px; }
+  .hito .t { font-size: 11px; font-weight: 700; }
+  .hito .s { font-size: 9.5px; color: #cbd5e1; }
+  .cta { margin-top: 18px; display: flex; align-items: center; gap: 16px; border: 2px solid #7a1f1f; border-radius: 14px; padding: 13px 18px; }
+  .cta p { margin: 0; font-size: 11px; color: #374151; }
+  .cta .boton { margin-left: auto; background: #7a1f1f; color: #fff; padding: 10px 16px; border-radius: 10px; font-weight: 800; font-size: 11.5px; white-space: nowrap; }
+  .pie { margin-top: 12px; font-size: 8px; color: #9ca3af; text-align: center; }
+</style></head>
+<body>
+{% include "informe_reactivacion/_barra.html" %}<div class="pagina">
+  {% include "informe_reactivacion/_encabezado.html" %}
+  {% set firmante = d.vendedor or d.desarrollador or 'Tu equipo AV2' %}
+  <div class="cuerpo">
+    <div class="carta">
+      <div class="fecha">Semana del {{ d.semana }}</div>
+      <h1>Te guardamos un lugar en tus rutas de siempre</h1>
+      <p>Estimado equipo de <b>{{ d.cliente|title }}</b>:</p>
+      <p>Durante el último año movimos juntos <b>{{ d.total }} embarques</b>, en promedio <b>{{ d.promedio_mes }} al mes</b>. Tu última carga con nosotros salió el <b>{{ d.ultimo_txt }}</b> y queremos que la siguiente también sea con AV2.</p>
+      <p>Esta semana tenemos disponibilidad en las rutas que más utilizas. Si tienes mercancía por mover, este es un buen momento para asegurar tu espacio y tu fecha de salida.</p>
+      <div class="destacado">
+        <h3>Disponible para ti esta semana</h3>
+        {% for r in d.rutas[:4] %}
+        <div class="ruta-item">
+          <div><b>{{ r.o }} → {{ r.d }}</b><div class="meta">{{ r.equipo }} · {{ r.transito }} de tránsito · {{ r.naviera }}</div></div>
+          <span class="pend">Salida por confirmar</span>
+        </div>
+        {% endfor %}
+      </div>
+      <p>Responde este correo con tu volumen estimado y en menos de 24 horas te confirmamos espacio, salida y tarifa.</p>
+      <div class="firma">
+        <div class="avatar">{{ firmante.split()[0][0] }}{{ firmante.split()[-1][0] if firmante.split()|length > 1 else '' }}</div>
+        <div><div class="nombre">{{ firmante }}</div><div class="puesto">Ejecutivo comercial · AV2 Logistics{% if d.vendedor and d.desarrollador %} · con {{ d.desarrollador }}{% endif %}</div></div>
+      </div>
+    </div>
+    <div class="lateral">
+      <h2>Lo que hemos movido juntos</h2>
+      <div class="dato"><b>{{ d.total }}</b><span>embarques en los últimos 12 meses</span></div>
+      <div class="dato"><b>{{ d.rutas|length }}</b><span>rutas diferentes</span></div>
+      <div class="dato"><b>{{ d.rutas[0].o|codigo_puerto }} → {{ d.rutas[0].d|codigo_puerto }}</b><span>tu ruta favorita · {{ d.rutas[0].n }} embarques</span></div>
+      <h2 style="margin-top: 20px;">Tus últimas cargas</h2>
+      <div class="linea-tiempo">
+        {% for u in d.ultimos[:6] %}
+        <div class="hito"><div class="f">{{ u.fecha }}</div><div class="t">{{ u.ruta }}</div><div class="s">{{ u.equipo }} · {{ u.naviera }}</div></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="cta"><p><b>¿Te apartamos un espacio?</b> Un correo basta para reservar tu siguiente salida.</p><div class="boton">Responder y reservar →</div></div>
+  <div class="pie">Basado en tu historial con AV2 Logistics de los últimos 12 meses. Espacios sujetos a confirmación. av2logistics.com/terminos-y-condiciones · {{ d.generado }}</div>
+</div></body></html>

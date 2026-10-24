@@ -1,0 +1,25 @@
+<div class="barra-informe no-imprimir">
+  <a href="{{ url_for('reportes_reactivacion') }}">&larr; Clientes</a>
+  <span class="bi-cliente">{{ d.cliente }}</span>
+  {% if disenos %}
+  <form method="get" action="{{ url_for('reportes_reactivacion_informe') }}">
+    <input type="hidden" name="cliente" value="{{ d.cliente }}">
+    <label>Propuesta:
+      <select name="diseno" onchange="this.form.submit()">
+        {% for n, nombre in disenos %}<option value="{{ n }}" {{ 'selected' if n == diseno else '' }}>{{ n }} · {{ nombre }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+  <button type="button" onclick="window.print()">Descargar PDF</button>
+</div>
+<style>
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .barra-informe { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 18px; background: #111827; color: #fff; font-family: "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
+  .barra-informe a { color: #fca5a5; text-decoration: none; font-weight: 600; }
+  .barra-informe .bi-cliente { font-weight: 700; flex: 1; }
+  .barra-informe select { padding: 5px 8px; border-radius: 6px; border: none; font: inherit; }
+  .barra-informe button { background: #a8323a; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  @media screen { html { background: #e5e7eb; } .pagina { margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,.18); } }
+  @media print { .no-imprimir { display: none !important; } .pagina { margin: 0 !important; box-shadow: none !important; } }
+</style>

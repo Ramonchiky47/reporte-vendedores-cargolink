@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Clientes por reactivar{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  main { max-width: 1560px; }
+  .rx-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rx-cab h2 { margin: 0; font-size: 1.45rem; }
+  .rx-cab p { margin: .25rem 0 0; color: var(--ink-3); font-size: .88rem; }
+  .rx-volver { font-size: .85rem; font-weight: 600; }
+  .rx-tabs { display: inline-flex; background: #eef2f7; border-radius: 12px; padding: 4px; gap: 4px; }
+  .rx-tabs a { padding: .5rem 1rem; border-radius: 9px; font-size: .88rem; font-weight: 700; color: var(--ink-2); text-decoration: none; }
+  .rx-tabs a.activa { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(15,23,42,.12); }
+  .rx-filtros { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .75rem 1rem; margin: 1rem 0; }
+  .rx-filtros label { font-size: .8rem; font-weight: 700; color: var(--ink-2); }
+  .rx-filtros select { padding: .4rem .6rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; min-width: 200px; }
+  .rx-filtros .rx-buscar { margin-left: auto; padding: .45rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .88rem; min-width: 260px; }
+  .rx-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+  @media (max-width: 900px) { .rx-kpis { grid-template-columns: repeat(2, 1fr); } }
+  .rx-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem; }
+  .rx-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .rx-kpi .val { font-size: 1.5rem; font-weight: 800; color: var(--ink); margin-top: .2rem; font-variant-numeric: tabular-nums; }
+  .rx-kpi .sub { font-size: .75rem; color: var(--ink-3); }
+  .rx-kpi.vino { border-color: #e7c3c3; background: linear-gradient(180deg, #fbefef, #fff 70%); }
+  .rx-tabla-wrap { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: auto; max-height: 72vh; }
+  table.rx { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .8rem; }
+  .rx th { position: sticky; top: 0; z-index: 2; background: #7a1f2c; color: #fff; text-align: right; padding: .6rem .55rem; font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .rx th.izq, .rx td.izq { text-align: left; }
+  .rx td { padding: .55rem .55rem; border-bottom: 1px solid #f1f5f9; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rx tbody tr:hover td { background: #fbf6f6; }
+  .rx .col-cliente { position: sticky; left: 0; z-index: 1; background: #fff; min-width: 260px; max-width: 320px; white-space: normal; text-align: left; box-shadow: 1px 0 0 #eef2f7; }
+  .rx th.col-cliente { z-index: 3; background: #7a1f2c; }
+  .rx tbody tr:hover td.col-cliente { background: #fbf6f6; }
+  .rx .nombre { font-weight: 700; color: var(--ink); }
+  .rx .equipo { font-size: .72rem; color: var(--ink-3); margin-top: 2px; }
+  .rx .cero { color: #cbd5e1; }
+  .rx .futuro { background: #fafafa; }
+  .rx th.futuro { background: #9a3d49; }
+  .rx .total { font-weight: 800; color: var(--ink); background: #fbf6f6; }
+  .rx tfoot td { position: sticky; bottom: 0; background: #f8fafc; font-weight: 800; border-top: 2px solid #e2e8f0; }
+  .rx tfoot td.col-cliente { background: #f8fafc; }
+  .dias { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .72rem; font-weight: 800; }
+  .dias.alto { background: #fee2e2; color: #991b1b; } .dias.medio { background: #fef3c7; color: #92400e; } .dias.bajo { background: #e0f2fe; color: #075985; }
+  .rx-accion { display: flex; gap: .4rem; align-items: center; justify-content: flex-end; }
+  .rx-accion select { padding: .3rem .4rem; border: 1px solid var(--border-strong); border-radius: 7px; font: inherit; font-size: .78rem; }
+  .rx-accion a { background: #7a1f2c; color: #fff; padding: .38rem .7rem; border-radius: 8px; font-size: .78rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .rx-vacio { padding: 2.5rem; text-align: center; color: var(--ink-3); }
+</style>
+{% endblock %}
+{% block content %}
+  <a class="rx-volver" href="{{ url_for('reportes_graficas') }}">&larr; Reportes</a>
+  <div class="rx-cab">
+    <div>
+      <h2>{{ 'Clientes por reactivar' if tipo == 'inactivos' else 'Clientes recurrentes' }}</h2>
+      <p>{% if tipo == 'inactivos' %}Clientes que embarcaban con nosotros y llevan más de {{ dias_minimos }} días sin solicitar un booking. Elige la propuesta y descarga su informe semanal.{% else %}Clientes con booking en los últimos {{ dias_minimos }} días. Descarga su carta de servicio con el estatus de sus embarques vigentes.{% endif %}</p>
+    </div>
+    <div class="rx-tabs">
+      <a class="{{ 'activa' if tipo == 'inactivos' else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None) }}">Por reactivar</a>
+      <a class="{{ 'activa' if tipo == 'recurrentes' else '' }}" href="{{ url_for('reportes_reactivacion', tipo='recurrentes', plaza=plaza or None) }}">Recurrentes</a>
+    </div>
+  </div>
+
+  <form class="rx-filtros" method="get">
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    <label for="rx-plaza">Plaza</label>
+    <select id="rx-plaza" name="plaza" onchange="this.form.vendedor.value=''; this.form.submit()">
+      <option value="">Todas las plazas</option>
+      {% for p in plazas %}<option value="{{ p }}" {{ 'selected' if p == plaza else '' }}>{{ p }}</option>{% endfor %}
+    </select>
+    <label for="rx-vendedor">Vendedor</label>
+    <select id="rx-vendedor" name="vendedor" onchange="this.form.submit()">
+      <option value="">Todos los vendedores</option>
+      {% for v in vendedores %}<option value="{{ v }}" {{ 'selected' if v == vendedor else '' }}>{{ v|title }}</option>{% endfor %}
+    </select>
+    <input class="rx-buscar" type="search" id="rx-buscar" placeholder="Buscar cliente..." autocomplete="off">
+  </form>
+
+  {% set total_venta = totales_mes|sum %}
+  <div class="rx-kpis">
+    <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{{ 'sin booking en más de ' ~ dias_minimos ~ ' días' if tipo == 'inactivos' else 'activos en el último mes' }}</div></div>
+    <div class="rx-kpi"><div class="etq">Venta {{ anio }}</div><div class="val">${{ '{:,.0f}'.format(total_venta) }}</div><div class="sub">de estos clientes, enero a la fecha</div></div>
+    <div class="rx-kpi"><div class="etq">Embarques 12 meses</div><div class="val">{{ clientes|sum(attribute='embarques') }}</div><div class="sub">importaciones marítimas</div></div>
+    <div class="rx-kpi"><div class="etq">{{ 'Promedio días sin booking' if tipo == 'inactivos' else 'Plazas' }}</div><div class="val">{% if tipo == 'inactivos' %}{{ ((clientes|sum(attribute='dias_sin')) / (clientes|length or 1))|round|int }}{% else %}{{ (clientes|map(attribute='plaza')|select|unique|list)|length }}{% endif %}</div><div class="sub">{{ 'desde su último embarque' if tipo == 'inactivos' else 'con clientes recurrentes' }}</div></div>
+  </div>
+
+  {% if clientes %}
+  <div class="rx-tabla-wrap">
+    <table class="rx" id="rx-tabla">
+      <thead><tr>
+        <th class="izq col-cliente">Cliente</th>
+        <th class="izq">Plaza</th>
+        <th>Emb. 12m</th>
+        <th>{{ 'Días sin' if tipo == 'inactivos' else 'Último' }}</th>
+        {% for m in meses %}<th class="{{ 'futuro' if loop.index > mes_actual else '' }}">{{ m|capitalize }}</th>{% endfor %}
+        <th>Total {{ anio }}</th>
+        <th>{{ 'Propuesta' if tipo == 'inactivos' else 'Carta' }}</th>
+      </tr></thead>
+      <tbody>
+        {% for c in clientes %}
+        <tr data-busqueda="{{ (c.cliente ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.desarrollador or ''))|lower }}">
+          <td class="col-cliente"><div class="nombre">{{ c.cliente }}</div><div class="equipo">{{ c.vendedor or 'Sin vendedor' }}{% if c.desarrollador %} · {{ c.desarrollador }}{% endif %}</div></td>
+          <td class="izq">{{ c.plaza or '—' }}</td>
+          <td>{{ c.embarques }}</td>
+          <td>{% if tipo == 'inactivos' %}<span class="dias {{ 'alto' if c.dias_sin > 90 else ('medio' if c.dias_sin > 60 else 'bajo') }}">{{ c.dias_sin }} d</span>{% else %}{{ c.ultimo_txt }}{% endif %}</td>
+          {% for v in c.ventas %}<td class="{{ 'futuro ' if loop.index > mes_actual else '' }}{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
+          <td class="total">{{ '{:,.0f}'.format(c.venta_total) if c.venta_total else '—' }}</td>
+          <td>
+            <div class="rx-accion">
+              {% if tipo == 'inactivos' %}
+              <select aria-label="Propuesta" class="rx-diseno">{% for n, nombre in disenos %}<option value="{{ n }}" title="{{ nombre }}">{{ n }}</option>{% endfor %}</select>
+              <a href="{{ url_for('reportes_reactivacion_informe', cliente=c.cliente) }}" target="_blank" rel="noopener" class="rx-ver" data-base="{{ url_for('reportes_reactivacion_informe', cliente=c.cliente) }}">Ver informe</a>
+              {% else %}
+              <a href="{{ url_for('reportes_reactivacion_carta', cliente=c.cliente) }}" target="_blank" rel="noopener">Carta de servicio</a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <td class="col-cliente">Total ({{ clientes|length }} clientes)</td><td></td><td>{{ clientes|sum(attribute='embarques') }}</td><td></td>
+        {% for t in totales_mes %}<td class="{{ 'futuro' if loop.index > mes_actual else '' }}">{{ '{:,.0f}'.format(t) if t else '—' }}</td>{% endfor %}
+        <td class="total">{{ '{:,.0f}'.format(total_venta) }}</td><td></td>
+      </tr></tfoot>
+    </table>
+  </div>
+  {% if tipo == 'inactivos' %}<p class="hint" style="margin-top:.6rem;">Propuestas: {% for n, nombre in disenos %}<b>{{ n }}</b> {{ nombre }}{{ ' · ' if not loop.last else '' }}{% endfor %}. Dentro del informe puedes cambiar de propuesta y descargarlo en PDF.</p>{% endif %}
+  {% else %}
+  <div class="rx-tabla-wrap"><div class="rx-vacio">No hay clientes con este filtro.</div></div>
+  {% endif %}
+
+<script>
+  (function () {
+    // La propuesta elegida viaja en el enlace "Ver informe".
+    document.querySelectorAll('#rx-tabla tbody tr').forEach(function (tr) {
+      var sel = tr.querySelector('.rx-diseno'), a = tr.querySelector('.rx-ver');
+      if (!sel || !a) return;
+      var actualizar = function () { a.href = a.dataset.base + '&diseno=' + sel.value; };
+      sel.addEventListener('change', actualizar); actualizar();
+    });
+    var buscar = document.getElementById('rx-buscar');
+    if (buscar) buscar.addEventListener('input', function () {
+      var q = buscar.value.trim().toLowerCase();
+      document.querySelectorAll('#rx-tabla tbody tr').forEach(function (tr) { tr.hidden = q && tr.dataset.busqueda.indexOf(q) === -1; });
+    });
+  })();
+</script>
+{% endblock %}

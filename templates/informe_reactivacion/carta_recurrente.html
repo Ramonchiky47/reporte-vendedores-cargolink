@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Carta de servicio · {{ d.cliente }}</title>
+<style>
+  @page { size: Letter; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; background: #fff; }
+  .pagina { width: 8.5in; padding: 0.4in 0.55in 0.3in; background: #fff; }
+  .fecha { margin-top: 20px; font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1.2px; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-size: 27px; color: #7a1f1f; line-height: 1.2; margin: 8px 0 14px; }
+  .carta p { font-size: 12px; line-height: 1.65; color: #374151; margin: 0 0 10px; }
+  .carta p b { color: #111827; }
+  .compromisos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 6px; }
+  .compromiso { background: #fbf4f2; border-radius: 12px; padding: 12px 14px; border-top: 3px solid #7a1f1f; }
+  .compromiso b { display: block; font-size: 12px; color: #7a1f1f; margin-bottom: 3px; }
+  .compromiso span { font-size: 10.5px; color: #4b5563; line-height: 1.45; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.4px; color: #7a1f1f; margin: 18px 0 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  h2 small { font-size: 10px; color: #9ca3af; letter-spacing: 0; text-transform: none; font-weight: 500; }
+  .servicio { border: 1px solid #eee3e1; border-radius: 14px; padding: 12px 16px; margin-bottom: 9px; page-break-inside: avoid; }
+  .servicio .fila1 { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .servicio .bk { font-weight: 800; font-size: 13px; color: #111827; }
+  .servicio .bk span { font-weight: 600; font-size: 10px; color: #7a1f1f; background: #fbf0ee; border-radius: 6px; padding: 2px 6px; margin-left: 6px; }
+  .servicio .ruta { font-size: 12px; font-weight: 700; color: #374151; }
+  .servicio .datos { display: flex; gap: 22px; margin-top: 6px; font-size: 10.5px; color: #6b7280; }
+  .servicio .datos b { color: #111827; font-weight: 700; }
+  .recorrido { display: flex; gap: 4px; margin-top: 10px; }
+  .recorrido div { flex: 1; text-align: center; }
+  .recorrido .punto { height: 6px; border-radius: 3px; background: #e5e7eb; }
+  .recorrido .hecho .punto { background: #7a1f1f; }
+  .recorrido .actual .punto { background: #d9465a; box-shadow: 0 0 0 2px #fde2e4; }
+  .recorrido .etq { font-size: 7.5px; color: #9ca3af; margin-top: 3px; text-transform: uppercase; letter-spacing: .4px; }
+  .recorrido .actual .etq { color: #7a1f1f; font-weight: 800; }
+  .estatus { margin-top: 6px; font-size: 11px; font-weight: 700; color: #7a1f1f; }
+  .sin { font-size: 11.5px; color: #6b7280; background: #f9fafb; border-radius: 12px; padding: 14px 16px; }
+  .firma { margin-top: 16px; display: flex; align-items: center; gap: 12px; }
+  .firma .avatar { width: 44px; height: 44px; border-radius: 50%; background: #7a1f1f; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+  .firma .nombre { font-family: Georgia, serif; font-size: 16px; font-style: italic; color: #111827; }
+  .firma .puesto { font-size: 10px; color: #6b7280; }
+  .pie { margin-top: 14px; font-size: 8px; color: #9ca3af; text-align: center; }
+</style></head>
+<body>
+{% include "informe_reactivacion/_barra.html" %}
+<div class="pagina">
+  {% include "informe_reactivacion/_encabezado.html" %}
+  {% set firmante = d.vendedor or d.desarrollador or 'Tu equipo AV2 Logistics' %}
+  <div class="carta">
+    <div class="fecha">{{ d.generado }}</div>
+    <h1>Gracias por confiar en AV2: tu carga está en buenas manos</h1>
+    <p>Estimado equipo de <b>{{ d.cliente|title }}</b>:</p>
+    <p>Queremos agradecerte por seguir moviendo tu carga con nosotros{% if d.total %} — <b>{{ d.total }} embarques en los últimos 12 meses</b>{% endif %}. Nuestro compromiso es darte el mejor servicio en cada etapa: desde la confirmación del booking hasta la entrega y el regreso del contenedor.</p>
+    <div class="compromisos">
+      <div class="compromiso"><b>Seguimiento puntual</b><span>Te informamos cada hito: zarpe, tránsito, pre-arribo y arribo.</span></div>
+      <div class="compromiso"><b>Anticipación</b><span>Avisos antes del arribo para revalidar y liberar sin demoras.</span></div>
+      <div class="compromiso"><b>Un equipo para ti</b><span>Tu ejecutivo y operaciones atentos a cualquier cambio.</span></div>
+    </div>
+  </div>
+
+  <h2>Tus servicios vigentes con nosotros <small>{{ servicios|length }} servicio{{ 's' if servicios|length != 1 else '' }} · estatus al {{ d.generado }}</small></h2>
+  {% for sv in servicios %}
+  <div class="servicio">
+    <div class="fila1">
+      <div class="bk">{{ sv.booking }}<span>{{ sv.tipo }}</span></div>
+      <div class="ruta">{{ sv.ruta }}</div>
+    </div>
+    <div class="datos">
+      <div>Contenedor: <b>{{ sv.contenedor[:40] }}</b></div>
+      <div>Salida: <b>{{ sv.salida }}</b></div>
+      <div>Arribo: <b>{{ sv.arribo }}</b></div>
+      {% if sv.naviera != '—' %}<div>Naviera: <b>{{ sv.naviera }}</b></div>{% endif %}
+    </div>
+    <div class="recorrido">
+      {% for nombre in fases %}
+      <div class="{{ 'hecho' if loop.index < sv.fase else ('actual' if loop.index == sv.fase else '') }}"><div class="punto"></div><div class="etq">{{ nombre }}</div></div>
+      {% endfor %}
+    </div>
+    <div class="estatus">Estatus: {{ sv.estatus }}</div>
+  </div>
+  {% else %}
+  <div class="sin">En este momento no tienes servicios en curso registrados. Cuando programes tu siguiente embarque, aquí verás su avance.</div>
+  {% endfor %}
+
+  <div class="carta" style="margin-top: 12px;">
+    <p>Cualquier duda sobre tus embarques, o si necesitas cotizar una nueva carga, responde este correo y con gusto te atendemos.</p>
+  </div>
+  <div class="firma">
+    <div class="avatar">{{ firmante.split()[0][0] }}{{ firmante.split()[-1][0] if firmante.split()|length > 1 else '' }}</div>
+    <div><div class="nombre">{{ firmante }}</div><div class="puesto">AV2 Logistics{% if d.vendedor and d.desarrollador %} · con {{ d.desarrollador }}{% endif %}</div></div>
+  </div>
+  <div class="pie">Estatus con base en el seguimiento de tus embarques en AV2 Logistics; las fechas pueden cambiar según la naviera. Términos y condiciones: av2logistics.com/terminos-y-condiciones</div>
+</div></body></html>
