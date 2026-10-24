@@ -11,8 +11,34 @@
     </label>
   </form>
   {% endif %}
-  <button type="button" onclick="window.print()">Descargar PDF</button>
+  <button type="button" id="bi-descargar" data-nombre="{{ ('Propuesta_' ~ diseno) if disenos else 'Carta_servicio' }}_{{ d.cliente }}">Descargar PDF</button>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+  // Genera el PDF en el navegador y lo descarga directo (sin abrir el diálogo de impresión).
+  document.getElementById("bi-descargar").addEventListener("click", async function () {
+    const boton = this;
+    const nombre = boton.dataset.nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^A-Za-z0-9_-]+/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "") + ".pdf";
+    const pagina = document.querySelector(".pagina");
+    if (!window.html2pdf) { window.print(); return; }
+    boton.disabled = true; boton.textContent = "Generando…";
+    document.body.classList.add("generando-pdf");
+    try {
+      await html2pdf().set({
+        margin: 0,
+        filename: nombre,
+        image: { type: "jpeg", quality: 0.96 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: getComputedStyle(document.body).backgroundColor, scrollY: 0 },
+        jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+        pagebreak: { mode: ["css"], avoid: [".servicio", ".boleto", ".item", ".hito", ".ruta-item", "tr"] },
+      }).from(pagina).save();
+    } finally {
+      document.body.classList.remove("generando-pdf");
+      boton.disabled = false; boton.textContent = "Descargar PDF";
+    }
+  });
+</script>
 <style>
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .barra-informe { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 18px; background: #111827; color: #fff; font-family: "Helvetica Neue", Arial, sans-serif; font-size: 13px; }
@@ -21,5 +47,6 @@
   .barra-informe select { padding: 5px 8px; border-radius: 6px; border: none; font: inherit; }
   .barra-informe button { background: #a8323a; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
   @media screen { html { background: #e5e7eb; } .pagina { margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,.18); } }
+  body.generando-pdf .pagina { margin: 0 !important; box-shadow: none !important; }
   @media print { .no-imprimir { display: none !important; } .pagina { margin: 0 !important; box-shadow: none !important; } }
 </style>

@@ -14,6 +14,12 @@
   .rx-filtros { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .75rem 1rem; margin: 1rem 0; }
   .rx-filtros label { font-size: .8rem; font-weight: 700; color: var(--ink-2); }
   .rx-filtros select { padding: .4rem .6rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .88rem; background: #fff; min-width: 200px; }
+  .rx-sep { width: 1px; height: 24px; background: var(--border); }
+  .rx-rangos { display: inline-flex; background: #eef2f7; border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+  .rx-rangos a { padding: .35rem .7rem; border-radius: 7px; font-size: .8rem; font-weight: 600; color: var(--ink-2); text-decoration: none; white-space: nowrap; }
+  .rx-rangos a b { font-weight: 800; color: var(--ink-3); margin-left: .2rem; }
+  .rx-rangos a.activo { background: #7a1f2c; color: #fff; }
+  .rx-rangos a.activo b { color: #fde2e4; }
   .rx-filtros .rx-buscar { margin-left: auto; padding: .45rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .88rem; min-width: 260px; }
   .rx-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
   @media (max-width: 900px) { .rx-kpis { grid-template-columns: repeat(2, 1fr); } }
@@ -72,12 +78,23 @@
       <option value="">Todos los vendedores</option>
       {% for v in vendedores %}<option value="{{ v }}" {{ 'selected' if v == vendedor else '' }}>{{ v|title }}</option>{% endfor %}
     </select>
+    {% if tipo == 'inactivos' %}
+    <input type="hidden" name="dias" value="{{ rango }}">
+    <span class="rx-sep"></span>
+    <label>Días sin carga</label>
+    <div class="rx-rangos">
+      <a class="{{ 'activo' if not rango else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None, vendedor=vendedor or None) }}">Más de {{ dias_minimos }} <b>{{ total_inactivos }}</b></a>
+      {% for r in rangos_dias %}
+      <a class="{{ 'activo' if r.clave == rango else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None, vendedor=vendedor or None, dias=r.clave) }}">{{ r.etiqueta }} <b>{{ r.total }}</b></a>
+      {% endfor %}
+    </div>
+    {% endif %}
     <input class="rx-buscar" type="search" id="rx-buscar" placeholder="Buscar cliente..." autocomplete="off">
   </form>
 
   {% set total_venta = totales_mes|sum %}
   <div class="rx-kpis">
-    <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{{ 'sin booking en más de ' ~ dias_minimos ~ ' días' if tipo == 'inactivos' else 'activos en el último mes' }}</div></div>
+    <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{% if tipo == 'inactivos' %}{% if rango %}{{ (rangos_dias|selectattr('clave', 'equalto', rango)|first).etiqueta|lower }} sin booking{% else %}sin booking en más de {{ dias_minimos }} días{% endif %}{% else %}activos en el último mes{% endif %}</div></div>
     <div class="rx-kpi"><div class="etq">Venta {{ anio }}</div><div class="val">${{ '{:,.0f}'.format(total_venta) }}</div><div class="sub">de estos clientes, enero a la fecha</div></div>
     <div class="rx-kpi"><div class="etq">Embarques 12 meses</div><div class="val">{{ clientes|sum(attribute='embarques') }}</div><div class="sub">importaciones marítimas</div></div>
     <div class="rx-kpi"><div class="etq">{{ 'Promedio días sin booking' if tipo == 'inactivos' else 'Plazas' }}</div><div class="val">{% if tipo == 'inactivos' %}{{ ((clientes|sum(attribute='dias_sin')) / (clientes|length or 1))|round|int }}{% else %}{{ (clientes|map(attribute='plaza')|select|unique|list)|length }}{% endif %}</div><div class="sub">{{ 'desde su último embarque' if tipo == 'inactivos' else 'con clientes recurrentes' }}</div></div>
@@ -101,7 +118,7 @@
           <td class="col-cliente"><div class="nombre">{{ c.cliente }}</div><div class="equipo">{{ c.vendedor or 'Sin vendedor' }}{% if c.desarrollador %} · {{ c.desarrollador }}{% endif %}</div></td>
           <td class="izq">{{ c.plaza or '—' }}</td>
           <td>{{ c.embarques }}</td>
-          <td>{% if tipo == 'inactivos' %}<span class="dias {{ 'alto' if c.dias_sin > 90 else ('medio' if c.dias_sin > 60 else 'bajo') }}">{{ c.dias_sin }} d</span>{% else %}{{ c.ultimo_txt }}{% endif %}</td>
+          <td>{% if tipo == 'inactivos' %}<span class="dias {{ 'alto' if c.dias_sin > 180 else ('medio' if c.dias_sin > 90 else 'bajo') }}">{{ c.dias_sin }} d</span>{% else %}{{ c.ultimo_txt }}{% endif %}</td>
           {% for v in c.ventas %}<td class="{{ 'futuro ' if loop.index > mes_actual else '' }}{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
           <td class="total">{{ '{:,.0f}'.format(c.venta_total) if c.venta_total else '—' }}</td>
           <td>

@@ -12158,6 +12158,12 @@ def permisos_seguimientos(usuario_id):
 # reporte_bookings (para descartar a quien sigue activo en otros servicios).
 # ---------------------------------------------------------------------------
 DIAS_SIN_BOOKING_REACTIVACION = 30
+# Rangos de días sin carga para filtrar "Por reactivar" (clave, etiqueta, desde, hasta inclusive).
+RANGOS_DIAS_SIN_CARGA = [
+    ("31-90", "31 a 90 días", 31, 90),
+    ("91-180", "91 a 180 días", 91, 180),
+    ("181+", "Más de 180 días", 181, None),
+]
 DISENOS_INFORME_REACTIVACION = [
     (1, "Ruta en portada"), (2, "Tablero ejecutivo"), (3, "Boletos de embarque"),
     (4, "Carta de tu ejecutivo"), (5, "Infografía"),
@@ -12418,10 +12424,25 @@ def reportes_reactivacion():
     if vendedor not in vendedores:
         vendedor = ""
     clientes = [c for c in con_plaza if not vendedor or c["vendedor_original"] == vendedor]
+    rangos_dias = []
+    rango = ""
+    if tipo == "inactivos":
+        rango_pedido = request.args.get("dias", "")
+        for clave, etiqueta, desde, hasta in RANGOS_DIAS_SIN_CARGA:
+            del_rango = [c for c in clientes if c["dias_sin"] >= desde and (hasta is None or c["dias_sin"] <= hasta)]
+            rangos_dias.append({"clave": clave, "etiqueta": etiqueta, "total": len(del_rango)})
+            if clave == rango_pedido:
+                rango, en_rango = clave, del_rango
+        total_inactivos = len(clientes)
+        if rango:
+            clientes = en_rango
+    else:
+        total_inactivos = 0
     hoy = datetime.now(TZ_LOCAL).date()
     return render_template(
         "reportes_reactivacion.html", tipo=tipo, clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
-        vendedor=vendedor, dias_minimos=DIAS_SIN_BOOKING_REACTIVACION, disenos=DISENOS_INFORME_REACTIVACION,
+        vendedor=vendedor, rangos_dias=rangos_dias, rango=rango, total_inactivos=total_inactivos,
+        dias_minimos=DIAS_SIN_BOOKING_REACTIVACION, disenos=DISENOS_INFORME_REACTIVACION,
         anio=hoy.year, meses=_MESES_CORTOS, mes_actual=hoy.month,
         totales_mes=[sum(c["ventas"][i] for c in clientes) for i in range(12)],
     )
