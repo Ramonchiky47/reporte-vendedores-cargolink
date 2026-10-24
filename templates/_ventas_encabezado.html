@@ -1,0 +1,176 @@
+{# Encabezado común de Ventas (Mensual / Diaria). Requiere `vista` = 'mensual' | 'diaria'. #}
+<style>
+  .vs-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .vs-head h1 { margin: 0; font-size: 1.55rem; color: #0f172a; letter-spacing: -.01em; }
+  .vs-head p { margin: .25rem 0 0; font-size: .85rem; color: #475569; }
+  .vs-head .meta { font-size: .76rem; color: #94a3b8; margin-top: .2rem; }
+  .vs-head-acciones { display: flex; gap: .45rem; align-items: center; }
+  .vs-head-acciones .btn, .vs-head-acciones button {
+    background: #fff; color: #334155; border: 1px solid #cbd5e1; padding: .45rem .85rem; font-size: .8rem; font-weight: 600; border-radius: 8px;
+  }
+  .vs-head-acciones .btn:hover, .vs-head-acciones button:hover { border-color: #007CC3; color: #007CC3; background: #f5fbff; }
+  .vs-head-acciones .vs-primario { background: #007CC3; color: #fff; border-color: #007CC3; }
+  .vs-head-acciones .vs-primario:hover { background: #0069a3; color: #fff; }
+
+  .vs-seccion { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 1.8rem 0 .8rem; }
+  .vs-seccion h2 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: #475569; font-weight: 700; }
+  .vs-periodo { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .vs-tabs { display: inline-flex; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 3px; }
+  .vs-tabs a { padding: .38rem .9rem; font-size: .8rem; font-weight: 600; border-radius: 7px; color: #475569; text-decoration: none; }
+  .vs-tabs a:hover { background: #f1f5f9; color: #0f172a; }
+  .vs-tabs a.activo { background: #0f172a; color: #fff; }
+  .vs-periodo select, .vs-periodo input[type=date] {
+    width: auto; min-width: 190px; padding: .4rem .6rem; font-size: .84rem; font-weight: 600; border-radius: 8px;
+    border: 1px solid #cbd5e1; background: #fff; font-family: inherit;
+  }
+  .vs-dia-nav { background: #fff; color: #475569; border: 1px solid #cbd5e1; border-radius: 8px; padding: .36rem .6rem; font-size: .85rem; line-height: 1; }
+  .vs-dia-nav:hover { border-color: #007CC3; color: #007CC3; background: #f5fbff; }
+
+  .vs-accesos { display: grid; grid-template-columns: repeat({{ 4 if vista == 'mensual' else 3 }}, 1fr); gap: 1rem; }
+  .vs-acceso {
+    display: flex; flex-direction: column; gap: .5rem; text-align: left; background: #fff; border: 1px solid #e2e8f0;
+    border-radius: 12px; padding: 1rem 1.1rem; color: inherit; font: inherit; cursor: pointer;
+    transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+  }
+  .vs-acceso:hover { background: #fff; border-color: #007CC3; box-shadow: 0 6px 18px rgba(15,23,42,.08); transform: translateY(-1px); }
+  .vs-acceso .ico { width: 34px; height: 34px; border-radius: 10px; background: rgba(0,124,195,.10); color: #007CC3; display: flex; align-items: center; justify-content: center; }
+  .vs-acceso .ico svg { width: 18px; height: 18px; }
+  .vs-acceso b { font-size: .92rem; color: #0f172a; }
+  .vs-acceso span { font-size: .77rem; color: #475569; line-height: 1.45; font-weight: 400; flex: 1; }
+  .vs-badge { display: inline-block; margin-left: .35rem; padding: .08rem .5rem; border-radius: 999px; background: #fee2e2; color: #b91c1c; font-style: normal; font-size: .75rem; font-weight: 800; vertical-align: 1px; }
+  .vs-badge.cero { background: #dcfce7; color: #166534; }
+  .vs-badge:empty { display: none; }
+  .vs-acceso .ir { font-size: .77rem; font-weight: 700; color: #007CC3; flex: none; }
+  .vs-periodo #filtro-mes, .vs-periodo #filtro-dia { width: 200px; min-width: 0; }
+  .vs-grafica-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 900px) { .vs-accesos { grid-template-columns: repeat(2, 1fr); } }
+
+  /* ---- Celular ---- */
+  @media (max-width: 640px) {
+    main { padding: 0 .9rem; margin-top: 1.1rem; }
+    .vs-head { flex-direction: column; align-items: stretch; gap: .8rem; }
+    .vs-head h1 { font-size: 1.35rem; }
+    .vs-head p { font-size: .8rem; }
+    .vs-head-acciones { width: 100%; }
+    .vs-head-acciones > * { flex: 1; }
+    .vs-head-acciones .btn, .vs-head-acciones button { width: 100%; padding: .55rem; }
+    .vs-seccion { margin: 1.3rem 0 .6rem; }
+    .vs-periodo { width: 100%; }
+    .vs-tabs { width: 100%; }
+    .vs-tabs a { flex: 1; text-align: center; padding: .5rem; }
+    .vs-periodo #filtro-mes, .vs-periodo #filtro-dia { flex: 1; width: auto; font-size: .9rem; padding: .5rem .6rem; }
+    .vs-dia-nav { padding: .5rem .8rem; }
+
+    .vs-accesos { grid-template-columns: repeat(2, 1fr); gap: .6rem; }
+    .vs-acceso { padding: .75rem .8rem; gap: .35rem; }
+    .vs-acceso span { display: none; }
+    .vs-accesos > .vs-acceso:last-child:nth-child(odd) { grid-column: span 2; }
+    .vs-acceso b { font-size: .84rem; }
+    .vs-acceso .ir { font-size: .72rem; }
+
+    .vp-kpis { grid-template-columns: repeat(2, 1fr); }
+    .vp-kpi { padding: .75rem .85rem; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+    .vp-kpi:nth-child(2n) { border-right: none; }
+    .vp-kpi:nth-last-child(-n+2) { border-bottom: none; }
+    .vp-kpi .val { font-size: 1.1rem; }
+
+    .vp-card { padding: .9rem .85rem; border-radius: 10px; }
+    .vp-card-head { flex-direction: column; gap: .15rem; }
+    .vs-grafica-scroll #grafica-plaza { min-width: 960px; }
+
+    /* Tabla de plazas como tarjetas */
+    #tabla-plaza thead { display: none; }
+    #tabla-plaza tbody tr, #tabla-plaza tfoot tr {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem .6rem; padding: .8rem .15rem; border-bottom: 1px solid #eef2f7;
+    }
+    #tabla-plaza tfoot tr { background: #f8fafc; border-radius: 10px; padding: .85rem .7rem; margin-top: .5rem; border-bottom: none; }
+    #tabla-plaza td { display: block; padding: 0; border: none; text-align: left; white-space: normal; background: none !important; font-size: .84rem; }
+    #tabla-plaza td:first-child { grid-column: 1 / 3; grid-row: 1; font-size: .98rem; max-width: none; }
+    #tabla-plaza td:nth-child(7) { grid-column: 3; grid-row: 1; text-align: right; }
+    #tabla-plaza td:nth-child(6) { grid-column: span 2; }
+    #tabla-plaza td::before { display: block; font-size: .6rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .12rem; }
+    #tabla-plaza td:nth-child(2)::before { content: "Cant book"; }
+    #tabla-plaza td:nth-child(3)::before { content: "Venta"; }
+    #tabla-plaza td:nth-child(4)::before { content: "Profit"; }
+    #tabla-plaza td:nth-child(5)::before { content: "Ppto"; }
+    #tabla-plaza td:nth-child(6)::before { content: "% Alc Ppto"; }
+    #tabla-plaza td.alc .alc-box { justify-content: flex-start; }
+    #tabla-plaza td.alc .alc-barra { width: 90px; }
+    #tabla-plaza td.alc .alc-num { text-align: left; min-width: 0; }
+
+    .modal-overlay { padding: 0; }
+    .modal-panel { max-height: 100vh; height: 100vh; border-radius: 0; }
+    .modal-head { padding: .9rem 1rem; }
+    .modal-body { padding: .6rem .8rem 1rem; }
+    .vp-nota { font-size: .72rem; }
+    #tabla-detalle { font-size: .78rem; }
+    #tabla-detalle th:first-child, #tabla-detalle td:first-child {
+      position: sticky; left: 0; z-index: 1; background: #fff; max-width: 150px; white-space: normal; box-shadow: 1px 0 0 #e2e8f0;
+    }
+    #tabla-detalle thead th:first-child, #tabla-detalle tfoot td:first-child { background: #f8fafc; }
+  }
+</style>
+
+<div class="vs-head">
+  <div>
+    <h1>Ventas</h1>
+    <p>Venta, profit y presupuesto por plaza, {{ 'acumulado por mes' if vista == 'mensual' else 'del día seleccionado' }}.</p>
+    <div class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></div>
+  </div>
+  <div class="vs-head-acciones">
+    {% if puede_exportar %}<button type="button" class="btn" id="btn-exportar-plaza">Exportar</button>{% endif %}
+    {% if puede_actualizar %}
+    <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn vs-primario">Actualizar</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="vs-seccion"><h2>Reportes detallados</h2></div>
+<div class="vs-accesos">
+  <button type="button" class="vs-acceso" id="btn-ver-vendedores">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg></div>
+    <b>Vendedores</b>
+    <span>Venta, profit y presupuesto de cada vendedor {{ 'en el mes' if vista == 'mensual' else 'en el día' }}, con el detalle de sus bookings.</span>
+    <div class="ir">Ver reporte →</div>
+  </button>
+  <button type="button" class="vs-acceso" id="btn-ver-customer">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13"/><path d="M2 19h20M9 9h6M9 13h6"/></svg></div>
+    <b>Customer</b>
+    <span>Resultado por desarrollador de cuenta (Customer), con sus clientes y bookings.</span>
+    <div class="ir">Ver reporte →</div>
+  </button>
+  {% if vista == 'mensual' %}
+  <button type="button" class="vs-acceso" id="btn-ver-booking-cero">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5M12 16h.01"/></svg></div>
+    <b>Booking en 0 <em class="vs-badge" id="cnt-booking-cero"></em></b>
+    <span>Bookings del mes con profit en 0, para revisarlos y corregirlos.</span>
+    <div class="ir">Ver reporte →</div>
+  </button>
+  {% endif %}
+  <button type="button" class="vs-acceso" id="btn-ver-resumen-clientes">
+    <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></div>
+    <b>Resumen por cliente</b>
+    <span>Venta y profit agrupados por cliente {{ 'en el mes' if vista == 'mensual' else 'en el día' }}.</span>
+    <div class="ir">Ver reporte →</div>
+  </button>
+</div>
+
+<div class="vs-seccion">
+  <h2>Indicadores {{ 'del mes' if vista == 'mensual' else 'del día' }}</h2>
+  <div class="vs-periodo">
+    <div class="vs-tabs">
+      <a class="{{ 'activo' if vista == 'mensual' else '' }}" href="{{ url_for('dashboard_plazas_vendedores', panel=request.args.get('panel') or None) }}">Mensual</a>
+      <a class="{{ 'activo' if vista == 'diaria' else '' }}" href="{{ url_for('venta_diaria', panel=request.args.get('panel') or None) }}">Diaria</a>
+    </div>
+    {% if vista == 'mensual' %}
+    <select id="filtro-mes" aria-label="Fecha de creación"></select>
+    {% else %}
+    <button type="button" class="vs-dia-nav" id="dia-anterior" aria-label="Día anterior">‹</button>
+    <input type="date" id="filtro-dia" aria-label="Fecha" min="{{ datos.dia_min }}" max="{{ datos.dia_max }}" value="{{ datos.dia_actual }}">
+    <button type="button" class="vs-dia-nav" id="dia-siguiente" aria-label="Día siguiente">›</button>
+    {% endif %}
+  </div>
+</div>

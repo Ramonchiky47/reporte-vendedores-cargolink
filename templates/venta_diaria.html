@@ -168,33 +168,8 @@
       <p class="empty">Todavía no hay ningún reporte generado.</p>
     </div>
 {% else %}
-    <div class="vp-head">
-      <div>
-        <h1>Venta Diaria</h1>
-        <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
-      </div>
-    </div>
-
-    <div class="vp-toolbar">
-      <div class="vp-periodo">
-        <label for="filtro-dia">Fecha</label>
-        <input type="date" id="filtro-dia" min="{{ datos.dia_min }}" max="{{ datos.dia_max }}" value="{{ datos.dia_actual }}">
-      </div>
-      <div class="vp-acciones">
-        <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
-        <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
-        <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
-        <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
-        {% if puede_exportar or puede_actualizar %}<span class="vp-sep"></span>{% endif %}
-        {% if puede_exportar %}<button type="button" class="btn" id="btn-exportar-plaza">Exportar</button>{% endif %}
-        {% if puede_actualizar %}
-        <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn vp-primario">Actualizar</button>
-        </form>
-        {% endif %}
-      </div>
-    </div>
+    {% set vista = "diaria" %}
+    {% include "_ventas_encabezado.html" %}
 
     <div class="vp-kpis" id="kpis-plaza"></div>
 
@@ -214,7 +189,7 @@
           <span><i style="background:#cbd5e1;"></i> Presupuesto</span>
         </div>
       </div>
-      <div id="grafica-plaza"></div>
+      <div class="vs-grafica-scroll"><div id="grafica-plaza"></div></div>
     </div>
 
     <p class="vp-nota">
@@ -278,6 +253,15 @@
   inputDia.addEventListener("change", () => {
     if (inputDia.value) { estado.dia = inputDia.value; render(); }
   });
+  function moverDia(delta) {
+    const f = new Date((inputDia.value || estado.dia) + "T12:00:00");
+    f.setDate(f.getDate() + delta);
+    const nuevo = f.getFullYear() + "-" + String(f.getMonth() + 1).padStart(2, "0") + "-" + String(f.getDate()).padStart(2, "0");
+    if ((inputDia.min && nuevo < inputDia.min) || (inputDia.max && nuevo > inputDia.max)) return;
+    inputDia.value = nuevo; estado.dia = nuevo; render();
+  }
+  document.getElementById("dia-anterior").addEventListener("click", () => moverDia(-1));
+  document.getElementById("dia-siguiente").addEventListener("click", () => moverDia(1));
 
   function sumar(filas) {
     return filas.reduce((acc, f) => {
@@ -922,7 +906,6 @@
   btnVolver.addEventListener("click", () => { if (volverA) volverA(); });
   document.getElementById("btn-ver-vendedores").addEventListener("click", abrirTodosLosVendedores);
   document.getElementById("btn-ver-customer").addEventListener("click", abrirTodosLosDesarrolladores);
-  document.getElementById("btn-ver-booking-cero").addEventListener("click", abrirBookingsEnCero);
   document.getElementById("btn-ver-resumen-clientes").addEventListener("click", abrirResumenClientesGlobal);
 
   // ---- exportar tabla visible a CSV (lo abre Excel directo) ----

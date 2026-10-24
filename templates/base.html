@@ -87,6 +87,18 @@
   .nav-notif-vacio { padding: .6rem .7rem; font-size: .8rem; color: var(--ink-4); }
   .nav-user { display: flex; gap: 1rem; align-items: center; padding-left: 1.25rem; border-left: 1px solid rgba(255,255,255,.15); font-size: .85rem; }
   .nav-user a { color: #fff; }
+  @media (max-width: 640px) {
+    .topbar { position: static; }
+    header { padding: .6rem .9rem; gap: .5rem; }
+    header h1 { font-size: .95rem; }
+    nav { width: 100%; gap: .5rem; }
+    .nav-links { flex-wrap: wrap; gap: .1rem; }
+    .nav-links a, .nav-dropdown-toggle { padding: .4rem .55rem; font-size: .8rem; }
+    .nav-user { width: 100%; padding-left: 0; border-left: none; justify-content: space-between; font-size: .78rem; padding-top: .4rem; border-top: 1px solid rgba(255,255,255,.12); }
+    .nav-dropdown-menu.nav-notif-menu { width: min(320px, 90vw); }
+    main { padding: 0 .9rem; margin-top: 1.1rem; }
+    .card { padding: 1.1rem; }
+  }
   main { max-width: 880px; margin: 2.5rem auto; padding: 0 1.5rem; }
   .card {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
@@ -163,8 +175,7 @@
           <div class="nav-dropdown">
             <button type="button" class="nav-dropdown-toggle{{ ' active' if ventas_activo else '' }}">Ventas <span class="caret">▾</span></button>
             <div class="nav-dropdown-menu">
-              {% if puede_ver_ventas %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'dashboard_plazas_vendedores' else '' }}">Venta Mensual</a>{% endif %}
-              {% if puede_ver_ventas %}<a href="{{ url_for('venta_diaria', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'venta_diaria' else '' }}">Venta Diaria</a>{% endif %}
+              {% if puede_ver_ventas %}<a href="{{ url_for('dashboard_plazas_vendedores', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active in ('dashboard_plazas_vendedores', 'venta_diaria') else '' }}">Venta mensual y diaria</a>{% endif %}
               {% if puede_ver_reportes %}<a href="{{ url_for('reportes_graficas', panel='ventas' if panel_ventas else none) }}" class="{{ 'active' if active == 'reportes_graficas' else '' }}">Reportes</a>{% endif %}
             </div>
           </div>

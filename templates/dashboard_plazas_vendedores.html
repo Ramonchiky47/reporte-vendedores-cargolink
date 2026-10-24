@@ -168,33 +168,8 @@
       <p class="empty">Todavía no hay ningún reporte generado.</p>
     </div>
 {% else %}
-    <div class="vp-head">
-      <div>
-        <h1>Venta por Plaza</h1>
-        <p class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></p>
-      </div>
-    </div>
-
-    <div class="vp-toolbar">
-      <div class="vp-periodo">
-        <label for="filtro-mes">Fecha de creación</label>
-        <select id="filtro-mes"></select>
-      </div>
-      <div class="vp-acciones">
-        <button type="button" class="btn" id="btn-ver-vendedores">Ver reporte de vendedores</button>
-        <button type="button" class="btn" id="btn-ver-customer">Ver reporte de Customer</button>
-        <button type="button" class="btn" id="btn-ver-booking-cero">Booking en 0</button>
-        <button type="button" class="btn" id="btn-ver-resumen-clientes">Resumen por cliente</button>
-        {% if puede_exportar or puede_actualizar %}<span class="vp-sep"></span>{% endif %}
-        {% if puede_exportar %}<button type="button" class="btn" id="btn-exportar-plaza">Exportar</button>{% endif %}
-        {% if puede_actualizar %}
-        <form method="post" action="{{ url_for('generar') }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn vp-primario">Actualizar</button>
-        </form>
-        {% endif %}
-      </div>
-    </div>
+    {% set vista = "mensual" %}
+    {% include "_ventas_encabezado.html" %}
 
     <div class="vp-kpis" id="kpis-plaza"></div>
 
@@ -214,7 +189,7 @@
           <span><i style="background:#cbd5e1;"></i> Presupuesto</span>
         </div>
       </div>
-      <div id="grafica-plaza"></div>
+      <div class="vs-grafica-scroll"><div id="grafica-plaza"></div></div>
     </div>
 
     <p class="vp-nota">
@@ -1007,6 +982,10 @@
 
   function render() {
     renderTablaPlaza();
+    const enCero = datos.detalle.filter((d) => mesCoincide(d.mes) && d.profit === 0).length;
+    const badge = document.getElementById("cnt-booking-cero");
+    badge.textContent = fmtEntero(enCero);
+    badge.classList.toggle("cero", enCero === 0);
   }
   render();
   window.addEventListener("resize", render);
