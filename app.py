@@ -4445,7 +4445,119 @@ def reportes_graficas():
     datos_json = json.dumps(filas).replace("</", "<\\/")
     presupuesto_json = json.dumps(presupuesto_mensual).replace("</", "<\\/")
     return render_template(
-        "reportes.html", datos_json=datos_json, presupuesto_json=presupuesto_json, hay_datos=len(filas) > 0
+        "reportes.html", datos_json=datos_json, presupuesto_json=presupuesto_json, hay_datos=len(filas) > 0,
+        puede_ver_profit_anual=puede_ver_profit_2025_vs_2026(),
+    )
+
+
+# Reporte restringido: clientes con profit en 2025 que en 2026 no han cargado.
+USUARIOS_PROFIT_2025_VS_2026 = {
+    "armando.villanueva@av2logistics.com",
+    "salvador.garciap@av2logistics.com", "salvadorgarciap@av2logistics.com",  # su usuario en el sistema no lleva punto
+}
+
+
+def puede_ver_profit_2025_vs_2026():
+    return (session.get("usuario") or "").strip().lower() in USUARIOS_PROFIT_2025_VS_2026
+
+
+def clientes_profit_2025_sin_2026():
+    """Clientes con profit en 2025 (reporte_bookings) y sin ningún booking en
+    2026, con su profit mes a mes de 2025, plaza y vendedor de su último booking."""
+    db = get_db()
+    plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")}
+    filas = db.execute("""
+        WITH anio25 AS (
+            SELECT upper(trim(cliente_servicio)) AS clave, min(cliente_servicio) AS cliente,
+                   extract(month FROM fecha)::int AS mes, sum(profit) AS profit, sum(venta) AS venta, count(*) AS book
+            FROM reporte_bookings
+            WHERE fecha >= '2025-01-01' AND fecha < '2026-01-01' AND coalesce(trim(cliente_servicio), '') <> ''
+            GROUP BY 1, 3
+        ),
+        con_2026 AS (
+            SELECT DISTINCT upper(trim(cliente_servicio)) AS clave FROM reporte_bookings WHERE fecha >= '2026-01-01'
+        ),
+        ultimo AS (
+            SELECT DISTINCT ON (upper(trim(cliente_servicio))) upper(trim(cliente_servicio)) AS clave, vendedor, ejecutivo, fecha
+            FROM reporte_bookings WHERE coalesce(trim(cliente_servicio), '') <> ''
+            ORDER BY upper(trim(cliente_servicio)), fecha DESC
+        )
+        SELECT a.clave, min(a.cliente) AS cliente, a.mes, sum(a.profit) AS profit, sum(a.venta) AS venta, sum(a.book) AS book,
+               u.vendedor, u.ejecutivo, u.fecha AS ultima
+        FROM anio25 a
+        JOIN ultimo u ON u.clave = a.clave
+        WHERE a.clave NOT IN (SELECT clave FROM con_2026)
+        GROUP BY a.clave, a.mes, u.vendedor, u.ejecutivo, u.fecha
+    """).fetchall()
+    db.close()
+    clientes = {}
+    for r in filas:
+        c = clientes.setdefault(r["clave"], {
+            "cliente": r["cliente"], "vendedor": r["vendedor"] or "—", "customer": r["ejecutivo"] or "—",
+            "plaza": plaza_por_vendedor.get(normalizar(r["vendedor"] or ""), "#N/D"),
+            "ultima": r["ultima"].astimezone(TZ_LOCAL).date() if r["ultima"] else None,
+            "profit_mes": [0.0] * 12, "venta": 0.0, "book": 0,
+        })
+        c["profit_mes"][r["mes"] - 1] += float(r["profit"] or 0)
+        c["venta"] += float(r["venta"] or 0)
+        c["book"] += r["book"]
+    resultado = []
+    for c in clientes.values():
+        c["profit_2025"] = sum(c["profit_mes"])
+        c["meses_activos"] = sum(1 for v in c["profit_mes"] if v)
+        if c["profit_2025"] > 0:
+            resultado.append(c)
+    return sorted(resultado, key=lambda c: -c["profit_2025"])
+
+
+@app.route("/reportes/profit-2025-vs-2026")
+@login_required
+def reportes_profit_2025_vs_2026():
+    if not puede_ver_profit_2025_vs_2026():
+        flash("No tienes permiso para ver este reporte.")
+        return redirect(url_for(primera_pagina_permitida()))
+    todos = clientes_profit_2025_sin_2026()
+    plazas = sorted({c["plaza"] for c in todos})
+    plaza = request.args.get("plaza", "")
+    plaza = plaza if plaza in plazas else ""
+    con_plaza = [c for c in todos if not plaza or c["plaza"] == plaza]
+    vendedores = sorted({c["vendedor"] for c in con_plaza}, key=str.lower)
+    vendedor = request.args.get("vendedor", "")
+    vendedor = vendedor if vendedor in vendedores else ""
+    clientes = [c for c in con_plaza if not vendedor or c["vendedor"] == vendedor]
+
+    # Contexto: profit total 2025 vs 2026 (año a la fecha, mismo corte de día).
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    comp = db.execute("""
+        SELECT
+          coalesce(sum(profit) FILTER (WHERE fecha >= '2025-01-01' AND fecha < %(corte25)s), 0) AS ytd25,
+          coalesce(sum(profit) FILTER (WHERE fecha >= '2026-01-01' AND fecha < %(corte26)s), 0) AS ytd26,
+          coalesce(sum(profit) FILTER (WHERE fecha >= '2025-01-01' AND fecha < '2026-01-01'), 0) AS total25
+        FROM reporte_bookings
+    """, {"corte25": date(2025, hoy.month, hoy.day) + timedelta(days=1), "corte26": hoy + timedelta(days=1)}).fetchone()
+    db.close()
+    comp = {k: float(v) for k, v in comp.items()}
+
+    if request.args.get("exportar") == "excel":
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Profit 2025 sin carga 2026"
+        ws.append(["Cliente", "Plaza", "Vendedor", "Customer", "Último booking"] + [f"{m.capitalize()} 2025" for m in _MESES_CORTOS] + ["Total 2025", "Profit 2026"])
+        for c in clientes:
+            ws.append([c["cliente"], c["plaza"], c["vendedor"], c["customer"], c["ultima"].isoformat() if c["ultima"] else ""]
+                      + [round(v, 2) for v in c["profit_mes"]] + [round(c["profit_2025"], 2), 0])
+        ws.freeze_panes = "B2"
+        buffer = io.BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        return send_file(buffer, as_attachment=True, download_name="Profit_2025_sin_carga_2026.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    return render_template(
+        "reportes_profit_2025_vs_2026.html", clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
+        vendedor=vendedor, meses=_MESES_CORTOS, comp=comp, hoy=hoy,
+        totales_mes=[sum(c["profit_mes"][i] for c in clientes) for i in range(12)],
     )
 
 

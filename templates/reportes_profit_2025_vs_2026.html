@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}CargoLink · Profit 2025 vs 2026{% endblock %}
+{% set active = "reportes_graficas" %}
+{% block extra_head %}
+<style>
+  main { max-width: 1500px; }
+  .pf-cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .pf-cab h1 { margin: .2rem 0 0; font-size: 1.5rem; color: var(--ink); }
+  .pf-cab p { margin: .25rem 0 0; color: var(--ink-3); font-size: .86rem; }
+  .pf-volver { font-size: .85rem; font-weight: 600; }
+  .pf-filtros { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .7rem 1rem; margin-bottom: 1rem; }
+  .pf-filtros label { margin: 0; font-size: .8rem; font-weight: 700; color: var(--ink-2); }
+  .pf-filtros select { padding: .4rem .6rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .86rem; background: #fff; min-width: 200px; }
+  .pf-filtros input[type=search] { margin-left: auto; padding: .42rem .7rem; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: .86rem; min-width: 240px; width: auto; }
+  .pf-filtros .btn { background: #fff; color: #334155; border: 1px solid var(--border-strong); padding: .42rem .8rem; font-size: .8rem; }
+  .pf-filtros .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .pf-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+  .pf-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem; }
+  .pf-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .pf-kpi .val { font-size: 1.45rem; font-weight: 800; color: var(--ink); margin-top: .2rem; font-variant-numeric: tabular-nums; }
+  .pf-kpi .sub { font-size: .74rem; color: var(--ink-3); }
+  .pf-kpi.rojo { border-color: #fecaca; background: linear-gradient(180deg, #fef2f2, #fff 70%); }
+  .pf-kpi.rojo .val { color: #b91c1c; }
+  .up { color: #15803d; font-weight: 700; } .down { color: #b91c1c; font-weight: 700; }
+
+  .pf-tabla-wrap { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: auto; max-height: 72vh; }
+  table.pf { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .pf th { position: sticky; top: 0; z-index: 2; background: #1e293b; color: #fff; text-align: right; padding: .55rem .5rem; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+  .pf th.izq, .pf td.izq { text-align: left; }
+  .pf th.anio26, .pf td.anio26 { background: #fef2f2; color: #b91c1c; }
+  .pf th.anio26 { background: #991b1b; color: #fff; }
+  .pf td { padding: .48rem .5rem; text-align: right; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+  .pf td.cero { color: #cbd5e1; }
+  .pf td.total, .pf th.total { font-weight: 800; background: #f8fafc; }
+  .pf th.total { background: #0f172a; }
+  .pf .col-cliente { text-align: left; position: sticky; left: 0; z-index: 1; background: #fff; min-width: 250px; max-width: 300px; white-space: normal; box-shadow: 1px 0 0 #e2e8f0; }
+  .pf th.col-cliente { z-index: 3; background: #1e293b; }
+  .pf .nombre { font-weight: 700; color: var(--ink); }
+  .pf .equipo { font-size: .72rem; color: var(--ink-3); }
+  .pf tbody tr:hover td { background: #f8fbff; }
+  .pf tbody tr:hover td.col-cliente { background: #f8fbff; }
+  .pf tfoot td { position: sticky; bottom: 0; background: #f1f5f9; font-weight: 800; border-top: 1px solid #cbd5e1; }
+  .pf tfoot td.col-cliente { background: #f1f5f9; }
+  .vacio { padding: 2rem; text-align: center; color: var(--ink-3); }
+  @media (max-width: 1000px) { .pf-kpis { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}
+{% block content %}
+  <div class="pf-cab">
+    <div>
+      <a class="pf-volver" href="{{ url_for('reportes_graficas') }}">&larr; Reportes</a>
+      <h1>Profit 2025 vs 2026 · clientes sin carga en 2026</h1>
+      <p>Clientes que dieron profit en 2025 y en lo que va de 2026 no han solicitado ningún booking. Profit mensual de 2025 en USD.</p>
+    </div>
+  </div>
+
+  <form class="pf-filtros" method="get">
+    <label for="pf-plaza">Plaza</label>
+    <select id="pf-plaza" name="plaza" onchange="this.form.vendedor.value=''; this.form.submit()">
+      <option value="">Todas las plazas</option>
+      {% for p in plazas %}<option value="{{ p }}" {{ 'selected' if p == plaza else '' }}>{{ p }}</option>{% endfor %}
+    </select>
+    <label for="pf-vendedor">Vendedor</label>
+    <select id="pf-vendedor" name="vendedor" onchange="this.form.submit()">
+      <option value="">Todos los vendedores</option>
+      {% for v in vendedores %}<option value="{{ v }}" {{ 'selected' if v == vendedor else '' }}>{{ v }}</option>{% endfor %}
+    </select>
+    <a class="btn" href="{{ url_for('reportes_profit_2025_vs_2026', plaza=plaza or None, vendedor=vendedor or None, exportar='excel') }}">Exportar Excel</a>
+    <input type="search" id="pf-buscar" placeholder="Buscar cliente o vendedor..." autocomplete="off">
+  </form>
+
+  {% set perdido = totales_mes|sum %}
+  {% set var = ((comp.ytd26 - comp.ytd25) / comp.ytd25) if comp.ytd25 else none %}
+  <div class="pf-kpis">
+    <div class="pf-kpi"><div class="etq">Profit 2025 al {{ hoy.day }}/{{ hoy.month }}</div><div class="val">${{ '{:,.0f}'.format(comp.ytd25) }}</div><div class="sub">todos los clientes, mismo corte</div></div>
+    <div class="pf-kpi"><div class="etq">Profit 2026 a la fecha</div><div class="val">${{ '{:,.0f}'.format(comp.ytd26) }}</div><div class="sub">{% if var is not none %}<span class="{{ 'up' if var >= 0 else 'down' }}">{{ '▲' if var >= 0 else '▼' }} {{ '{:.1f}'.format((var * 100)|abs) }}%</span> vs 2025{% endif %}</div></div>
+    <div class="pf-kpi rojo"><div class="etq">Clientes sin carga en 2026</div><div class="val">{{ clientes|length }}</div><div class="sub">dieron profit en 2025</div></div>
+    <div class="pf-kpi rojo"><div class="etq">Profit 2025 de estos clientes</div><div class="val">${{ '{:,.0f}'.format(perdido) }}</div><div class="sub">{{ '{:.1f}'.format(perdido / comp.total25 * 100) if comp.total25 else 0 }}% del profit total 2025</div></div>
+    <div class="pf-kpi"><div class="etq">Promedio mensual perdido</div><div class="val">${{ '{:,.0f}'.format(perdido / 12) }}</div><div class="sub">que hoy no está entrando</div></div>
+  </div>
+
+  {% if clientes %}
+  <div class="pf-tabla-wrap">
+    <table class="pf" id="pf-tabla">
+      <thead><tr>
+        <th class="izq col-cliente">Cliente</th>
+        <th class="izq">Plaza</th>
+        <th class="izq">Último booking</th>
+        {% for m in meses %}<th>{{ m|capitalize }} 25</th>{% endfor %}
+        <th class="total">Total 2025</th>
+        <th class="anio26">Profit 2026</th>
+      </tr></thead>
+      <tbody>
+        {% for c in clientes %}
+        <tr data-busqueda="{{ (c.cliente ~ ' ' ~ c.vendedor ~ ' ' ~ c.customer)|lower }}">
+          <td class="col-cliente"><div class="nombre">{{ c.cliente }}</div><div class="equipo">{{ c.vendedor }}{% if c.customer and c.customer != '—' %} · {{ c.customer }}{% endif %}</div></td>
+          <td class="izq">{{ c.plaza }}</td>
+          <td class="izq">{{ c.ultima.strftime('%d/%m/%Y') if c.ultima else '—' }}</td>
+          {% for v in c.profit_mes %}<td class="{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
+          <td class="total">{{ '{:,.0f}'.format(c.profit_2025) }}</td>
+          <td class="anio26">0</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <td class="col-cliente">Total ({{ clientes|length }} clientes)</td><td></td><td></td>
+        {% for t in totales_mes %}<td>{{ '{:,.0f}'.format(t) if t else '—' }}</td>{% endfor %}
+        <td class="total">{{ '{:,.0f}'.format(perdido) }}</td><td class="anio26">0</td>
+      </tr></tfoot>
+    </table>
+  </div>
+  <p class="hint" style="margin-top:.6rem;">Plaza y vendedor del último booking del cliente. "Sin carga en 2026" = ningún booking en reporte de vendedores desde el 1 de enero de 2026. Visible solo para Dirección.</p>
+  {% else %}
+  <div class="pf-tabla-wrap"><div class="vacio">No hay clientes con este filtro.</div></div>
+  {% endif %}
+
+<script>
+  document.getElementById("pf-buscar").addEventListener("input", function () {
+    const q = this.value.trim().toLowerCase();
+    document.querySelectorAll("#pf-tabla tbody tr").forEach((tr) => { tr.hidden = q && !tr.dataset.busqueda.includes(q); });
+  });
+</script>
+{% endblock %}

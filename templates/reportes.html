@@ -26,7 +26,7 @@
   .rp-seccion .nota { font-size: .76rem; color: var(--rp-ink-3); }
 
   /* Reportes detallados */
-  .rp-accesos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+  .rp-accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
   .rp-acceso {
     display: flex; flex-direction: column; gap: .55rem; background: #fff; border: 1px solid var(--rp-grid);
     border-radius: 12px; padding: 1.1rem 1.15rem; text-decoration: none; color: inherit;
@@ -163,6 +163,14 @@
       <span>Operaciones de exportación (AE) e importación (AI) del año en curso, con detalle por embarque.</span>
       <div class="ir">Abrir reporte →</div>
     </a>
+    {% if puede_ver_profit_anual %}
+    <a class="rp-acceso" href="{{ url_for('reportes_profit_2025_vs_2026') }}">
+      <div class="ico" style="background: #fee2e2; color: #b91c1c;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg></div>
+      <b>Profit 2025 vs 2026</b>
+      <span>Clientes que dieron profit en 2025 y en 2026 no han cargado, con su profit mes a mes.</span>
+      <div class="ir">Abrir reporte →</div>
+    </a>
+    {% endif %}
   </div>
 
 {% if not hay_datos %}
