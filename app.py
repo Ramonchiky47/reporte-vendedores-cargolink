@@ -9136,6 +9136,22 @@ def construir_documento_cotizacion_crm(cotizacion_id):
             "origen": a["origen"] or "vendedor", "creado_en": a["creado_en"],
             "es_imagen": a["nombre_archivo"].lower().endswith((".png", ".jpg", ".jpeg")),
         })
+    # Historial completo de respuestas (Pricing y retroalimentación del
+    # vendedor) para mostrarlo en la ventana de cada solicitud.
+    respuestas_por_solicitud = {"tti": {}, "tn": {}}
+    for clave, tabla, tabla_s in (
+        ("tti", "crm_solicitudes_transporte_terrestre_respuestas", "crm_solicitudes_transporte_terrestre"),
+        ("tn", "crm_solicitudes_transporte_nacional_respuestas", "crm_solicitudes_transporte_nacional"),
+    ):
+        for r in db.execute(f"""
+            SELECT r.solicitud_id, r.respuesta, r.respondido_por, r.creado_en
+            FROM {tabla} r JOIN {tabla_s} s ON s.id = r.solicitud_id
+            WHERE s.cotizacion_id = %s AND coalesce(r.respuesta, '') <> ''
+            ORDER BY r.creado_en DESC
+        """, (cotizacion_id,)).fetchall():
+            respuestas_por_solicitud[clave].setdefault(r["solicitud_id"], []).append({
+                "respuesta": r["respuesta"], "respondido_por": r["respondido_por"] or "", "creado_en": r["creado_en"],
+            })
     db.close()
 
     solicitudes_transporte_nacional = []
@@ -9279,7 +9295,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
              "estado": s["estado"], "fecha_creacion": s["fecha_creacion"], "creado_por": s["creado_por"] or "",
              "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
              "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"],
-             "archivos": archivos_tti_por_solicitud.get(s["id"], [])}
+             "archivos": archivos_tti_por_solicitud.get(s["id"], []),
+             "respuestas": respuestas_por_solicitud["tti"].get(s["id"], [])}
             for s in solicitudes_transporte_terrestre
         ],
         "transporte_terrestre_respuestas": transporte_terrestre_respuestas,
@@ -9288,7 +9305,8 @@ def construir_documento_cotizacion_crm(cotizacion_id):
              "estado": s["estado"], "fecha_creacion": s["solicitud_en"], "creado_por": s["creado_por"] or "",
              "solicitud_en": s["solicitud_en"], "fecha_entrega": s["fecha_entrega"],
              "diferencia": s["diferencia"], "es_nuevo": s["es_nuevo"],
-             "archivos": archivos_tn_por_solicitud.get(s["id"], [])}
+             "archivos": archivos_tn_por_solicitud.get(s["id"], []),
+             "respuestas": respuestas_por_solicitud["tn"].get(s["id"], [])}
             for s in solicitudes_transporte_nacional
         ],
         "transporte_nacional_respuestas": transporte_nacional_respuestas,

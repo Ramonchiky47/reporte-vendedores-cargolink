@@ -118,11 +118,28 @@
   .tnm-nombre { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tnm-meta { font-size: .72rem; color: #888; }
   .tnm-vacio { font-size: .8rem; color: #999; font-style: italic; margin: 0; }
+  .tnm-respuesta { border: 1px solid #e5e7eb; border-left: 3px solid #1565c0; border-radius: 8px; padding: .55rem .7rem; margin-bottom: .5rem; }
+  .tnm-respuesta.vendedor { border-left-color: #9ca3af; background: #fafafa; }
+  .tnm-respuesta .quien { font-size: .72rem; color: #666; margin-bottom: .3rem; }
+  .tnm-respuesta .quien b { color: #1565c0; }
+  .tnm-respuesta.vendedor .quien b { color: #555; }
+  .tnm-respuesta .texto { font-size: .82rem; color: #222; white-space: pre-wrap; line-height: 1.45; }
+  #tn-modal, #tti-modal { width: min(760px, calc(100% - 32px)); }
   .tnm-pie { display: flex; justify-content: flex-end; gap: .5rem; padding: .8rem 1.2rem; border-top: 1px solid #e5e7eb; }
   .tnm-btn { padding: .45rem 1rem; border-radius: 6px; background: #1565c0; color: #fff; font-size: .82rem; font-weight: 600; text-decoration: none; border: 1px solid #1565c0; }
   .tnm-btn.secundario { background: #fff; color: #1565c0; }
 {% endblock %}
 {% block crm_content %}
+    {% macro lista_respuestas(respuestas, creador) %}
+      {% for r in respuestas %}
+      <div class="tnm-respuesta {{ 'vendedor' if r.respondido_por == creador else '' }}">
+        <div class="quien"><b>{{ 'Tu comentario' if r.respondido_por == creador else ('Pricing · ' ~ r.respondido_por) }}</b> · {{ r.creado_en|hora_mx }}</div>
+        <div class="texto">{{ r.respuesta }}</div>
+      </div>
+      {% else %}
+      <p class="tnm-vacio">Pricing todavía no ha respondido.</p>
+      {% endfor %}
+    {% endmacro %}
   <a class="btn-atras" id="btn-atras-cotizacion" href="{{ url_for('crm_seccion', slug='cotizaciones') }}">&larr; Cotizaciones</a>
 
   <div class="acciones-detalle">
@@ -237,10 +254,12 @@
         <button type="button" class="tnm-cerrar" onclick="document.getElementById('tti-modal').close()" aria-label="Cerrar">&times;</button>
       </div>
       <div class="tnm-cuerpo">
-        <h4>Archivos del vendedor</h4>
-        {{ lista_archivos_tti(s.archivos|selectattr('origen', 'equalto', 'vendedor')|list, 'El vendedor no adjuntó archivos.') }}
+        <h4>Respuestas de Pricing</h4>
+        {{ lista_respuestas(s.respuestas, s.creado_por) }}
         <h4>Archivos de Pricing</h4>
         {{ lista_archivos_tti(s.archivos|selectattr('origen', 'equalto', 'pricing')|list, 'Pricing no ha adjuntado archivos.') }}
+        <h4>Archivos del vendedor</h4>
+        {{ lista_archivos_tti(s.archivos|selectattr('origen', 'equalto', 'vendedor')|list, 'El vendedor no adjuntó archivos.') }}
       </div>
       <div class="tnm-pie">
         <a class="tnm-btn" href="{{ url_for('transporte_terrestre_ver', solicitud_id=s.id) }}" target="_blank" rel="noopener">Ver PDF</a>
@@ -333,10 +352,12 @@
         <button type="button" class="tnm-cerrar" onclick="document.getElementById('tn-modal').close()" aria-label="Cerrar">&times;</button>
       </div>
       <div class="tnm-cuerpo">
-        <h4>Archivos del vendedor</h4>
-        {{ lista_archivos_tn(s.archivos|selectattr('origen', 'equalto', 'vendedor')|list, 'El vendedor no adjuntó archivos.') }}
+        <h4>Respuestas de Pricing</h4>
+        {{ lista_respuestas(s.respuestas, s.creado_por) }}
         <h4>Archivos de Pricing</h4>
         {{ lista_archivos_tn(s.archivos|selectattr('origen', 'equalto', 'pricing')|list, 'Pricing no ha adjuntado archivos.') }}
+        <h4>Archivos del vendedor</h4>
+        {{ lista_archivos_tn(s.archivos|selectattr('origen', 'equalto', 'vendedor')|list, 'El vendedor no adjuntó archivos.') }}
       </div>
       <div class="tnm-pie">
         <a class="tnm-btn secundario" href="{{ url_for('transporte_nacional_reenviar', solicitud_id=s.id) }}">Editar</a>
