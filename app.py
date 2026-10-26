@@ -12631,6 +12631,18 @@ def _nombre_asignado(valor):
     return ", ".join(partes) or None
 
 
+def _profit_perdido_estimado(profit_por_mes, ultimo, dias_sin):
+    """Ritmo de profit mensual del cliente en los 6 meses que terminan en su
+    último embarque (promedio ponderado: los meses recientes pesan más, para
+    seguir la tendencia) multiplicado por los meses que lleva sin cargar.
+    Regresa (profit_mensual_base, profit_perdido_estimado)."""
+    idx = ultimo.year * 12 + ultimo.month - 1
+    ventana = [profit_por_mes.get(f"{(idx - n) // 12:04d}-{(idx - n) % 12 + 1:02d}", 0.0) for n in range(5, -1, -1)]
+    pesos = range(1, 7)
+    base = max(sum(v * w for v, w in zip(ventana, pesos)) / sum(pesos), 0.0)
+    return base, base * dias_sin / 30.44
+
+
 def clientes_por_reactivar(recurrentes=False):
     """Clientes con 2+ embarques en el último año cuyo último booking (en el
     Seguimiento y en reporte_bookings, cualquier servicio) fue hace más de
@@ -12656,13 +12668,14 @@ def clientes_por_reactivar(recurrentes=False):
         WHERE seg.embarques >= 2
     """, {"desde": hoy - timedelta(days=365)}).fetchall()
     plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")}
-    # Venta del año en curso por mes (matriz Ene-Dic) por cliente.
-    ventas_anio = {}
+    # Profit por cliente y mes (24 meses): matriz Ene-Dic del año en curso y
+    # base para estimar el profit perdido mientras el cliente no carga.
+    profit_mensual = {}
     for r in db.execute("""
-        SELECT upper(trim(cliente_servicio)) AS clave, extract(month FROM fecha)::int AS mes, sum(venta) AS venta
-        FROM reporte_bookings WHERE fecha >= %s AND fecha < %s GROUP BY 1, 2
-    """, (date(hoy.year, 1, 1), date(hoy.year + 1, 1, 1))).fetchall():
-        ventas_anio.setdefault(r["clave"], [0.0] * 12)[r["mes"] - 1] = float(r["venta"] or 0)
+        SELECT upper(trim(cliente_servicio)) AS clave, to_char(fecha, 'YYYY-MM') AS mes, sum(profit) AS profit
+        FROM reporte_bookings WHERE fecha >= %s GROUP BY 1, 2
+    """, (date(hoy.year - 2, hoy.month, 1),)).fetchall():
+        profit_mensual.setdefault(r["clave"], {})[r["mes"]] = float(r["profit"] or 0)
     db.close()
 
     plazas_permitidas = plazas_permitidas_usuario()
@@ -12687,10 +12700,13 @@ def clientes_por_reactivar(recurrentes=False):
             "dias_sin": dias, "vendedor": _nombre_asignado(f["vendedor"]), "desarrollador": _nombre_asignado(f["desarrollador"]),
             "plaza": plaza_por_vendedor.get(normalizar(f["vendedor"] or "")) or "",
             "vendedor_original": (f["vendedor"] or "").strip(),
-            "ventas": ventas_anio.get(f["cliente"].strip().upper(), [0.0] * 12),
+            "clave": f["cliente"].strip().upper(),
         })
     for r in resultado:
-        r["venta_total"] = sum(r["ventas"])
+        meses = profit_mensual.get(r.pop("clave"), {})
+        r["profit_mes"] = [meses.get(f"{hoy.year}-{m:02d}", 0.0) for m in range(1, 13)]
+        r["profit_total"] = sum(r["profit_mes"])
+        r["profit_base"], r["profit_perdido"] = _profit_perdido_estimado(meses, r["ultimo"], r["dias_sin"]) if not recurrentes else (0.0, 0.0)
     resultado.sort(key=lambda r: (-r["embarques"], r["dias_sin"]))
     return resultado
 
@@ -12857,7 +12873,8 @@ def reportes_reactivacion():
         vendedor=vendedor, rangos_dias=rangos_dias, rango=rango, total_inactivos=total_inactivos,
         dias_minimos=DIAS_SIN_BOOKING_REACTIVACION, disenos=DISENOS_INFORME_REACTIVACION,
         anio=hoy.year, meses=_MESES_CORTOS, mes_actual=hoy.month,
-        totales_mes=[sum(c["ventas"][i] for c in clientes) for i in range(12)],
+        totales_mes=[sum(c["profit_mes"][i] for c in clientes) for i in range(12)],
+        profit_perdido_total=sum(c["profit_perdido"] for c in clientes),
     )
 
 

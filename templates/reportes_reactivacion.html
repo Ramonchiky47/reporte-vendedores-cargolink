@@ -27,6 +27,11 @@
   .rx-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
   .rx-kpi .val { font-size: 1.5rem; font-weight: 800; color: var(--ink); margin-top: .2rem; font-variant-numeric: tabular-nums; }
   .rx-kpi .sub { font-size: .75rem; color: var(--ink-3); }
+  .rx-kpis:has(.perdido) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .rx-kpi.perdido { border-color: #fecaca; background: linear-gradient(180deg, #fef2f2, #fff 70%); }
+  .rx-kpi.perdido .val { color: #b91c1c; }
+  .rx th.perdido { background: #991b1b; }
+  .rx td.perdido { color: #b91c1c; font-weight: 800; background: #fef7f7; }
   .rx-kpi.vino { border-color: #e7c3c3; background: linear-gradient(180deg, #fbefef, #fff 70%); }
   .rx-tabla-wrap { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: auto; max-height: 72vh; }
   table.rx { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .8rem; }
@@ -92,10 +97,11 @@
     <input class="rx-buscar" type="search" id="rx-buscar" placeholder="Buscar cliente..." autocomplete="off">
   </form>
 
-  {% set total_venta = totales_mes|sum %}
+  {% set total_profit = totales_mes|sum %}
   <div class="rx-kpis">
     <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{% if tipo == 'inactivos' %}{% if rango %}{{ (rangos_dias|selectattr('clave', 'equalto', rango)|first).etiqueta|lower }} sin booking{% else %}sin booking en más de {{ dias_minimos }} días{% endif %}{% else %}activos en el último mes{% endif %}</div></div>
-    <div class="rx-kpi"><div class="etq">Venta {{ anio }}</div><div class="val">${{ '{:,.0f}'.format(total_venta) }}</div><div class="sub">de estos clientes, enero a la fecha</div></div>
+    <div class="rx-kpi"><div class="etq">Profit {{ anio }}</div><div class="val">${{ '{:,.0f}'.format(total_profit) }}</div><div class="sub">de estos clientes, enero a la fecha</div></div>
+    {% if tipo == 'inactivos' %}<div class="rx-kpi perdido"><div class="etq">Profit perdido estimado</div><div class="val">${{ '{:,.0f}'.format(profit_perdido_total) }}</div><div class="sub">por falta de servicio, según su tendencia</div></div>{% endif %}
     <div class="rx-kpi"><div class="etq">Embarques 12 meses</div><div class="val">{{ clientes|sum(attribute='embarques') }}</div><div class="sub">importaciones marítimas</div></div>
     <div class="rx-kpi"><div class="etq">{{ 'Promedio días sin booking' if tipo == 'inactivos' else 'Plazas' }}</div><div class="val">{% if tipo == 'inactivos' %}{{ ((clientes|sum(attribute='dias_sin')) / (clientes|length or 1))|round|int }}{% else %}{{ (clientes|map(attribute='plaza')|select|unique|list)|length }}{% endif %}</div><div class="sub">{{ 'desde su último embarque' if tipo == 'inactivos' else 'con clientes recurrentes' }}</div></div>
   </div>
@@ -110,6 +116,7 @@
         <th>{{ 'Días sin' if tipo == 'inactivos' else 'Último' }}</th>
         {% for m in meses %}<th class="{{ 'futuro' if loop.index > mes_actual else '' }}">{{ m|capitalize }}</th>{% endfor %}
         <th>Total {{ anio }}</th>
+        {% if tipo == 'inactivos' %}<th class="perdido" title="Profit mensual de su tendencia × meses sin carga">Profit perdido est.</th>{% endif %}
         <th>{{ 'Propuesta' if tipo == 'inactivos' else 'Carta' }}</th>
       </tr></thead>
       <tbody>
@@ -119,8 +126,9 @@
           <td class="izq">{{ c.plaza or '—' }}</td>
           <td>{{ c.embarques }}</td>
           <td>{% if tipo == 'inactivos' %}<span class="dias {{ 'alto' if c.dias_sin > 180 else ('medio' if c.dias_sin > 90 else 'bajo') }}">{{ c.dias_sin }} d</span>{% else %}{{ c.ultimo_txt }}{% endif %}</td>
-          {% for v in c.ventas %}<td class="{{ 'futuro ' if loop.index > mes_actual else '' }}{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
-          <td class="total">{{ '{:,.0f}'.format(c.venta_total) if c.venta_total else '—' }}</td>
+          {% for v in c.profit_mes %}<td class="{{ 'futuro ' if loop.index > mes_actual else '' }}{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
+          <td class="total">{{ '{:,.0f}'.format(c.profit_total) if c.profit_total else '—' }}</td>
+          {% if tipo == 'inactivos' %}<td class="perdido" title="Ritmo: ${{ '{:,.0f}'.format(c.profit_base) }}/mes × {{ '{:.1f}'.format(c.dias_sin / 30.44) }} meses sin carga">{{ '{:,.0f}'.format(c.profit_perdido) if c.profit_perdido else '—' }}</td>{% endif %}
           <td>
             <div class="rx-accion">
               {% if tipo == 'inactivos' %}
@@ -137,11 +145,13 @@
       <tfoot><tr>
         <td class="col-cliente">Total ({{ clientes|length }} clientes)</td><td></td><td>{{ clientes|sum(attribute='embarques') }}</td><td></td>
         {% for t in totales_mes %}<td class="{{ 'futuro' if loop.index > mes_actual else '' }}">{{ '{:,.0f}'.format(t) if t else '—' }}</td>{% endfor %}
-        <td class="total">{{ '{:,.0f}'.format(total_venta) }}</td><td></td>
+        <td class="total">{{ '{:,.0f}'.format(total_profit) }}</td>
+        {% if tipo == 'inactivos' %}<td class="perdido">{{ '{:,.0f}'.format(profit_perdido_total) }}</td>{% endif %}<td></td>
       </tr></tfoot>
     </table>
   </div>
-  {% if tipo == 'inactivos' %}<p class="hint" style="margin-top:.6rem;">Propuestas: {% for n, nombre in disenos %}<b>{{ n }}</b> {{ nombre }}{{ ' · ' if not loop.last else '' }}{% endfor %}. Dentro del informe puedes cambiar de propuesta y descargarlo en PDF.</p>{% endif %}
+  {% if tipo == 'inactivos' %}<p class="hint" style="margin-top:.6rem;">Propuestas: {% for n, nombre in disenos %}<b>{{ n }}</b> {{ nombre }}{{ ' · ' if not loop.last else '' }}{% endfor %}. Dentro del informe puedes cambiar de propuesta y descargarlo en PDF.<br>
+  Montos en <b>profit</b> (USD). <b>Profit perdido estimado</b> = ritmo de profit mensual del cliente en los 6 meses que terminan en su último embarque (los meses recientes pesan más, para seguir su tendencia) × meses que lleva sin cargar. Pasa el cursor sobre la cifra para ver el cálculo.</p>{% endif %}
   {% else %}
   <div class="rx-tabla-wrap"><div class="rx-vacio">No hay clientes con este filtro.</div></div>
   {% endif %}
