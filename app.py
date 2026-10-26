@@ -4453,6 +4453,7 @@ def reportes_graficas():
 # Reporte restringido: clientes con profit en 2025 que en 2026 no han cargado.
 USUARIOS_PROFIT_2025_VS_2026 = {
     "armando.villanueva@av2logistics.com",
+    "ramonf.villanueva@gmail.com", "ramon.villanueva@av2logistics.com",
     "salvador.garciap@av2logistics.com", "salvadorgarciap@av2logistics.com",  # su usuario en el sistema no lleva punto
 }
 
@@ -4469,7 +4470,8 @@ def clientes_profit_2025_sin_2026():
     filas = db.execute("""
         WITH anio25 AS (
             SELECT upper(trim(cliente_servicio)) AS clave, min(cliente_servicio) AS cliente,
-                   extract(month FROM fecha)::int AS mes, sum(profit) AS profit, sum(venta) AS venta, count(*) AS book
+                   extract(month FROM fecha)::int AS mes, sum(profit) AS profit, sum(venta) AS venta, count(*) AS book,
+                   array_agg(DISTINCT vendedor) AS vendedores_mes
             FROM reporte_bookings
             WHERE fecha >= '2025-01-01' AND fecha < '2026-01-01' AND coalesce(trim(cliente_servicio), '') <> ''
             GROUP BY 1, 3
@@ -4483,22 +4485,32 @@ def clientes_profit_2025_sin_2026():
             ORDER BY upper(trim(cliente_servicio)), fecha DESC
         )
         SELECT a.clave, min(a.cliente) AS cliente, a.mes, sum(a.profit) AS profit, sum(a.venta) AS venta, sum(a.book) AS book,
-               u.vendedor, u.ejecutivo, u.fecha AS ultima
+               max(a.vendedores_mes) AS vendedores_mes, u.vendedor, u.ejecutivo, u.fecha AS ultima,
+               ac.vendedor AS vendedor_actual, ac.desarrollador AS customer_actual
         FROM anio25 a
         JOIN ultimo u ON u.clave = a.clave
+        LEFT JOIN LATERAL (
+            SELECT vendedor, desarrollador FROM asignacion_de_clientes x WHERE upper(trim(x.razon_social)) = a.clave LIMIT 1
+        ) ac ON true
         WHERE a.clave NOT IN (SELECT clave FROM con_2026)
-        GROUP BY a.clave, a.mes, u.vendedor, u.ejecutivo, u.fecha
+        GROUP BY a.clave, a.mes, u.vendedor, u.ejecutivo, u.fecha, ac.vendedor, ac.desarrollador
     """).fetchall()
     db.close()
     clientes = {}
     for r in filas:
+        # Vendedor actual = el asignado hoy al cliente (si no tiene, el de su último booking).
+        vendedor_actual = (r["vendedor_actual"] or r["vendedor"] or "").strip()
         c = clientes.setdefault(r["clave"], {
-            "cliente": r["cliente"], "vendedor": r["vendedor"] or "—", "customer": r["ejecutivo"] or "—",
-            "plaza": plaza_por_vendedor.get(normalizar(r["vendedor"] or ""), "#N/D"),
+            "cliente": r["cliente"], "vendedor": vendedor_actual or "—",
+            "customer": r["customer_actual"] or r["ejecutivo"] or "—",
+            "plaza": plaza_por_vendedor.get(normalizar(vendedor_actual), "#N/D"),
             "ultima": r["ultima"].astimezone(TZ_LOCAL).date() if r["ultima"] else None,
-            "profit_mes": [0.0] * 12, "venta": 0.0, "book": 0,
+            "profit_mes": [0.0] * 12, "otro_vendedor": [None] * 12, "venta": 0.0, "book": 0,
         })
         c["profit_mes"][r["mes"] - 1] += float(r["profit"] or 0)
+        otros = sorted({v for v in (r["vendedores_mes"] or []) if v and normalizar(v) != normalizar(vendedor_actual)})
+        if otros:
+            c["otro_vendedor"][r["mes"] - 1] = ", ".join(otros)
         c["venta"] += float(r["venta"] or 0)
         c["book"] += r["book"]
     resultado = []
@@ -12976,6 +12988,10 @@ def servicios_vigentes_cliente(cliente):
     for f in filas:
         eta = f["ata"] or f["eta_cl"]
         etapa = f["etapa"] or ""
+        # En puerto / en demora solo cuenta como vigente si arribó en los últimos
+        # 30 días; los anteriores ya se entregaron aunque el track no se cerró.
+        if etapa in ("En puerto", "En demora") and (not eta or (hoy - eta).days > 30):
+            continue
         if etapa == "Por zarpar":
             fase = 1 if not f["etd_atd"] or f["etd_atd"] > hoy else 2
             estatus = "Por zarpar" + (f" · salida {_fecha_corta(f['etd_atd'])}" if f["etd_atd"] else " · salida por confirmar")
@@ -13001,6 +13017,49 @@ def servicios_vigentes_cliente(cliente):
             "fase": fase, "fase_nombre": FASES_SERVICIO[fase - 1], "estatus": estatus,
         })
     return servicios
+
+
+# Tipo de servicio (segmento de la referencia) → grupo que ve el cliente en la carta.
+GRUPOS_SERVICIO_CARTA = [
+    ("Importación marítima", ("FCLI", "LCLI")),
+    ("Exportación marítima", ("FCLE", "LCLE")),
+    ("Importación aérea", ("AI",)),
+    ("Exportación aérea", ("AE",)),
+    ("Terrestre internacional · importación", ("FTLI", "LTLI")),
+    ("Terrestre internacional · exportación", ("FTLE", "LTLE")),
+    ("Terrestre nacional", ("FTL", "LTL")),
+    ("Despacho aduanal", ("DA",)),
+]
+DIAS_SERVICIOS_RECIENTES_CARTA = 45
+
+
+def servicios_cliente_por_tipo(cliente):
+    """Servicios vigentes de la carta, separados por tipo de servicio: la
+    importación marítima con su recorrido del track de Seguimiento, y el resto
+    de los servicios con los bookings de los últimos DIAS_SERVICIOS_RECIENTES_CARTA
+    días del reporte de vendedores."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    grupos = {nombre: [] for nombre, _ in GRUPOS_SERVICIO_CARTA}
+    grupo_por_codigo = {cod: nombre for nombre, cods in GRUPOS_SERVICIO_CARTA for cod in cods}
+    grupos["Importación marítima"] = servicios_vigentes_cliente(cliente)
+    db = get_db()
+    bookings = db.execute("""
+        SELECT referencia, fecha, ejecutivo, vendedor FROM reporte_bookings
+        WHERE upper(trim(cliente_servicio)) = upper(trim(%s)) AND fecha >= %s ORDER BY fecha DESC
+    """, (cliente, hoy - timedelta(days=DIAS_SERVICIOS_RECIENTES_CARTA))).fetchall()
+    db.close()
+    for b in bookings:
+        codigo = extraer_tipo_servicio(b["referencia"]).split("-")[0]
+        grupo = grupo_por_codigo.get(codigo, "Otros servicios")
+        if grupo == "Importación marítima":
+            continue  # ya viene del track con su recorrido
+        fecha = b["fecha"].astimezone(TZ_LOCAL).date() if b["fecha"] else None
+        grupos.setdefault(grupo, []).append({
+            "booking": b["referencia"], "tipo": codigo, "fecha": _fecha_corta(fecha) if fecha else "—",
+            "dias": (hoy - fecha).days if fecha else None,
+        })
+    return [{"nombre": nombre, "servicios": lista, "recorrido": nombre == "Importación marítima"}
+            for nombre, lista in grupos.items() if lista]
 
 
 @app.route("/reportes/reactivacion")
@@ -13071,9 +13130,10 @@ def reportes_reactivacion_carta():
     d = datos_informe_reactivacion(cliente) or {"cliente": cliente, "rutas": [], "total": 0, "promedio_mes": 0}
     hoy = datetime.now(TZ_LOCAL).date()
     d.setdefault("generado", _fecha_corta(hoy))
-    servicios = servicios_vigentes_cliente(cliente)
+    grupos_servicio = servicios_cliente_por_tipo(cliente)
     return render_template(
-        "informe_reactivacion/carta_recurrente.html", d=d, servicios=servicios, fases=FASES_SERVICIO,
+        "informe_reactivacion/carta_recurrente.html", d=d, grupos_servicio=grupos_servicio, fases=FASES_SERVICIO,
+        total_servicios=sum(len(g["servicios"]) for g in grupos_servicio), dias_recientes=DIAS_SERVICIOS_RECIENTES_CARTA,
         disenos=None, diseno=None,
     )
 

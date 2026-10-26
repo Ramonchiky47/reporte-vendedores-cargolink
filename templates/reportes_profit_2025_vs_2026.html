@@ -35,6 +35,8 @@
   .pf th.anio26 { background: #991b1b; color: #fff; }
   .pf td { padding: .48rem .5rem; text-align: right; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
   .pf td.cero { color: #cbd5e1; }
+  .pf td.otro-vendedor { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+  .badge-otro { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: #fee2e2; border: 1px solid #fca5a5; vertical-align: -2px; }
   .pf td.total, .pf th.total { font-weight: 800; background: #f8fafc; }
   .pf th.total { background: #0f172a; }
   .pf .col-cliente { text-align: left; position: sticky; left: 0; z-index: 1; background: #fff; min-width: 250px; max-width: 300px; white-space: normal; box-shadow: 1px 0 0 #e2e8f0; }
@@ -112,7 +114,7 @@
           <td class="col-cliente"><div class="nombre">{{ c.cliente }}</div><div class="equipo">{{ c.vendedor }}{% if c.customer and c.customer != '—' %} · {{ c.customer }}{% endif %}</div></td>
           <td class="izq">{{ c.plaza }}</td>
           <td class="izq">{{ c.ultima.strftime('%d/%m/%Y') if c.ultima else '—' }}</td>
-          {% for v in c.profit_mes %}<td class="{{ 'cero' if not v else '' }}">{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
+          {% for v in c.profit_mes %}{% set otro = c.otro_vendedor[loop.index0] %}<td class="{{ 'cero' if not v else '' }}{{ ' otro-vendedor' if otro else '' }}"{% if otro %} title="Lo generó: {{ otro }}"{% endif %}>{{ '{:,.0f}'.format(v) if v else '—' }}</td>{% endfor %}
           <td class="total">{{ '{:,.0f}'.format(c.profit_2025) }}</td>
           <td class="anio26">0</td>
         </tr>
@@ -125,7 +127,7 @@
       </tr></tfoot>
     </table>
   </div>
-  <p class="hint" style="margin-top:.6rem;">Plaza y vendedor del último booking del cliente. "Sin carga en 2026" = ningún booking en reporte de vendedores desde el 1 de enero de 2026. Visible solo para Dirección.</p>
+  <p class="hint" style="margin-top:.6rem;"><span class="badge-otro"></span> = ese mes el profit lo generó otro vendedor, distinto al asignado actualmente al cliente (pasa el cursor para ver quién). Plaza y vendedor = los asignados hoy al cliente. "Sin carga en 2026" = ningún booking en reporte de vendedores desde el 1 de enero de 2026. Visible solo para Dirección.</p>
   {% else %}
   <div class="pf-tabla-wrap"><div class="vacio">No hay clientes con este filtro.</div></div>
   {% endif %}
