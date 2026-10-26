@@ -15,6 +15,9 @@
   .pf-filtros .btn { background: #fff; color: #334155; border: 1px solid var(--border-strong); padding: .42rem .8rem; font-size: .8rem; }
   .pf-filtros .btn:hover { border-color: var(--accent); color: var(--accent); }
 
+  .pf-tabs { display: inline-flex; background: #eef2f7; border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: .8rem; }
+  .pf-tabs a { padding: .45rem 1rem; border-radius: 9px; font-size: .86rem; font-weight: 700; color: var(--ink-2); text-decoration: none; }
+  .pf-tabs a.activa { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(15,23,42,.12); }
   .pf-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .75rem; margin-bottom: 1rem; }
   .pf-kpi { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem; }
   .pf-kpi .etq { font-size: .68rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .05em; }
@@ -55,7 +58,13 @@
     </div>
   </div>
 
+  <div class="pf-tabs">
+    <a class="{{ 'activa' if vista == 'detalle' else '' }}" href="{{ url_for('reportes_profit_2025_vs_2026', plaza=plaza or None, vendedor=vendedor or None) }}">Detalle por cliente</a>
+    <a class="{{ 'activa' if vista == 'resumen' else '' }}" href="{{ url_for('reportes_profit_2025_vs_2026', vista='resumen', plaza=plaza or None, vendedor=vendedor or None) }}">Resumen por plaza</a>
+  </div>
+
   <form class="pf-filtros" method="get">
+    {% if vista == 'resumen' %}<input type="hidden" name="vista" value="resumen">{% endif %}
     <label for="pf-plaza">Plaza</label>
     <select id="pf-plaza" name="plaza" onchange="this.form.vendedor.value=''; this.form.submit()">
       <option value="">Todas las plazas</option>
@@ -67,7 +76,7 @@
       {% for v in vendedores %}<option value="{{ v }}" {{ 'selected' if v == vendedor else '' }}>{{ v }}</option>{% endfor %}
     </select>
     <a class="btn" href="{{ url_for('reportes_profit_2025_vs_2026', plaza=plaza or None, vendedor=vendedor or None, exportar='excel') }}">Exportar Excel</a>
-    <input type="search" id="pf-buscar" placeholder="Buscar cliente o vendedor..." autocomplete="off">
+    {% if vista == 'detalle' %}<input type="search" id="pf-buscar" placeholder="Buscar cliente o vendedor..." autocomplete="off">{% endif %}
   </form>
 
   {% set perdido = totales_mes|sum %}
@@ -80,7 +89,13 @@
     <div class="pf-kpi"><div class="etq">Promedio mensual perdido</div><div class="val">${{ '{:,.0f}'.format(perdido / 12) }}</div><div class="sub">que hoy no está entrando</div></div>
   </div>
 
-  {% if clientes %}
+  {% if vista == 'resumen' %}
+    {% if arbol and arbol.hijos %}
+      {% set columnas = columnas_trimestre %}{% set etiqueta_monto = 'Profit 2025' %}
+      {% include "_matriz_plaza_vendedor.html" %}
+      <p class="hint" style="margin-top:.6rem;">Columnas = trimestre de 2025 del último booking del cliente (cuándo dejó de cargar). Monto = su profit total 2025. Da clic en una plaza para ver sus vendedores y en un vendedor para ver sus clientes.</p>
+    {% else %}<div class="pf-tabla-wrap"><div class="vacio">No hay clientes con este filtro.</div></div>{% endif %}
+  {% elif clientes %}
   <div class="pf-tabla-wrap">
     <table class="pf" id="pf-tabla">
       <thead><tr>
@@ -116,7 +131,7 @@
   {% endif %}
 
 <script>
-  document.getElementById("pf-buscar").addEventListener("input", function () {
+  document.getElementById("pf-buscar")?.addEventListener("input", function () {
     const q = this.value.trim().toLowerCase();
     document.querySelectorAll("#pf-tabla tbody tr").forEach((tr) => { tr.hidden = q && !tr.dataset.busqueda.includes(q); });
   });

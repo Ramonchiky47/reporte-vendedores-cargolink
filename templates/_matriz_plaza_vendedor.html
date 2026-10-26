@@ -1,0 +1,96 @@
+{# Matriz plaza → vendedor → cliente (se despliega con clic).
+   Requiere: arbol (arbol_plaza_vendedor_cliente), columnas [(clave, etiqueta)],
+   etiqueta_monto (texto de la sub-columna de dinero). #}
+<style>
+  .mz-wrap { background: #fff; border: 1px solid var(--border); border-radius: 14px; overflow: auto; max-height: 74vh; }
+  table.mz { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .78rem; font-variant-numeric: tabular-nums; }
+  .mz th { position: sticky; z-index: 2; background: #1e293b; color: #fff; font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; padding: .45rem .5rem; white-space: nowrap; text-align: center; }
+  .mz thead tr:first-child th { top: 0; }
+  .mz thead tr:nth-child(2) th { top: 29px; background: #334155; font-size: .6rem; }
+  .mz th.grupo { border-left: 1px solid #475569; }
+  .mz th.tot { background: #7a1f2c; }
+  .mz thead tr:nth-child(2) th.tot { background: #8f2a38; }
+  .mz th.nom { text-align: left; left: 0; z-index: 3; min-width: 240px; }
+  .mz td { padding: .42rem .5rem; text-align: right; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+  .mz td.g { border-left: 1px solid #eef2f7; }
+  .mz td.n { color: #64748b; }
+  .mz td.cero { color: #d6dbe2; }
+  .mz td.tot { background: #fbf4f2; font-weight: 800; color: #7a1f2c; }
+  .mz td.nom { text-align: left; position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e2e8f0; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  .mz tr.nivel-0 td { font-weight: 800; background: #f8fafc; }
+  .mz tr.nivel-0 td.nom { background: #f8fafc; color: #0f172a; }
+  .mz tr.nivel-0 td.tot { background: #f6e9e6; }
+  .mz tr.nivel-1 td.nom { padding-left: 1.6rem; font-weight: 700; color: #1e293b; }
+  .mz tr.nivel-2 td { font-size: .74rem; color: #475569; }
+  .mz tr.nivel-2 td.nom { padding-left: 3rem; color: #334155; }
+  .mz tr[data-hijos] { cursor: pointer; }
+  .mz tr[data-hijos]:hover td { background: #eef6fc; }
+  .mz .flecha { display: inline-block; width: 1em; color: #94a3b8; transition: transform .12s; }
+  .mz tr.abierto > td .flecha { transform: rotate(90deg); color: #007CC3; }
+  .mz tr.oculto { display: none; }
+  .mz tfoot td { position: sticky; bottom: 0; background: #e2e8f0; font-weight: 800; border-top: 1px solid #94a3b8; color: #0f172a; }
+  .mz tfoot td.nom { background: #e2e8f0; }
+  .mz-acciones { display: flex; gap: .5rem; margin: 0 0 .6rem; }
+  .mz-acciones button { background: #fff; color: #334155; border: 1px solid var(--border-strong); padding: .35rem .7rem; font-size: .76rem; border-radius: 8px; }
+  .mz-acciones button:hover { border-color: var(--accent); color: var(--accent); background: #f5fbff; }
+</style>
+{% macro celdas(nodo) -%}
+  {% for clave, etiqueta in columnas %}{% set c = nodo.cols.get(clave) %}
+  <td class="g {{ '' if c else 'cero' }}">{{ '{:,.0f}'.format(c.monto) if c else '—' }}</td><td class="n {{ '' if c else 'cero' }}">{{ c.n if c else '—' }}</td>
+  {% endfor %}
+  <td class="g tot">{{ '{:,.0f}'.format(nodo.total.monto) }}</td><td class="tot">{{ nodo.total.n }}</td>
+{%- endmacro %}
+<div class="mz-acciones">
+  <button type="button" onclick="mzTodo(true)">Abrir plazas y vendedores</button>
+  <button type="button" onclick="mzTodo(false)">Cerrar todo</button>
+</div>
+<div class="mz-wrap">
+  <table class="mz" id="mz-tabla">
+    <thead>
+      <tr>
+        <th class="nom" rowspan="2">Plaza / vendedor / cliente</th>
+        {% for clave, etiqueta in columnas %}<th class="grupo" colspan="2">{{ etiqueta }}</th>{% endfor %}
+        <th class="grupo tot" colspan="2">Total</th>
+      </tr>
+      <tr>
+        {% for clave, etiqueta in columnas %}<th class="grupo">{{ etiqueta_monto }}</th><th>Clientes</th>{% endfor %}
+        <th class="grupo tot">{{ etiqueta_monto }}</th><th class="tot">Clientes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in arbol.hijos %}{% set pid = 'p' ~ loop.index %}
+      <tr class="nivel-0" data-id="{{ pid }}" data-hijos="1"><td class="nom"><span class="flecha">▸</span> {{ p.nombre }} <span style="font-weight:500;color:#94a3b8;">· {{ p.hijos|length }} vendedor(es)</span></td>{{ celdas(p) }}</tr>
+        {% for v in p.hijos %}{% set vid = pid ~ 'v' ~ loop.index %}
+        <tr class="nivel-1 oculto" data-id="{{ vid }}" data-padre="{{ pid }}" data-hijos="1"><td class="nom" title="{{ v.nombre }}"><span class="flecha">▸</span> {{ v.nombre }} <span style="font-weight:500;color:#94a3b8;">· {{ v.hijos|length }}</span></td>{{ celdas(v) }}</tr>
+          {% for cl in v.hijos %}
+          <tr class="nivel-2 oculto" data-padre="{{ vid }}"><td class="nom" title="{{ cl.nombre }}">{{ cl.nombre }}</td>{{ celdas(cl) }}</tr>
+          {% endfor %}
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td class="nom">Total ({{ arbol.total.n }} clientes)</td>{{ celdas(arbol) }}</tr></tfoot>
+  </table>
+</div>
+<script>
+  (function () {
+    const tabla = document.getElementById("mz-tabla");
+    function hijos(id) { return tabla.querySelectorAll('tr[data-padre="' + id + '"]'); }
+    function cerrar(id) {
+      hijos(id).forEach((tr) => { tr.classList.add("oculto"); tr.classList.remove("abierto"); if (tr.dataset.id) cerrar(tr.dataset.id); });
+    }
+    tabla.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr[data-hijos]");
+      if (!tr) return;
+      const abrir = !tr.classList.contains("abierto");
+      tr.classList.toggle("abierto", abrir);
+      if (abrir) hijos(tr.dataset.id).forEach((h) => h.classList.remove("oculto"));
+      else cerrar(tr.dataset.id);
+    });
+    window.mzTodo = function (abrir) {
+      tabla.querySelectorAll("tr.nivel-0").forEach((tr) => {
+        tr.classList.toggle("abierto", abrir);
+        if (abrir) hijos(tr.dataset.id).forEach((h) => h.classList.remove("oculto")); else cerrar(tr.dataset.id);
+      });
+    };
+  })();
+</script>

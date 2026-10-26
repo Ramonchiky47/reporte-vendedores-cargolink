@@ -4554,8 +4554,15 @@ def reportes_profit_2025_vs_2026():
         return send_file(buffer, as_attachment=True, download_name="Profit_2025_sin_carga_2026.xlsx",
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
+    vista = "resumen" if request.args.get("vista") == "resumen" else "detalle"
+    columnas_trimestre = [("T1", "Ene–Mar 2025"), ("T2", "Abr–Jun 2025"), ("T3", "Jul–Sep 2025"), ("T4", "Oct–Dic 2025")]
+    arbol = arbol_plaza_vendedor_cliente(
+        clientes, lambda c: f"T{(c['ultima'].month - 1) // 3 + 1}" if c["ultima"] else None, lambda c: c["profit_2025"],
+        lambda c: c["plaza"], lambda c: c["vendedor"], lambda c: c["cliente"],
+    ) if vista == "resumen" else None
     return render_template(
-        "reportes_profit_2025_vs_2026.html", clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
+        "reportes_profit_2025_vs_2026.html", vista=vista, arbol=arbol, columnas_trimestre=columnas_trimestre,
+        clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
         vendedor=vendedor, meses=_MESES_CORTOS, comp=comp, hoy=hoy,
         totales_mes=[sum(c["profit_mes"][i] for c in clientes) for i in range(12)],
     )
@@ -12748,6 +12755,37 @@ def _nombre_asignado(valor):
     return ", ".join(partes) or None
 
 
+def arbol_plaza_vendedor_cliente(clientes, columna_de, monto_de, plaza_de, vendedor_de, cliente_de):
+    """Agrupa clientes en plaza → vendedor → cliente, sumando por columna un
+    monto y el número de clientes. Cada nodo: nombre, cols {clave: {monto, n}},
+    total {monto, n} e hijos (ordenados por monto total descendente)."""
+    def nodo(nombre):
+        return {"nombre": nombre, "cols": {}, "total": {"monto": 0.0, "n": 0}, "hijos": {}}
+
+    def sumar(n, col, monto):
+        celda = n["cols"].setdefault(col, {"monto": 0.0, "n": 0})
+        celda["monto"] += monto
+        celda["n"] += 1
+        n["total"]["monto"] += monto
+        n["total"]["n"] += 1
+
+    raiz = nodo("Total")
+    for c in clientes:
+        col, monto = columna_de(c), monto_de(c)
+        if col is None:
+            continue
+        p = raiz["hijos"].setdefault(plaza_de(c) or "Sin plaza", nodo(plaza_de(c) or "Sin plaza"))
+        v = p["hijos"].setdefault(vendedor_de(c) or "Sin vendedor", nodo(vendedor_de(c) or "Sin vendedor"))
+        cl = v["hijos"].setdefault(cliente_de(c), nodo(cliente_de(c)))
+        for n in (raiz, p, v, cl):
+            sumar(n, col, monto)
+
+    def ordenar(n):
+        n["hijos"] = sorted((ordenar(h) for h in n["hijos"].values()), key=lambda h: -h["total"]["monto"])
+        return n
+    return ordenar(raiz)
+
+
 def _profit_perdido_estimado(profit_por_mes, ultimo, dias_sin):
     """Ritmo de profit mensual del cliente en los 6 meses que terminan en su
     último embarque (promedio ponderado: los meses recientes pesan más, para
@@ -12761,12 +12799,15 @@ def _profit_perdido_estimado(profit_por_mes, ultimo, dias_sin):
 
 
 def clientes_por_reactivar(recurrentes=False):
-    """Clientes con 2+ embarques en el último año cuyo último booking (en el
-    Seguimiento y en reporte_bookings, cualquier servicio) fue hace más de
+    """Clientes con 2+ bookings (cualquier servicio) o 2+ importaciones en el
+    último año cuyo último booking (en el Seguimiento y en reporte_bookings) fue hace más de
     DIAS_SIN_BOOKING_REACTIVACION días. Respeta la visibilidad por plaza /
     vendedor del usuario (por el vendedor asignado al cliente)."""
     hoy = datetime.now(TZ_LOCAL).date()
     db = get_db()
+    # Universo: clientes con 2+ bookings en el último año en el reporte de
+    # vendedores (cualquier servicio: marítimo, terrestre, aéreo...) o con
+    # 2+ importaciones en el Seguimiento.
     filas = db.execute("""
         WITH seg AS (
             SELECT upper(trim(client)) AS clave, min(client) AS cliente, count(*) AS embarques, max(fecha) AS ultimo
@@ -12774,15 +12815,25 @@ def clientes_por_reactivar(recurrentes=False):
             WHERE client IS NOT NULL AND trim(client) <> '' AND fecha >= %(desde)s
             GROUP BY 1
         ),
-        bk AS (SELECT upper(trim(cliente_servicio)) AS clave, max(fecha)::date AS ultimo FROM reporte_bookings GROUP BY 1)
-        SELECT seg.cliente, seg.embarques, seg.ultimo AS ultimo_seguimiento, bk.ultimo AS ultimo_booking,
+        bk AS (
+            SELECT upper(trim(cliente_servicio)) AS clave, min(cliente_servicio) AS cliente,
+                   count(*) FILTER (WHERE fecha >= %(desde)s) AS bookings, max(fecha)::date AS ultimo
+            FROM reporte_bookings WHERE coalesce(trim(cliente_servicio), '') <> '' GROUP BY 1
+        ),
+        universo AS (
+            SELECT clave FROM seg WHERE embarques >= 2
+            UNION SELECT clave FROM bk WHERE bookings >= 2
+        )
+        SELECT coalesce(seg.cliente, bk.cliente) AS cliente,
+               greatest(coalesce(bk.bookings, 0), coalesce(seg.embarques, 0)) AS embarques,
+               seg.ultimo AS ultimo_seguimiento, bk.ultimo AS ultimo_booking,
                ac.vendedor, ac.desarrollador
-        FROM seg
-        LEFT JOIN bk ON bk.clave = seg.clave
+        FROM universo u
+        LEFT JOIN seg ON seg.clave = u.clave
+        LEFT JOIN bk ON bk.clave = u.clave
         LEFT JOIN LATERAL (
-            SELECT vendedor, desarrollador FROM asignacion_de_clientes a WHERE upper(trim(a.razon_social)) = seg.clave LIMIT 1
+            SELECT vendedor, desarrollador FROM asignacion_de_clientes a WHERE upper(trim(a.razon_social)) = u.clave LIMIT 1
         ) ac ON true
-        WHERE seg.embarques >= 2
     """, {"desde": hoy - timedelta(days=365)}).fetchall()
     plaza_por_vendedor = {normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")}
     # Profit por cliente y mes (24 meses): matriz Ene-Dic del año en curso y
@@ -12958,7 +13009,7 @@ def reportes_reactivacion():
     """Reportes → Clientes por reactivar: lista por plaza / vendedor con la venta
     del año en curso por mes y, por cliente, el informe para enviarle (el
     vendedor elige una de las 5 propuestas)."""
-    tipo = "recurrentes" if request.args.get("tipo") == "recurrentes" else "inactivos"
+    tipo = request.args.get("tipo") if request.args.get("tipo") in ("recurrentes", "resumen") else "inactivos"
     todos = clientes_por_reactivar(recurrentes=(tipo == "recurrentes"))
     plazas = sorted({c["plaza"] for c in todos if c["plaza"]})
     plaza = (request.args.get("plaza", "") or "").strip()
@@ -12972,6 +13023,17 @@ def reportes_reactivacion():
     clientes = [c for c in con_plaza if not vendedor or c["vendedor_original"] == vendedor]
     rangos_dias = []
     rango = ""
+    arbol = None
+    if tipo == "resumen":
+        def rango_de(c):
+            for clave, _, desde, hasta in RANGOS_DIAS_SIN_CARGA:
+                if c["dias_sin"] >= desde and (hasta is None or c["dias_sin"] <= hasta):
+                    return clave
+            return None
+        arbol = arbol_plaza_vendedor_cliente(
+            clientes, rango_de, lambda c: c["profit_perdido"], lambda c: c["plaza"],
+            lambda c: c["vendedor_original"], lambda c: c["cliente"],
+        )
     if tipo == "inactivos":
         rango_pedido = request.args.get("dias", "")
         for clave, etiqueta, desde, hasta in RANGOS_DIAS_SIN_CARGA:
@@ -12987,7 +13049,8 @@ def reportes_reactivacion():
     hoy = datetime.now(TZ_LOCAL).date()
     return render_template(
         "reportes_reactivacion.html", tipo=tipo, clientes=clientes, plazas=plazas, plaza=plaza, vendedores=vendedores,
-        vendedor=vendedor, rangos_dias=rangos_dias, rango=rango, total_inactivos=total_inactivos,
+        vendedor=vendedor, rangos_dias=rangos_dias, rango=rango, total_inactivos=total_inactivos, arbol=arbol,
+        columnas_arbol=[(clave, etiqueta) for clave, etiqueta, _, _ in RANGOS_DIAS_SIN_CARGA],
         dias_minimos=DIAS_SIN_BOOKING_REACTIVACION, disenos=DISENOS_INFORME_REACTIVACION,
         anio=hoy.year, meses=_MESES_CORTOS, mes_actual=hoy.month,
         totales_mes=[sum(c["profit_mes"][i] for c in clientes) for i in range(12)],
