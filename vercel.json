@@ -19,6 +19,10 @@
     {
       "path": "/cron/generar-reporte",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/cron/reporte-ejecutivo",
+      "schedule": "0 14 * * 1"
     }
   ],
   "regions": [

@@ -2005,7 +2005,7 @@ def obtener_contactos_por_cliente():
     return resultado
 
 
-def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None):
+def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None, remitente=None):
     """Envía un correo HTML. Si existe RESEND_API_KEY se usa Resend (API
     HTTPS, sin necesidad de verificar dominio propio — funciona de
     inmediato con su remitente de pruebas onboarding@resend.dev);
@@ -2013,11 +2013,24 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None
     (SMTP_HOST, SMTP_PORT, SMTP_USUARIO, SMTP_PASSWORD, y opcionalmente
     SMTP_FROM si el remitente es distinto del usuario).
     adjuntos: lista opcional de (nombre_archivo, bytes_pdf) a adjuntar.
-    cc: lista opcional de correos en copia (mismo mensaje para todos)."""
+    cc: lista opcional de correos en copia (mismo mensaje para todos).
+    remitente: (correo, nombre) opcional para usar otro "De:"; si el
+    proveedor lo rechaza (dominio sin verificar) se reintenta con el de siempre."""
+    if remitente:
+        try:
+            return _enviar_correo(destinatario, asunto, cuerpo_html, adjuntos, cc, remitente)
+        except RuntimeError:
+            app.logger.exception("El proveedor rechazó el remitente %s; se reintenta con el predeterminado", remitente[0])
+    return _enviar_correo(destinatario, asunto, cuerpo_html, adjuntos, cc, None)
+
+
+def _enviar_correo(destinatario, asunto, cuerpo_html, adjuntos, cc, remitente_propio):
     cc = [c for c in (cc or []) if c]
     resend_api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
     if resend_api_key:
         remitente_resend = (os.environ.get("RESEND_FROM") or "onboarding@resend.dev").strip()
+        if remitente_propio:
+            remitente_resend = f"{remitente_propio[1]} <{remitente_propio[0]}>"
         payload = {
             "from": remitente_resend,
             "to": [destinatario],
@@ -2061,7 +2074,7 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None
             personalizacion["cc"] = [{"email": c} for c in cc]
         payload = {
             "personalizations": [personalizacion],
-            "from": {"email": remitente},
+            "from": {"email": remitente_propio[0], "name": remitente_propio[1]} if remitente_propio else {"email": remitente},
             "subject": asunto,
             "content": [
                 {"type": "text/plain", "value": "Este correo requiere un cliente de correo compatible con HTML."},
@@ -2090,7 +2103,7 @@ def enviar_correo_smtp(destinatario, asunto, cuerpo_html, adjuntos=None, cc=None
 
     msg = EmailMessage()
     msg["Subject"] = asunto
-    msg["From"] = remitente
+    msg["From"] = f"{remitente_propio[1]} <{remitente_propio[0]}>" if remitente_propio else remitente
     msg["To"] = destinatario
     if cc:
         msg["Cc"] = ", ".join(cc)
@@ -3913,6 +3926,371 @@ def dashboard_plazas_vendedores():
         return render_template("dashboard_plazas_vendedores.html", datos_json="null", datos=None)
     datos_json = json.dumps(datos).replace("</", "<\\/")
     return render_template("dashboard_plazas_vendedores.html", datos_json=datos_json, datos=datos)
+
+
+def _agrupar_ventas(filas, campo):
+    grupos = {}
+    for f in filas:
+        g = grupos.setdefault(f[campo], {"nombre": f[campo], "plaza": f.get("plaza"), "cant_book": 0, "venta": 0.0, "profit": 0.0, "ppto": 0.0})
+        for k in ("cant_book", "venta", "profit", "ppto"):
+            g[k] += f[k]
+    for g in grupos.values():
+        g["margen"] = g["profit"] / g["venta"] if g["venta"] else None
+        g["alc"] = g["profit"] / g["ppto"] if g["ppto"] else None
+    return sorted(grupos.values(), key=lambda g: g["venta"], reverse=True)
+
+
+def cotizaciones_del_mes(anio, mes, plazas_permitidas=None, vendedores_permitidos=None):
+    """Cotizaciones creadas en el mes, con su estatus calculado (ganada por
+    booking aplicado, perdida, vencida o vigente) y quién la creó."""
+    inicio = date(anio, mes, 1)
+    fin = date(anio + (mes == 12), mes % 12 + 1, 1)
+    hoy = datetime.now(TZ_LOCAL).date()
+    db = get_db()
+    plaza_por_vendedor = {
+        normalizar(r["vendedor"]): r["plaza"] for r in db.execute("SELECT vendedor, plaza FROM catalogo_vendedores")
+    }
+    filas = db.execute("""
+        SELECT co.id_cotizacion, co.fecha_creacion, co.fecha_vencimiento, co.estatus, co.profit_estimado,
+               COALESCE(ac.razon_social, co.cliente_prospecto, 'Sin cliente') AS cliente,
+               ac.vendedor AS cliente_vendedor, (co.cliente_folio IS NULL) AS es_prospecto,
+               COALESCE(NULLIF(f.nombre_firma, ''), NULLIF(crp.vendedor_asociado, ''), NULLIF(crp.desarrollador_asociado, ''), cu.email, 'Sin creador') AS creador,
+               EXISTS (SELECT 1 FROM crm_cotizacion_bookings cb WHERE cb.cotizacion_id = co.id) AS ganada
+        FROM crm_cotizaciones co
+        LEFT JOIN asignacion_de_clientes ac ON ac.folio = co.cliente_folio
+        LEFT JOIN crm_firmas f ON f.user_id = co.creado_por_user_id
+        LEFT JOIN auth.users cu ON cu.id = co.creado_por_user_id
+        LEFT JOIN app_user_permissions crp ON crp.user_id = co.creado_por_user_id
+        WHERE co.fecha_creacion >= %s AND co.fecha_creacion < %s
+    """, (inicio, fin)).fetchall()
+    db.close()
+    vendedores_norm = {normalizar(v) for v in vendedores_permitidos} if vendedores_permitidos is not None else None
+    resultado = []
+    for r in filas:
+        vkey = normalizar(r["cliente_vendedor"]) if r["cliente_vendedor"] else None
+        if plazas_permitidas is not None and vkey and plaza_por_vendedor.get(vkey, "#N/D") not in plazas_permitidas:
+            continue
+        if vendedores_norm is not None and vkey and vkey not in vendedores_norm:
+            continue
+        if r["ganada"]:
+            estado = "ganada"
+        elif r["estatus"] == "perdida":
+            estado = "perdida"
+        elif r["fecha_vencimiento"] and r["fecha_vencimiento"] < hoy:
+            estado = "vencida"
+        else:
+            estado = "vigente"
+        resultado.append({**r, "estado": estado, "creador": (r["creador"] or "").split("@")[0]})
+    return resultado
+
+
+def _mes_desplazado(mes, n):
+    idx = int(mes[:4]) * 12 + int(mes[5:7]) - 1 - n
+    return f"{idx // 12:04d}-{idx % 12 + 1:02d}"
+
+
+def analisis_reporte_ejecutivo(datos, mes, total, por_plaza, por_vendedor, cotizaciones, cot_totales):
+    """Observaciones, riesgos, clientes nuevos y clientes por revisar del mes,
+    calculados con reglas fijas sobre el historial de bookings (se recalcula
+    solo cada mes, no es texto escrito a mano)."""
+    import calendar
+    plaza_por_vendedor = {f["vendedor"]: f["plaza"] for f in datos["filas"]}
+    detalle = datos["detalle"]
+    anio, num_mes = int(mes[:4]), int(mes[5:7])
+    dias_mes = calendar.monthrange(anio, num_mes)[1]
+    corte_txt = max((d["fecha"][:10] for d in detalle if d["mes"] <= mes), default=f"{mes}-01")
+    fin_mes = date(anio, num_mes, dias_mes)
+    corte = min(date.fromisoformat(corte_txt), fin_mes)
+    es_mes_en_curso = corte < fin_mes
+    dia_corte = corte.day if corte.strftime("%Y-%m") == mes else dias_mes
+
+    meses_previos = [_mes_desplazado(mes, n) for n in range(1, 7)]
+    meses_12 = [_mes_desplazado(mes, n) for n in range(0, 12)]
+
+    # ---- historial por cliente ----
+    clientes = {}
+    for d in detalle:
+        nombre = d["cliente_servicio"]
+        if not nombre or d["mes"] > mes:
+            continue
+        c = clientes.setdefault(nombre, {"nombre": nombre, "por_mes": {}, "primer_mes": d["mes"], "primera": d["fecha"], "ultima": "", "vendedor": d["vendedor"]})
+        m = c["por_mes"].setdefault(d["mes"], {"cant": 0, "venta": 0.0, "profit": 0.0})
+        m["cant"] += 1
+        m["venta"] += d["venta"]
+        m["profit"] += d["profit"]
+        c["primer_mes"] = min(c["primer_mes"], d["mes"])
+        c["primera"] = min(c["primera"], d["fecha"])
+        if d["fecha"] > c["ultima"]:
+            c["ultima"], c["vendedor"] = d["fecha"], d["vendedor"]
+    profit_12_total = sum(m["profit"] for c in clientes.values() for k, m in c["por_mes"].items() if k in meses_12) or 1
+    ranking_12 = sorted(clientes.values(), key=lambda c: -sum(m["profit"] for k, m in c["por_mes"].items() if k in meses_12))
+    posicion_12 = {c["nombre"]: i + 1 for i, c in enumerate(ranking_12)}
+
+    hay_historia = datos["meses"] and datos["meses"][0] <= _mes_desplazado(mes, 3)
+    nuevos = []
+    revisar = []
+    for c in clientes.values():
+        actual = c["por_mes"].get(mes, {"cant": 0, "venta": 0.0, "profit": 0.0})
+        plaza = plaza_por_vendedor.get(c["vendedor"], "#N/D")
+        if c["primer_mes"] == mes and hay_historia:
+            nuevos.append({"nombre": c["nombre"], "plaza": plaza, "vendedor": c["vendedor"], **actual,
+                           "primera": c["primera"][:10]})
+            continue
+        activos = [k for k in meses_previos if k in c["por_mes"]]
+        if len(activos) < 3:
+            continue
+        prom = sum(c["por_mes"][k]["cant"] for k in activos) / 6
+        profit_12 = sum(m["profit"] for k, m in c["por_mes"].items() if k in meses_12)
+        ultima = date.fromisoformat(c["ultima"][:10])
+        dias_sin = (corte - ultima).days
+        esperado = prom * dia_corte / dias_mes
+        motivo = None
+        if dias_sin >= 30:
+            motivo = f"Sin carga desde hace {dias_sin} días"
+        elif prom >= 3 and actual["cant"] < esperado * 0.4:
+            motivo = f"Caída de carga: {actual['cant']} booking(s) contra ~{esperado:.0f} esperados a la fecha"
+        if not motivo:
+            continue
+        pos = posicion_12.get(c["nombre"])
+        razones = [f"compró {len(activos)} de los últimos 6 meses", f"promedio {prom:.1f} bookings/mes",
+                   f"{profit_12 / profit_12_total * 100:.1f}% del profit de los últimos 12 meses"]
+        if pos and pos <= 25:
+            razones.insert(0, f"top {pos} en profit de los últimos 12 meses")
+        revisar.append({"nombre": c["nombre"], "plaza": plaza, "vendedor": c["vendedor"], "motivo": motivo,
+                        "ultima": c["ultima"][:10], "dias_sin": dias_sin, "prom": prom, "profit_12": profit_12,
+                        "profit_mes_prom": profit_12 / 12, "por_que": "; ".join(razones).capitalize() + "."})
+    nuevos.sort(key=lambda c: -c["profit"])
+    revisar.sort(key=lambda c: -c["profit_12"])
+
+    # ---- comparativos ----
+    def acumulado(mes_x, hasta_dia):
+        sel = [d for d in detalle if d["mes"] == mes_x and int(d["fecha"][8:10]) <= hasta_dia]
+        return {"cant": len(sel), "venta": sum(d["venta"] for d in sel), "profit": sum(d["profit"] for d in sel)}
+    hoy_acum = acumulado(mes, dia_corte)
+    mes_ant = acumulado(_mes_desplazado(mes, 1), dia_corte)
+    anio_ant = acumulado(_mes_desplazado(mes, 12), dia_corte)
+    margen_prev = [
+        sum(d["profit"] for d in detalle if d["mes"] == k) / (sum(d["venta"] for d in detalle if d["mes"] == k) or 1)
+        for k in meses_previos if any(d["mes"] == k for d in detalle)
+    ]
+    margen_prom_prev = sum(margen_prev) / len(margen_prev) if margen_prev else None
+
+    def variacion(a, b):
+        return (a - b) / abs(b) if b else None
+
+    observaciones = []
+    if es_mes_en_curso:
+        proy = total["profit"] / dia_corte * dias_mes if dia_corte else 0
+        texto = f"Con {dia_corte} de {dias_mes} días transcurridos, el profit va en ${total['profit']:,.0f}; a este ritmo cerraría el mes en ~${proy:,.0f}"
+        if total["ppto"]:
+            texto += f", {proy / total['ppto'] * 100:.0f}% del presupuesto (${total['ppto']:,.0f})."
+            tono = "bien" if proy >= total["ppto"] else ("alerta" if proy >= total["ppto"] * 0.85 else "riesgo")
+        else:
+            texto += "."
+            tono = "info"
+        observaciones.append((tono, texto))
+    elif total["ppto"]:
+        observaciones.append(("bien" if total["profit"] >= total["ppto"] else "riesgo",
+                              f"El mes cerró con ${total['profit']:,.0f} de profit, {total['profit'] / total['ppto'] * 100:.0f}% del presupuesto."))
+    v_ant = variacion(hoy_acum["profit"], mes_ant["profit"])
+    v_anio = variacion(hoy_acum["profit"], anio_ant["profit"])
+    comp = []
+    if v_ant is not None:
+        comp.append(f"{abs(v_ant) * 100:.0f}% {'arriba' if v_ant >= 0 else 'abajo'} del mes anterior (${mes_ant['profit']:,.0f})")
+    if v_anio is not None:
+        comp.append(f"{abs(v_anio) * 100:.0f}% {'arriba' if v_anio >= 0 else 'abajo'} del mismo mes del año pasado (${anio_ant['profit']:,.0f})")
+    if comp:
+        signos = [v for v in (v_ant, v_anio) if v is not None]
+        tono = "bien" if all(v >= 0 for v in signos) else ("riesgo" if all(v < 0 for v in signos) else "alerta")
+        observaciones.append((tono, f"Al mismo corte (día {dia_corte}), el profit va {' y '.join(comp)}."))
+    if total["margen"] is not None and margen_prom_prev:
+        dif_pts = (total["margen"] - margen_prom_prev) * 100
+        if abs(dif_pts) >= 1:
+            observaciones.append(("bien" if dif_pts > 0 else "alerta",
+                                  f"El margen del mes ({total['margen'] * 100:.1f}%) está {abs(dif_pts):.1f} puntos {'arriba' if dif_pts > 0 else 'abajo'} del promedio de los 6 meses anteriores ({margen_prom_prev * 100:.1f}%)."))
+    arriba = [p for p in por_plaza if p["alc"] is not None and p["alc"] >= 1]
+    if arriba:
+        observaciones.append(("bien", "Plazas arriba del presupuesto: " + ", ".join(f"{p['nombre']} ({p['alc'] * 100:.0f}%)" for p in arriba) + "."))
+    top_v = [v for v in por_vendedor if v["alc"] is not None and v["alc"] >= 1.2 and v["profit"] > 5000][:4]
+    if top_v:
+        observaciones.append(("bien", "Vendedores destacados (más de 120% de su presupuesto): " + ", ".join(f"{v['nombre'].title()} ({v['alc'] * 100:.0f}%)" for v in top_v) + "."))
+    if nuevos:
+        observaciones.append(("bien", f"Se activaron {len(nuevos)} cliente(s) nuevo(s) este mes, con {sum(c['cant'] for c in nuevos)} bookings y ${sum(c['profit'] for c in nuevos):,.0f} de profit."))
+    n_cot = len(cotizaciones)
+    if n_cot:
+        conv = cot_totales["ganada"] / n_cot
+        observaciones.append(("info" if conv >= 0.15 else "alerta",
+                              f"Se crearon {n_cot} cotizaciones; {cot_totales['ganada']} ya tienen booking ({conv * 100:.1f}% de conversión) y {cot_totales['vencida']} vencieron sin respuesta."))
+
+    # ---- riesgos ----
+    riesgos = []
+    clientes_mes = sorted(((c["nombre"], c["por_mes"].get(mes, {}).get("profit", 0.0)) for c in clientes.values()), key=lambda x: -x[1])
+    if total["profit"] > 0 and clientes_mes:
+        top1 = clientes_mes[0]
+        top5 = sum(p for _, p in clientes_mes[:5])
+        if top1[1] / total["profit"] >= 0.12:
+            riesgos.append(f"Concentración: {top1[0]} aporta el {top1[1] / total['profit'] * 100:.0f}% del profit del mes; los 5 principales clientes suman el {top5 / total['profit'] * 100:.0f}%.")
+    if revisar:
+        en_riesgo = sum(c["profit_mes_prom"] for c in revisar)
+        riesgos.append(f"{len(revisar)} cliente(s) recurrente(s) sin carga o con caída fuerte; representan ~${en_riesgo:,.0f} de profit promedio al mes.")
+    bajos = [p for p in por_plaza if p["alc"] is not None and p["alc"] < 0.6 and p["ppto"] >= 5000]
+    if bajos:
+        riesgos.append("Plazas por debajo del 60% de su presupuesto: " + ", ".join(f"{p['nombre']} ({p['alc'] * 100:.0f}%)" for p in bajos) + ".")
+    sin_venta = [v["nombre"] for v in por_vendedor if v["venta"] == 0 and v["ppto"] > 0]
+    if sin_venta:
+        riesgos.append(f"{len(sin_venta)} vendedor(es) con presupuesto y sin venta en el mes: " + ", ".join(n.title() for n in sin_venta[:6]) + ("…" if len(sin_venta) > 6 else "") + ".")
+    detalle_mes = [d for d in detalle if d["mes"] == mes]
+    negativos = [d for d in detalle_mes if d["profit"] < 0]
+    if negativos:
+        riesgos.append(f"{len(negativos)} booking(s) con profit negativo por ${sum(d['profit'] for d in negativos):,.0f}; revisar costos o facturación.")
+    ceros = [d for d in detalle_mes if d["profit"] == 0]
+    if ceros:
+        riesgos.append(f"{len(ceros)} booking(s) en 0 ({len(ceros) / (len(detalle_mes) or 1) * 100:.0f}% del mes) pendientes de capturar venta o costo.")
+    bajo_margen = [v for v in por_vendedor if v["margen"] is not None and v["margen"] < 0.08 and v["venta"] >= 50000]
+    if bajo_margen:
+        riesgos.append("Margen bajo (menos de 8%) con volumen alto: " + ", ".join(f"{v['nombre'].title()} ({v['margen'] * 100:.1f}%)" for v in bajo_margen) + ".")
+    if n_cot and cot_totales["vencida"] / n_cot >= 0.25:
+        riesgos.append(f"El {cot_totales['vencida'] / n_cot * 100:.0f}% de las cotizaciones del mes vencieron sin respuesta: falta seguimiento comercial.")
+
+    return {"observaciones": observaciones, "riesgos": riesgos, "nuevos": nuevos, "revisar": revisar[:25],
+            "total_revisar": len(revisar), "corte": corte, "es_mes_en_curso": es_mes_en_curso}
+
+
+def contexto_reporte_ejecutivo(mes=None, plazas_permitidas=None, vendedor_forzado=None, vendedores_permitidos=None):
+    """Todos los datos del reporte ejecutivo del mes (lo usan la vista web y
+    el envío semanal por correo). None si todavía no hay reporte de bookings."""
+    datos = construir_datos_dashboard(plazas_permitidas, vendedor_forzado, vendedores_permitidos)
+    if datos is None:
+        return None
+    if mes not in datos["meses"]:
+        mes = datos["mes_actual"]
+    anio, num_mes = int(mes[:4]), int(mes[5:7])
+
+    filas = [f for f in datos["filas"] if f["mes"] == mes]
+    total = _agrupar_ventas([{**f, "todo": "Total"} for f in filas], "todo")
+    total = total[0] if total else {"cant_book": 0, "venta": 0.0, "profit": 0.0, "ppto": 0.0, "margen": None, "alc": None}
+    por_plaza = _agrupar_ventas(filas, "plaza")
+    por_vendedor = _agrupar_ventas(filas, "vendedor")
+    plaza_vendedor = [
+        {**p, "vendedores": [v for v in por_vendedor if v["plaza"] == p["nombre"]]} for p in por_plaza
+    ]
+    por_customer = _agrupar_ventas([f for f in datos["filas_desarrolladores"] if f["mes"] == mes], "desarrollador")
+
+    detalle = [d for d in datos["detalle"] if d["mes"] == mes]
+    bookings_cero = sorted([d for d in detalle if d["profit"] == 0], key=lambda d: d["fecha"])
+    clientes = {}
+    for d in detalle:
+        c = clientes.setdefault(d["cliente_servicio"] or "Sin cliente", {"nombre": d["cliente_servicio"] or "Sin cliente", "cant_book": 0, "venta": 0.0, "profit": 0.0, "vendedores": set()})
+        c["cant_book"] += 1
+        c["venta"] += d["venta"]
+        c["profit"] += d["profit"]
+        c["vendedores"].add(d["vendedor"])
+    por_cliente = sorted(clientes.values(), key=lambda c: (c["cant_book"], c["venta"]), reverse=True)
+    for c in por_cliente:
+        c["vendedores"] = ", ".join(sorted(v for v in c["vendedores"] if v))
+
+    cotizaciones = cotizaciones_del_mes(anio, num_mes, plazas_permitidas, vendedores_permitidos)
+    estados = ["vigente", "ganada", "perdida", "vencida"]
+    cot_totales = {e: sum(1 for c in cotizaciones if c["estado"] == e) for e in estados}
+    por_creador = {}
+    for c in cotizaciones:
+        g = por_creador.setdefault(c["creador"], {"nombre": c["creador"], "total": 0, "prospectos": 0, "profit": 0.0, **{e: 0 for e in estados}})
+        g["total"] += 1
+        g[c["estado"]] += 1
+        g["prospectos"] += 1 if c["es_prospecto"] else 0
+        g["profit"] += float(c["profit_estimado"] or 0)
+    por_creador = sorted(por_creador.values(), key=lambda g: g["total"], reverse=True)
+    clientes_cotizados = {}
+    for c in cotizaciones:
+        g = clientes_cotizados.setdefault(c["cliente"], {"nombre": c["cliente"], "total": 0, "ganada": 0, "prospecto": c["es_prospecto"]})
+        g["total"] += 1
+        g["ganada"] += 1 if c["estado"] == "ganada" else 0
+    top_cotizados = sorted(clientes_cotizados.values(), key=lambda g: g["total"], reverse=True)[:15]
+
+    analisis = analisis_reporte_ejecutivo(datos, mes, total, por_plaza, por_vendedor, cotizaciones, cot_totales)
+    return dict(
+        datos=datos, mes=mes, analisis=analisis, mes_nombre=f"{MESES_ES[num_mes - 1]} {anio}",
+        total=total, por_plaza=por_plaza, plaza_vendedor=plaza_vendedor, por_vendedor=por_vendedor,
+        por_customer=por_customer, bookings_cero=bookings_cero, por_cliente=por_cliente,
+        cotizaciones=cotizaciones, cot_totales=cot_totales, por_creador=por_creador, top_cotizados=top_cotizados,
+        cot_profit=sum(float(c["profit_estimado"] or 0) for c in cotizaciones),
+        generado=datetime.now(TZ_LOCAL).strftime("%d/%m/%Y %H:%M"),
+    )
+
+
+@app.route("/ventas/reporte-ejecutivo")
+@login_required
+def ventas_reporte_ejecutivo():
+    """Reporte ejecutivo del mes: venta, por plaza, por plaza/vendedor,
+    ranking de vendedores, Customer, bookings en 0, bookings por cliente,
+    cotizaciones acumuladas y análisis (observaciones, riesgos, clientes)."""
+    if not usuario_puede_ver_ventas():
+        flash("No tienes permiso para ver Información de Ventas.")
+        return redirect(url_for(primera_pagina_permitida()))
+    ctx = contexto_reporte_ejecutivo(
+        request.args.get("mes"), plazas_permitidas_usuario(), vendedor_forzado_usuario(), vendedores_permitidos_usuario()
+    )
+    if ctx is None:
+        flash("Todavía no hay ningún reporte generado.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+    return render_template("ventas_reporte_ejecutivo.html", **ctx)
+
+
+# Envío semanal (lunes 8:00 AM hora de México) del reporte ejecutivo en PDF.
+CORREOS_REPORTE_EJECUTIVO = [
+    "ramon.villanueva@av2logistics.com",
+    "armando.villanueva@av2logistics.com",
+    "salvador.garciap@av2logistics.com",
+    "alfredo.villebardet@av2logistics.com",
+    "avillanueva@av2logistics.com",
+]
+
+
+REMITENTE_REPORTE_EJECUTIVO = ("Ventas@av2logistics.com", "AV2 Ventas")
+
+
+def generar_pdf_reporte_ejecutivo(ctx):
+    html = render_template("ventas_reporte_ejecutivo_pdf.html", **ctx)
+    buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    return None if resultado.err else buffer.getvalue()
+
+
+def enviar_reporte_ejecutivo(destinatarios=None):
+    """Arma el reporte ejecutivo (sin restricción de plazas) y lo manda por
+    correo con el PDF adjunto. Los primeros 7 días del mes reporta el mes
+    anterior ya cerrado; el resto, el mes en curso."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    mes = (hoy.replace(day=1) - timedelta(days=1)).strftime("%Y-%m") if hoy.day <= 7 else hoy.strftime("%Y-%m")
+    ctx = contexto_reporte_ejecutivo(mes)
+    if ctx is None:
+        return False, "No hay reporte de bookings generado."
+    pdf = generar_pdf_reporte_ejecutivo(ctx)
+    if pdf is None:
+        return False, "No se pudo generar el PDF."
+    destinatarios = destinatarios or CORREOS_REPORTE_EJECUTIVO
+    cuerpo = render_template("ventas_reporte_ejecutivo_correo.html", **ctx)
+    enviar_correo_smtp(
+        destinatarios[0], f"Reporte ejecutivo de ventas · {ctx['mes_nombre']} · corte {ctx['generado'][:10]}", cuerpo,
+        adjuntos=[(f"Reporte_ejecutivo_ventas_{ctx['mes']}.pdf", pdf)], cc=destinatarios[1:],
+        remitente=REMITENTE_REPORTE_EJECUTIVO,
+    )
+    return True, f"Enviado a {len(destinatarios)} destinatario(s) ({ctx['mes_nombre']})."
+
+
+@app.route("/cron/reporte-ejecutivo", methods=["GET", "POST"])
+@csrf.exempt
+def cron_reporte_ejecutivo():
+    cron_secret = os.environ.get("CRON_SECRET", "").strip()
+    auth = request.headers.get("Authorization", "")
+    if not cron_secret or not hmac.compare_digest(auth, f"Bearer {cron_secret}"):
+        return {"ok": False, "error": "no autorizado"}, 401
+    try:
+        ok, mensaje = enviar_reporte_ejecutivo()
+    except Exception as e:
+        app.logger.exception("Falló el envío del reporte ejecutivo")
+        return {"ok": False, "error": str(e)}, 500
+    return {"ok": ok, "mensaje": mensaje}, (200 if ok else 500)
 
 
 @app.route("/venta-diaria")

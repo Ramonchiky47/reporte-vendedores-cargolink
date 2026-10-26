@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Reporte ejecutivo de ventas · {{ mes_nombre }}</title>
+<style>
+  @page { size: Letter; margin: 0.45in 0.45in 0.5in; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; font-family: "Helvetica Neue", Arial, sans-serif; color: #1f2937; background: #fff; font-size: 9.5px; }
+  .hoja { width: 7.6in; margin: 0 auto; }
+  @media screen { html { background: #e5e7eb; } .hoja { background: #fff; padding: .45in; width: 8.5in; margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,.18); } }
+
+  .titulo { display: flex; justify-content: space-between; align-items: flex-end; margin: 14px 0 12px; }
+  .titulo h1 { margin: 0; font-size: 21px; color: #111827; letter-spacing: -.3px; }
+  .titulo .kicker { font-size: 9px; font-weight: 800; letter-spacing: 1.6px; text-transform: uppercase; color: #7a1f1f; }
+  .titulo .meta { text-align: right; font-size: 8.5px; color: #6b7280; line-height: 1.5; }
+
+  h2 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px; color: #7a1f1f; margin: 18px 0 7px; padding-bottom: 4px; border-bottom: 1.5px solid #7a1f1f; display: flex; justify-content: space-between; align-items: baseline; break-after: avoid; }
+  h2 small { font-size: 8.5px; color: #6b7280; letter-spacing: 0; text-transform: none; font-weight: 500; }
+  .seccion { break-inside: avoid; }
+  .salto { break-before: page; }
+
+  .kpis { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+  .kpi { padding: 8px 9px; border-right: 1px solid #e5e7eb; }
+  .kpi:last-child { border-right: none; }
+  .kpi .e { font-size: 7px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: .6px; }
+  .kpi .v { font-size: 13px; font-weight: 800; color: #111827; margin-top: 3px; white-space: nowrap; }
+  .kpi.destacado { background: #fbf4f2; }
+  .pos { color: #15803d !important; } .neg { color: #b91c1c !important; }
+
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th { background: #f3f4f6; color: #4b5563; font-size: 7.2px; text-transform: uppercase; letter-spacing: .5px; font-weight: 800; text-align: right; padding: 5px 6px; white-space: nowrap; }
+  td { padding: 3.6px 6px; text-align: right; border-bottom: 1px solid #f1f1f1; white-space: nowrap; }
+  th.i, td.i { text-align: left; }
+  td.nom { max-width: 2.3in; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: #111827; }
+  tr { break-inside: avoid; }
+  tfoot td { font-weight: 800; background: #f9fafb; border-top: 1.2px solid #9ca3af; border-bottom: none; }
+  tr.grupo td { background: #fbf4f2; font-weight: 800; color: #7a1f1f; border-top: 1px solid #ead7d3; }
+  tr.sub td.nom { padding-left: 16px; font-weight: 500; color: #374151; }
+  .rank { color: #9ca3af; font-weight: 800; width: 16px; }
+  .barra { display: inline-block; width: 70px; height: 6px; background: #eef0f3; border-radius: 3px; overflow: hidden; vertical-align: middle; }
+  .barra i { display: block; height: 100%; background: #7a1f1f; border-radius: 3px; }
+  .alc { display: inline-block; min-width: 34px; font-weight: 800; }
+  .alc.ok { color: #15803d; } .alc.medio { color: #b45309; } .alc.bajo { color: #b91c1c; }
+
+  .dos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .graf-plaza { display: grid; grid-template-columns: 1.1in 1fr 0.8in; gap: 3px 8px; align-items: center; font-size: 8.5px; margin-top: 4px; }
+  .graf-plaza .p { font-weight: 700; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .graf-plaza .pista { position: relative; height: 11px; background: #f3f4f6; border-radius: 3px; }
+  .graf-plaza .pista .venta { position: absolute; left: 0; top: 0; bottom: 0; background: #7a1f1f; border-radius: 3px; }
+  .graf-plaza .n { text-align: right; font-weight: 700; }
+
+  .cot-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .cot-kpi { border: 1px solid #e5e7eb; border-radius: 8px; padding: 7px 9px; }
+  .cot-kpi .e { font-size: 7px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: .6px; }
+  .cot-kpi .v { font-size: 14px; font-weight: 800; color: #111827; margin-top: 2px; }
+  .cot-kpi .s { font-size: 7.5px; color: #6b7280; }
+  .mezcla { display: flex; height: 9px; border-radius: 5px; overflow: hidden; margin: 8px 0 2px; background: #f3f4f6; }
+  .mezcla i { display: block; height: 100%; }
+  .leyenda { display: flex; gap: 12px; font-size: 7.5px; color: #4b5563; margin-bottom: 4px; }
+  .leyenda span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 4px; background: var(--c); vertical-align: -1px; }
+  .chip { display: inline-block; font-size: 7px; font-weight: 800; padding: 1px 5px; border-radius: 999px; background: #eef2ff; color: #4338ca; margin-left: 4px; }
+  .vacio { color: #6b7280; font-style: italic; padding: 8px 0; }
+  .analisis { display: grid; grid-template-columns: 1.15fr 1fr; gap: 12px; margin-top: 12px; }
+  .caja { border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; break-inside: avoid; }
+  .caja h3 { margin: 0 0 6px; font-size: 8.5px; text-transform: uppercase; letter-spacing: 1px; color: #374151; }
+  .caja.riesgos { background: #fff8f7; border-color: #f3d4cf; }
+  .caja.riesgos h3 { color: #b91c1c; }
+  .caja ul { margin: 0; padding: 0; list-style: none; }
+  .caja li { position: relative; padding: 3px 0 3px 13px; line-height: 1.45; font-size: 8.6px; color: #1f2937; }
+  .caja li + li { border-top: 1px dashed #eceff3; }
+  .caja li::before { content: ""; position: absolute; left: 0; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; }
+  .caja li.bien::before { background: #16a34a; } .caja li.alerta::before { background: #f59e0b; } .caja li.riesgo::before { background: #dc2626; } .caja li.info::before { background: #3b82f6; }
+  .caja.riesgos li::before { background: #dc2626; border-radius: 2px; transform: rotate(45deg); }
+  td.porque { white-space: normal; text-align: left; color: #4b5563; font-size: 7.6px; line-height: 1.35; max-width: 2.6in; }
+  td.motivo { white-space: normal; text-align: left; font-weight: 700; color: #b91c1c; font-size: 7.8px; max-width: 1.3in; }
+  .nota { font-size: 7.5px; color: #9ca3af; margin-top: 14px; text-align: center; }
+
+  .barra-acciones { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 12px; padding: 10px 18px; background: #111827; color: #fff; font-size: 13px; }
+  .barra-acciones a { color: #93c5fd; text-decoration: none; font-weight: 600; }
+  .barra-acciones span { flex: 1; font-weight: 700; }
+  .barra-acciones select { padding: 5px 8px; border-radius: 6px; border: none; font: inherit; }
+  .barra-acciones button { background: #7a1f1f; color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+  @media print { .barra-acciones { display: none; } }
+</style></head>
+<body>
+<div class="barra-acciones">
+  <a href="{{ url_for('dashboard_plazas_vendedores') }}">&larr; Ventas</a>
+  <span>Reporte ejecutivo · {{ mes_nombre }}</span>
+  <form method="get"><select name="mes" onchange="this.form.submit()">
+    {% for m in datos.meses|reverse %}<option value="{{ m }}" {{ 'selected' if m == mes else '' }}>{{ m }}</option>{% endfor %}
+  </select></form>
+  <button type="button" id="btn-pdf">Descargar PDF</button>
+</div>
+
+{% macro alc(v) -%}
+  {%- if v is none %}<span class="alc">—</span>{% else %}<span class="alc {{ 'ok' if v >= 1 else ('medio' if v >= 0.7 else 'bajo') }}">{{ (v * 100)|round|int }}%</span>{% endif -%}
+{%- endmacro %}
+{% macro dinero(v) -%}{{ '-' if v < 0 else '' }}${{ '{:,.0f}'.format(v|abs) }}{%- endmacro %}
+{% macro pct(v) -%}{{ '—' if v is none else ('{:.1f}%'.format(v * 100)) }}{%- endmacro %}
+
+<div class="hoja" id="hoja">
+  {% include "informe_reactivacion/_encabezado.html" %}
+  <div class="titulo">
+    <div>
+      <div class="kicker">Reporte ejecutivo de ventas</div>
+      <h1>{{ mes_nombre }}</h1>
+    </div>
+    <div class="meta">Datos al corte: {{ datos.generado_en }}<br>Generado: {{ generado }}</div>
+  </div>
+
+  {# ---- 1. Venta ---- #}
+  {% set dif = total.profit - total.ppto %}
+  <div class="kpis">
+    <div class="kpi"><div class="e">Bookings</div><div class="v">{{ '{:,}'.format(total.cant_book) }}</div></div>
+    <div class="kpi"><div class="e">Venta</div><div class="v">{{ dinero(total.venta) }}</div></div>
+    <div class="kpi destacado"><div class="e">Profit</div><div class="v">{{ dinero(total.profit) }}</div></div>
+    <div class="kpi"><div class="e">Margen</div><div class="v">{{ pct(total.margen) }}</div></div>
+    <div class="kpi"><div class="e">Presupuesto</div><div class="v">{{ dinero(total.ppto) }}</div></div>
+    <div class="kpi"><div class="e">% Alcance</div><div class="v">{{ alc(total.alc) }}</div></div>
+    <div class="kpi"><div class="e">Dif. ppto</div><div class="v {{ 'neg' if dif < 0 else 'pos' }}">{{ dinero(dif) }}</div></div>
+  </div>
+
+  {# ---- Resumen ejecutivo: observaciones y riesgos ---- #}
+  <div class="analisis">
+    <div class="caja">
+      <h3>Observaciones del mes</h3>
+      <ul>{% for tono, texto in analisis.observaciones %}<li class="{{ tono }}">{{ texto }}</li>{% else %}<li>Sin observaciones.</li>{% endfor %}</ul>
+    </div>
+    <div class="caja riesgos">
+      <h3>Riesgos en la carga</h3>
+      <ul>{% for r in analisis.riesgos %}<li>{{ r }}</li>{% else %}<li>No se detectaron riesgos relevantes.</li>{% endfor %}</ul>
+    </div>
+  </div>
+
+  {# ---- 2. Venta por plaza ---- #}
+  <div class="seccion">
+    <h2>Venta por plaza <small>{{ por_plaza|length }} plazas · ordenado por venta</small></h2>
+    {% set max_venta = (por_plaza|map(attribute='venta')|max) if por_plaza else 1 %}
+    <table>
+      <thead><tr><th class="i">Plaza</th><th>Book</th><th>Venta</th><th>Profit</th><th>Margen</th><th>Ppto</th><th>% Alc</th><th>Dif. ppto</th><th class="i">Participación</th></tr></thead>
+      <tbody>
+        {% for p in por_plaza %}
+        <tr><td class="i nom">{{ p.nombre }}</td><td>{{ p.cant_book }}</td><td>{{ dinero(p.venta) }}</td><td>{{ dinero(p.profit) }}</td><td>{{ pct(p.margen) }}</td><td>{{ dinero(p.ppto) if p.ppto else '—' }}</td><td>{{ alc(p.alc) }}</td><td class="{{ 'neg' if p.profit - p.ppto < 0 else 'pos' }}">{{ dinero(p.profit - p.ppto) }}</td>
+          <td class="i"><span class="barra"><i style="width: {{ [p.venta / max_venta * 100, 1]|max if max_venta else 0 }}%"></i></span> {{ '{:.1f}%'.format(p.venta / total.venta * 100) if total.venta else '' }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td class="i">Total</td><td>{{ total.cant_book }}</td><td>{{ dinero(total.venta) }}</td><td>{{ dinero(total.profit) }}</td><td>{{ pct(total.margen) }}</td><td>{{ dinero(total.ppto) }}</td><td>{{ alc(total.alc) }}</td><td class="{{ 'neg' if dif < 0 else 'pos' }}">{{ dinero(dif) }}</td><td></td></tr></tfoot>
+    </table>
+  </div>
+
+  {# ---- 3. Ranking por vendedor ---- #}
+  <div>
+    <h2>Ranking de vendedores por venta <small>{{ por_vendedor|length }} vendedores</small></h2>
+    {% set max_v = (por_vendedor|map(attribute='venta')|max) if por_vendedor else 1 %}
+    <table>
+      <thead><tr><th class="i">#</th><th class="i">Vendedor</th><th class="i">Plaza</th><th>Book</th><th>Venta</th><th class="i"></th><th>Profit</th><th>Margen</th><th>% Alc</th></tr></thead>
+      <tbody>
+        {% for v in por_vendedor %}
+        <tr><td class="i rank">{{ loop.index }}</td><td class="i nom">{{ v.nombre }}</td><td class="i">{{ v.plaza }}</td><td>{{ v.cant_book }}</td><td>{{ dinero(v.venta) }}</td>
+          <td class="i"><span class="barra"><i style="width: {{ [v.venta / max_v * 100, 1]|max if max_v else 0 }}%"></i></span></td>
+          <td>{{ dinero(v.profit) }}</td><td>{{ pct(v.margen) }}</td><td>{{ alc(v.alc) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ---- 4. Venta por plaza y vendedor ---- #}
+  <h2>Venta por plaza y vendedor <small>subtotal por plaza</small></h2>
+  <table>
+    <thead><tr><th class="i">Plaza / vendedor</th><th>Book</th><th>Venta</th><th>Profit</th><th>Margen</th><th>Ppto</th><th>% Alc</th><th>Dif. ppto</th></tr></thead>
+    <tbody>
+      {% for p in plaza_vendedor %}
+      <tr class="grupo"><td class="i nom" style="color:#7a1f1f;">{{ p.nombre }}</td><td>{{ p.cant_book }}</td><td>{{ dinero(p.venta) }}</td><td>{{ dinero(p.profit) }}</td><td>{{ pct(p.margen) }}</td><td>{{ dinero(p.ppto) if p.ppto else '—' }}</td><td>{{ alc(p.alc) }}</td><td>{{ dinero(p.profit - p.ppto) }}</td></tr>
+        {% for v in p.vendedores %}
+        <tr class="sub"><td class="i nom">{{ v.nombre }}</td><td>{{ v.cant_book }}</td><td>{{ dinero(v.venta) }}</td><td>{{ dinero(v.profit) }}</td><td>{{ pct(v.margen) }}</td><td>{{ dinero(v.ppto) if v.ppto else '—' }}</td><td>{{ alc(v.alc) }}</td><td class="{{ 'neg' if v.profit - v.ppto < 0 else 'pos' }}">{{ dinero(v.profit - v.ppto) }}</td></tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# ---- 5. Venta por Customer ---- #}
+  <div class="seccion">
+    <h2>Venta por Customer (desarrollador de cuenta) <small>{{ por_customer|length }} desarrolladores</small></h2>
+    <table>
+      <thead><tr><th class="i">#</th><th class="i">Customer</th><th class="i">Plaza</th><th>Book</th><th>Venta</th><th>Profit</th><th>Margen</th><th>Ppto</th><th>% Alc</th></tr></thead>
+      <tbody>
+        {% for c in por_customer %}
+        <tr><td class="i rank">{{ loop.index }}</td><td class="i nom">{{ c.nombre }}</td><td class="i">{{ c.plaza }}</td><td>{{ c.cant_book }}</td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td><td>{{ pct(c.margen) }}</td><td>{{ dinero(c.ppto) if c.ppto else '—' }}</td><td>{{ alc(c.alc) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ---- 6. Bookings en 0 ---- #}
+  <h2>Bookings en 0 <small>{{ bookings_cero|length }} bookings sin profit en el mes</small></h2>
+  {% if bookings_cero %}
+  <table>
+    <thead><tr><th class="i">Booking</th><th class="i">Fecha</th><th class="i">Cliente</th><th class="i">Vendedor</th><th class="i">Customer</th><th>Venta</th></tr></thead>
+    <tbody>
+      {% for b in bookings_cero %}
+      <tr><td class="i" style="font-weight:700;">{{ b.referencia }}</td><td class="i">{{ b.fecha[8:10] }}/{{ b.fecha[5:7] }}</td><td class="i nom">{{ b.cliente_servicio or '—' }}</td><td class="i">{{ b.vendedor }}</td><td class="i">{{ b.ejecutivo or '—' }}</td><td>{{ dinero(b.venta) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="vacio">No hay bookings en 0 este mes.</p>{% endif %}
+
+  {# ---- 7. Bookings por cliente ---- #}
+  <div>
+    <h2>Bookings por cliente <small>{{ por_cliente|length }} clientes con booking · top 30</small></h2>
+    <table>
+      <thead><tr><th class="i">#</th><th class="i">Cliente</th><th class="i">Vendedor</th><th>Book</th><th>Venta</th><th>Profit</th><th>Margen</th></tr></thead>
+      <tbody>
+        {% for c in por_cliente[:30] %}
+        <tr><td class="i rank">{{ loop.index }}</td><td class="i nom">{{ c.nombre }}</td><td class="i" style="max-width:1.6in; overflow:hidden; text-overflow:ellipsis;">{{ c.vendedores }}</td><td style="font-weight:800;">{{ c.cant_book }}</td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td><td>{{ pct(c.profit / c.venta if c.venta else none) }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ---- Clientes nuevos ---- #}
+  <div class="seccion">
+    <h2>Clientes nuevos activados en el mes <small>primer booking con AV2 en {{ mes_nombre|lower }}</small></h2>
+    {% if analisis.nuevos %}
+    <table>
+      <thead><tr><th class="i">Cliente</th><th class="i">Plaza</th><th class="i">Vendedor</th><th class="i">Primer booking</th><th>Book</th><th>Venta</th><th>Profit</th></tr></thead>
+      <tbody>
+        {% for c in analisis.nuevos %}
+        <tr><td class="i nom">{{ c.nombre }}</td><td class="i">{{ c.plaza }}</td><td class="i">{{ c.vendedor }}</td><td class="i">{{ c.primera[8:10] }}/{{ c.primera[5:7] }}</td><td>{{ c.cant }}</td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td class="i" colspan="4">{{ analisis.nuevos|length }} cliente(s) nuevo(s)</td><td>{{ analisis.nuevos|sum(attribute='cant') }}</td><td>{{ dinero(analisis.nuevos|sum(attribute='venta')) }}</td><td>{{ dinero(analisis.nuevos|sum(attribute='profit')) }}</td></tr></tfoot>
+    </table>
+    {% else %}<p class="vacio">No se activaron clientes nuevos este mes.</p>{% endif %}
+  </div>
+
+  {# ---- Clientes a revisar ---- #}
+  <div>
+    <h2>Clientes a revisar por falta de carga <small>recurrentes (3+ de los últimos 6 meses) sin carga en 30+ días o con caída fuerte · {{ analisis.revisar|length }} de {{ analisis.total_revisar }}, por profit 12 meses</small></h2>
+    {% if analisis.revisar %}
+    <table>
+      <thead><tr><th class="i">Cliente</th><th class="i">Plaza</th><th class="i">Vendedor</th><th class="i">Situación</th><th class="i">Último</th><th>Profit 12m</th><th class="i">Por qué cuidarlo</th></tr></thead>
+      <tbody>
+        {% for c in analisis.revisar %}
+        <tr><td class="i nom" style="max-width:1.7in;">{{ c.nombre }}</td><td class="i">{{ c.plaza }}</td><td class="i" style="max-width:1.2in; overflow:hidden; text-overflow:ellipsis;">{{ c.vendedor }}</td><td class="motivo">{{ c.motivo }}</td><td class="i">{{ c.ultima[8:10] }}/{{ c.ultima[5:7] }}/{{ c.ultima[2:4] }}</td><td style="font-weight:800;">{{ dinero(c.profit_12) }}</td><td class="porque">{{ c.por_que }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="vacio">No hay clientes recurrentes con falta de carga.</p>{% endif %}
+  </div>
+
+  {# ---- 8. Cotizaciones acumuladas del mes ---- #}
+  <div class="salto"></div>
+  {% set n_cot = cotizaciones|length %}
+  <h2>Cotizaciones acumuladas del mes <small>creadas en {{ mes_nombre|lower }}</small></h2>
+  <div class="cot-kpis">
+    <div class="cot-kpi"><div class="e">Cotizaciones</div><div class="v">{{ '{:,}'.format(n_cot) }}</div><div class="s">{{ cotizaciones|selectattr('es_prospecto')|list|length }} a prospectos</div></div>
+    <div class="cot-kpi"><div class="e">Vigentes</div><div class="v">{{ cot_totales.vigente }}</div><div class="s">{{ '{:.0f}%'.format(cot_totales.vigente / n_cot * 100) if n_cot else '—' }}</div></div>
+    <div class="cot-kpi"><div class="e">Ganadas</div><div class="v pos">{{ cot_totales.ganada }}</div><div class="s">{{ '{:.1f}%'.format(cot_totales.ganada / n_cot * 100) if n_cot else '—' }} conversión</div></div>
+    <div class="cot-kpi"><div class="e">Perdidas</div><div class="v neg">{{ cot_totales.perdida }}</div><div class="s">{{ '{:.0f}%'.format(cot_totales.perdida / n_cot * 100) if n_cot else '—' }}</div></div>
+    <div class="cot-kpi"><div class="e">Vencidas</div><div class="v" style="color:#b45309;">{{ cot_totales.vencida }}</div><div class="s">sin respuesta</div></div>
+    <div class="cot-kpi"><div class="e">Profit estimado</div><div class="v">{{ dinero(cot_profit) }}</div><div class="s">suma de cotizaciones</div></div>
+  </div>
+  {% if n_cot %}
+  <div class="mezcla">
+    <i style="width: {{ cot_totales.ganada / n_cot * 100 }}%; background:#15803d;"></i>
+    <i style="width: {{ cot_totales.vigente / n_cot * 100 }}%; background:#60a5fa;"></i>
+    <i style="width: {{ cot_totales.vencida / n_cot * 100 }}%; background:#f59e0b;"></i>
+    <i style="width: {{ cot_totales.perdida / n_cot * 100 }}%; background:#dc2626;"></i>
+  </div>
+  <div class="leyenda"><span style="--c:#15803d">Ganadas</span><span style="--c:#60a5fa">Vigentes</span><span style="--c:#f59e0b">Vencidas</span><span style="--c:#dc2626">Perdidas</span></div>
+  {% endif %}
+
+  <div class="dos" style="margin-top: 10px;">
+    <div>
+      <table>
+        <thead><tr><th class="i">Creada por</th><th>Total</th><th>Vig.</th><th>Gan.</th><th>Perd.</th><th>Venc.</th><th>Conv.</th></tr></thead>
+        <tbody>
+          {% for g in por_creador %}
+          <tr><td class="i nom" style="max-width:1.5in;">{{ g.nombre }}</td><td style="font-weight:800;">{{ g.total }}</td><td>{{ g.vigente }}</td><td class="pos">{{ g.ganada }}</td><td class="neg">{{ g.perdida }}</td><td>{{ g.vencida }}</td><td>{{ '{:.0f}%'.format(g.ganada / g.total * 100) if g.total else '—' }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><td class="i">Total</td><td>{{ n_cot }}</td><td>{{ cot_totales.vigente }}</td><td>{{ cot_totales.ganada }}</td><td>{{ cot_totales.perdida }}</td><td>{{ cot_totales.vencida }}</td><td>{{ '{:.0f}%'.format(cot_totales.ganada / n_cot * 100) if n_cot else '—' }}</td></tr></tfoot>
+      </table>
+    </div>
+    <div>
+      <table>
+        <thead><tr><th class="i">Clientes más cotizados</th><th>Cotiz.</th><th>Ganadas</th></tr></thead>
+        <tbody>
+          {% for c in top_cotizados %}
+          <tr><td class="i nom" style="max-width:2.2in;">{{ c.nombre }}{% if c.prospecto %}<span class="chip">Prospecto</span>{% endif %}</td><td style="font-weight:800;">{{ c.total }}</td><td class="pos">{{ c.ganada or '—' }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="nota">AV2 Logistics · Reporte ejecutivo de ventas {{ mes_nombre }} · Ganada = cotización con booking aplicado; vencida = vigente con fecha de vencimiento pasada.</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+  document.getElementById("btn-pdf").addEventListener("click", async function () {
+    const boton = this;
+    if (!window.html2pdf) { window.print(); return; }
+    boton.disabled = true; boton.textContent = "Generando…";
+    const hoja = document.getElementById("hoja");
+    const estilo = hoja.getAttribute("style") || "";
+    hoja.setAttribute("style", "box-shadow:none;margin:0;padding:0;width:7.6in;");
+    try {
+      await html2pdf().set({
+        margin: [0.45, 0.45, 0.5, 0.45],
+        filename: "Reporte_ejecutivo_ventas_{{ mes }}.pdf",
+        image: { type: "jpeg", quality: 0.96 },
+        html2canvas: { scale: 2, backgroundColor: "#ffffff", scrollY: 0 },
+        jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
+        pagebreak: { mode: ["css"], before: ".salto", avoid: ["tr", ".seccion h2", ".kpis", ".cot-kpis"] },
+      }).from(hoja).save();
+    } finally {
+      hoja.setAttribute("style", estilo);
+      boton.disabled = false; boton.textContent = "Descargar PDF";
+    }
+  });
+</script>
+</body></html>

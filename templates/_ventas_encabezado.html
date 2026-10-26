@@ -118,6 +118,7 @@
     <div class="meta">Reporte: {{ datos.archivo }} · generado <span id="meta-generado-en">{{ datos.generado_en }}</span></div>
   </div>
   <div class="vs-head-acciones">
+    <a class="btn" href="{{ url_for('ventas_reporte_ejecutivo') }}">Reporte ejecutivo PDF</a>
     {% if puede_exportar %}<button type="button" class="btn" id="btn-exportar-plaza">Exportar</button>{% endif %}
     {% if puede_actualizar %}
     <form method="post" action="{{ url_for('generar') }}" style="display:inline;">

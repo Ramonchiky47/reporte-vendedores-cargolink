@@ -1,0 +1,179 @@
+{# Versión xhtml2pdf (servidor) del reporte ejecutivo — la usa el envío
+   semanal por correo, donde no hay navegador para imprimir. Solo tablas
+   y anchos fijos en pt: xhtml2pdf no soporta grid/flex. #}
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<style>
+  @page { size: letter portrait; margin: 30pt 30pt 34pt 30pt;
+    @frame pie { -pdf-frame-content: pie; bottom: 12pt; height: 14pt; left: 30pt; right: 30pt; } }
+  body { font-family: Helvetica; font-size: 7.4pt; color: #1f2937; line-height: 1.2; }
+  p, div { margin: 0; }
+  h1 { font-size: 17pt; margin: 0; color: #111827; }
+  .kicker { font-size: 7pt; font-weight: bold; color: #7a1f1f; letter-spacing: 1pt; }
+  h2 { font-size: 8.4pt; color: #7a1f1f; margin: 10pt 0 3pt; padding-bottom: 2pt; border-bottom: 1.2pt solid #7a1f1f; }
+  h2 span { font-size: 7pt; color: #6b7280; font-weight: normal; }
+  table.t { width: 100%; border-collapse: collapse; }
+  table.t th { background-color: #f3f4f6; color: #4b5563; font-size: 6.2pt; font-weight: bold; text-align: right; padding: 2.5pt 4pt 1pt; }
+  table.t td { padding: 1.6pt 4pt 0.6pt; text-align: right; border-bottom: 0.5pt solid #ececec; }
+  table.t .i { text-align: left; }
+  table.t td.n { font-weight: bold; color: #111827; }
+  table.t tr.tot td { font-weight: bold; background-color: #f9fafb; border-top: 1pt solid #9ca3af; }
+  table.t tr.grupo td { font-weight: bold; background-color: #fbf4f2; color: #7a1f1f; }
+  .pos { color: #15803d; } .neg { color: #b91c1c; } .med { color: #b45309; }
+  .kpi { border: 0.6pt solid #e5e7eb; padding: 4pt 6pt 2pt; }
+  .kpi .e { font-size: 5.8pt; font-weight: bold; color: #6b7280; }
+  .kpi .v { font-size: 11pt; font-weight: bold; color: #111827; }
+  .caja { border: 0.6pt solid #e5e7eb; padding: 6pt 7pt; vertical-align: top; }
+  .caja.r { background-color: #fff8f7; border-color: #f3d4cf; }
+  .caja p.tit { font-size: 7pt; font-weight: bold; margin: 0 0 3pt; color: #374151; }
+  .caja.r p.tit { color: #b91c1c; }
+  .caja p.li { margin: 0 0 2.5pt; font-size: 7.1pt; line-height: 1.25; }
+  .vacio { color: #6b7280; font-style: italic; }
+</style></head>
+<body>
+{% macro dinero(v) -%}{{ '-' if v < 0 else '' }}${{ '{:,.0f}'.format(v|abs) }}{%- endmacro %}
+{% macro pct(v) -%}{{ '—' if v is none else ('{:.1f}%'.format(v * 100)) }}{%- endmacro %}
+{% macro alc(v) -%}{% if v is none %}—{% else %}<span class="{{ 'pos' if v >= 1 else ('med' if v >= 0.7 else 'neg') }}"><b>{{ (v * 100)|round|int }}%</b></span>{% endif %}{%- endmacro %}
+{% macro barra(v, maximo) -%}{{ '{:.1f}%'.format(v / maximo * 100) if maximo else '' }}{%- endmacro %}
+
+<div id="pie" style="text-align: center; font-size: 6pt; color: #9ca3af;">AV2 Logistics · Reporte ejecutivo de ventas {{ mes_nombre }} · página <pdf:pagenumber></div>
+
+{% include "_encabezado_pdf.html" %}
+<table style="width: 100%;"><tr>
+  <td><div class="kicker">REPORTE EJECUTIVO DE VENTAS</div><h1>{{ mes_nombre }}</h1></td>
+  <td style="text-align: right; font-size: 6.6pt; color: #6b7280; vertical-align: bottom;">Datos al corte: {{ datos.generado_en }}<br>Generado: {{ generado }}</td>
+</tr></table>
+
+{% set dif = total.profit - total.ppto %}
+<table style="width: 100%; border-collapse: collapse; margin-top: 6pt;"><tr>
+  <td class="kpi"><div class="e">BOOKINGS</div><div class="v">{{ '{:,}'.format(total.cant_book) }}</div></td>
+  <td class="kpi"><div class="e">VENTA</div><div class="v">{{ dinero(total.venta) }}</div></td>
+  <td class="kpi" style="background-color: #fbf4f2;"><div class="e">PROFIT</div><div class="v">{{ dinero(total.profit) }}</div></td>
+  <td class="kpi"><div class="e">MARGEN</div><div class="v">{{ pct(total.margen) }}</div></td>
+  <td class="kpi"><div class="e">PRESUPUESTO</div><div class="v">{{ dinero(total.ppto) }}</div></td>
+  <td class="kpi"><div class="e">% ALCANCE</div><div class="v">{{ alc(total.alc) }}</div></td>
+  <td class="kpi"><div class="e">DIF. PPTO</div><div class="v {{ 'neg' if dif < 0 else 'pos' }}">{{ dinero(dif) }}</div></td>
+</tr></table>
+
+<table style="width: 100%; border-collapse: separate; margin-top: 8pt;"><tr>
+  <td class="caja" style="width: 54%;">
+    <p class="tit">OBSERVACIONES DEL MES</p>
+    {% for tono, texto in analisis.observaciones %}<p class="li"><span class="{{ 'pos' if tono == 'bien' else ('neg' if tono == 'riesgo' else 'med') }}"><b>&#9679;</b></span> {{ texto }}</p>{% endfor %}
+  </td>
+  <td style="width: 2%;"></td>
+  <td class="caja r" style="width: 44%;">
+    <p class="tit">RIESGOS EN LA CARGA</p>
+    {% for r in analisis.riesgos %}<p class="li"><span class="neg"><b>&#9670;</b></span> {{ r }}</p>{% else %}<p class="li">No se detectaron riesgos relevantes.</p>{% endfor %}
+  </td>
+</tr></table>
+
+<h2>VENTA POR PLAZA <span>· {{ por_plaza|length }} plazas, ordenado por venta</span></h2>
+{% set max_venta = (por_plaza|map(attribute='venta')|max) if por_plaza else 1 %}
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 22%;">PLAZA</th><th style="width: 8%;">BOOK</th><th style="width: 13%;">VENTA</th><th style="width: 12%;">PROFIT</th><th style="width: 10%;">MARGEN</th><th style="width: 12%;">PPTO</th><th style="width: 9%;">% ALC</th><th style="width: 14%;">DIF. PPTO</th></tr>
+  {% for p in por_plaza %}
+  <tr><td class="i n">{{ p.nombre }}</td><td>{{ p.cant_book }}</td><td>{{ dinero(p.venta) }}</td><td>{{ dinero(p.profit) }}</td><td>{{ pct(p.margen) }}</td><td>{{ dinero(p.ppto) if p.ppto else '—' }}</td><td>{{ alc(p.alc) }}</td><td class="{{ 'neg' if p.profit - p.ppto < 0 else 'pos' }}">{{ dinero(p.profit - p.ppto) }}</td></tr>
+  {% endfor %}
+  <tr class="tot"><td class="i">Total</td><td>{{ total.cant_book }}</td><td>{{ dinero(total.venta) }}</td><td>{{ dinero(total.profit) }}</td><td>{{ pct(total.margen) }}</td><td>{{ dinero(total.ppto) }}</td><td>{{ alc(total.alc) }}</td><td class="{{ 'neg' if dif < 0 else 'pos' }}">{{ dinero(dif) }}</td></tr>
+</table>
+
+<h2>RANKING DE VENDEDORES POR VENTA <span>· {{ por_vendedor|length }} vendedores</span></h2>
+{% set max_v = (por_vendedor|map(attribute='venta')|max) if por_vendedor else 1 %}
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 4%;">#</th><th class="i" style="width: 27%;">VENDEDOR</th><th class="i" style="width: 15%;">PLAZA</th><th style="width: 7%;">BOOK</th><th style="width: 12%;">VENTA</th><th style="width: 8%;">PART.</th><th style="width: 11%;">PROFIT</th><th style="width: 8%;">MARGEN</th><th style="width: 8%;">% ALC</th></tr>
+  {% for v in por_vendedor %}
+  <tr><td class="i" style="color: #9ca3af;">{{ loop.index }}</td><td class="i n">{{ v.nombre }}</td><td class="i">{{ v.plaza }}</td><td>{{ v.cant_book }}</td><td>{{ dinero(v.venta) }}</td><td>{{ barra(v.venta, total.venta) }}</td><td>{{ dinero(v.profit) }}</td><td>{{ pct(v.margen) }}</td><td>{{ alc(v.alc) }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>VENTA POR PLAZA Y VENDEDOR <span>· subtotal por plaza</span></h2>
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 30%;">PLAZA / VENDEDOR</th><th style="width: 7%;">BOOK</th><th style="width: 12%;">VENTA</th><th style="width: 11%;">PROFIT</th><th style="width: 9%;">MARGEN</th><th style="width: 11%;">PPTO</th><th style="width: 8%;">% ALC</th><th style="width: 12%;">DIF. PPTO</th></tr>
+  {% for p in plaza_vendedor %}
+  <tr class="grupo"><td class="i">{{ p.nombre }}</td><td>{{ p.cant_book }}</td><td>{{ dinero(p.venta) }}</td><td>{{ dinero(p.profit) }}</td><td>{{ pct(p.margen) }}</td><td>{{ dinero(p.ppto) if p.ppto else '—' }}</td><td>{{ alc(p.alc) }}</td><td>{{ dinero(p.profit - p.ppto) }}</td></tr>
+    {% for v in p.vendedores %}
+    <tr><td class="i" style="padding-left: 12pt;">{{ v.nombre }}</td><td>{{ v.cant_book }}</td><td>{{ dinero(v.venta) }}</td><td>{{ dinero(v.profit) }}</td><td>{{ pct(v.margen) }}</td><td>{{ dinero(v.ppto) if v.ppto else '—' }}</td><td>{{ alc(v.alc) }}</td><td class="{{ 'neg' if v.profit - v.ppto < 0 else 'pos' }}">{{ dinero(v.profit - v.ppto) }}</td></tr>
+    {% endfor %}
+  {% endfor %}
+</table>
+
+<h2>VENTA POR CUSTOMER (DESARROLLADOR DE CUENTA) <span>· {{ por_customer|length }} desarrolladores</span></h2>
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 4%;">#</th><th class="i" style="width: 25%;">CUSTOMER</th><th class="i" style="width: 14%;">PLAZA</th><th style="width: 7%;">BOOK</th><th style="width: 12%;">VENTA</th><th style="width: 11%;">PROFIT</th><th style="width: 9%;">MARGEN</th><th style="width: 10%;">PPTO</th><th style="width: 8%;">% ALC</th></tr>
+  {% for c in por_customer %}
+  <tr><td class="i" style="color: #9ca3af;">{{ loop.index }}</td><td class="i n">{{ c.nombre }}</td><td class="i">{{ c.plaza }}</td><td>{{ c.cant_book }}</td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td><td>{{ pct(c.margen) }}</td><td>{{ dinero(c.ppto) if c.ppto else '—' }}</td><td>{{ alc(c.alc) }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>BOOKINGS EN 0 <span>· {{ bookings_cero|length }} bookings sin profit en el mes</span></h2>
+{% if bookings_cero %}
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 15%;">BOOKING</th><th class="i" style="width: 7%;">FECHA</th><th class="i" style="width: 33%;">CLIENTE</th><th class="i" style="width: 22%;">VENDEDOR</th><th class="i" style="width: 15%;">CUSTOMER</th><th style="width: 8%;">VENTA</th></tr>
+  {% for b in bookings_cero %}
+  <tr><td class="i n">{{ b.referencia }}</td><td class="i">{{ b.fecha[8:10] }}/{{ b.fecha[5:7] }}</td><td class="i">{{ (b.cliente_servicio or '—')[:38] }}</td><td class="i">{{ b.vendedor }}</td><td class="i">{{ b.ejecutivo or '—' }}</td><td>{{ dinero(b.venta) }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="vacio">No hay bookings en 0 este mes.</p>{% endif %}
+
+<h2>BOOKINGS POR CLIENTE <span>· {{ por_cliente|length }} clientes con booking, top 30</span></h2>
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 4%;">#</th><th class="i" style="width: 36%;">CLIENTE</th><th class="i" style="width: 26%;">VENDEDOR</th><th style="width: 6%;">BOOK</th><th style="width: 11%;">VENTA</th><th style="width: 10%;">PROFIT</th><th style="width: 7%;">MARGEN</th></tr>
+  {% for c in por_cliente[:30] %}
+  <tr><td class="i" style="color: #9ca3af;">{{ loop.index }}</td><td class="i n">{{ c.nombre[:40] }}</td><td class="i">{{ c.vendedores[:34] }}</td><td><b>{{ c.cant_book }}</b></td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td><td>{{ pct(c.profit / c.venta if c.venta else none) }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>CLIENTES NUEVOS ACTIVADOS EN EL MES <span>· primer booking con AV2 en {{ mes_nombre|lower }}</span></h2>
+{% if analisis.nuevos %}
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 32%;">CLIENTE</th><th class="i" style="width: 12%;">PLAZA</th><th class="i" style="width: 22%;">VENDEDOR</th><th class="i" style="width: 10%;">PRIMER</th><th style="width: 6%;">BOOK</th><th style="width: 9%;">VENTA</th><th style="width: 9%;">PROFIT</th></tr>
+  {% for c in analisis.nuevos %}
+  <tr><td class="i n">{{ c.nombre[:40] }}</td><td class="i">{{ c.plaza }}</td><td class="i">{{ c.vendedor }}</td><td class="i">{{ c.primera[8:10] }}/{{ c.primera[5:7] }}</td><td>{{ c.cant }}</td><td>{{ dinero(c.venta) }}</td><td>{{ dinero(c.profit) }}</td></tr>
+  {% endfor %}
+  <tr class="tot"><td class="i" colspan="4">{{ analisis.nuevos|length }} cliente(s) nuevo(s)</td><td>{{ analisis.nuevos|sum(attribute='cant') }}</td><td>{{ dinero(analisis.nuevos|sum(attribute='venta')) }}</td><td>{{ dinero(analisis.nuevos|sum(attribute='profit')) }}</td></tr>
+</table>
+{% else %}<p class="vacio">No se activaron clientes nuevos este mes.</p>{% endif %}
+
+<h2>CLIENTES A REVISAR POR FALTA DE CARGA <span>· {{ analisis.revisar|length }} de {{ analisis.total_revisar }}, por profit de los últimos 12 meses</span></h2>
+{% if analisis.revisar %}
+<table class="t" repeat="1">
+  <tr><th class="i" style="width: 22%;">CLIENTE</th><th class="i" style="width: 10%;">PLAZA</th><th class="i" style="width: 15%;">VENDEDOR</th><th class="i" style="width: 17%;">SITUACIÓN</th><th class="i" style="width: 8%;">ÚLTIMO</th><th style="width: 9%;">PROFIT 12M</th><th class="i" style="width: 19%;">POR QUÉ CUIDARLO</th></tr>
+  {% for c in analisis.revisar %}
+  <tr><td class="i n">{{ c.nombre[:34] }}</td><td class="i">{{ c.plaza }}</td><td class="i">{{ c.vendedor[:22] }}</td><td class="i neg">{{ c.motivo }}</td><td class="i">{{ c.ultima[8:10] }}/{{ c.ultima[5:7] }}/{{ c.ultima[2:4] }}</td><td><b>{{ dinero(c.profit_12) }}</b></td><td class="i" style="font-size: 6.3pt; color: #4b5563;">{{ c.por_que }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="vacio">No hay clientes recurrentes con falta de carga.</p>{% endif %}
+
+{% set n_cot = cotizaciones|length %}
+<h2>COTIZACIONES ACUMULADAS DEL MES <span>· creadas en {{ mes_nombre|lower }}</span></h2>
+<table style="width: 100%; border-collapse: collapse;"><tr>
+  <td class="kpi"><div class="e">COTIZACIONES</div><div class="v">{{ '{:,}'.format(n_cot) }}</div></td>
+  <td class="kpi"><div class="e">VIGENTES</div><div class="v">{{ cot_totales.vigente }}</div></td>
+  <td class="kpi"><div class="e">GANADAS</div><div class="v pos">{{ cot_totales.ganada }} <span style="font-size: 7pt;">({{ '{:.1f}%'.format(cot_totales.ganada / n_cot * 100) if n_cot else '—' }})</span></div></td>
+  <td class="kpi"><div class="e">PERDIDAS</div><div class="v neg">{{ cot_totales.perdida }}</div></td>
+  <td class="kpi"><div class="e">VENCIDAS</div><div class="v med">{{ cot_totales.vencida }}</div></td>
+  <td class="kpi"><div class="e">PROFIT ESTIMADO</div><div class="v">{{ dinero(cot_profit) }}</div></td>
+</tr></table>
+
+<table style="width: 100%; margin-top: 8pt;"><tr>
+  <td style="width: 56%; vertical-align: top; padding: 0;">
+    <table class="t" repeat="1">
+      <tr><th class="i" style="width: 34%;">CREADA POR</th><th style="width: 11%;">TOTAL</th><th style="width: 11%;">VIG.</th><th style="width: 11%;">GAN.</th><th style="width: 11%;">PERD.</th><th style="width: 11%;">VENC.</th><th style="width: 11%;">CONV.</th></tr>
+      {% for g in por_creador %}
+      <tr><td class="i n">{{ g.nombre[:26] }}</td><td><b>{{ g.total }}</b></td><td>{{ g.vigente }}</td><td class="pos">{{ g.ganada }}</td><td class="neg">{{ g.perdida }}</td><td>{{ g.vencida }}</td><td>{{ '{:.0f}%'.format(g.ganada / g.total * 100) if g.total else '—' }}</td></tr>
+      {% endfor %}
+      <tr class="tot"><td class="i">Total</td><td>{{ n_cot }}</td><td>{{ cot_totales.vigente }}</td><td>{{ cot_totales.ganada }}</td><td>{{ cot_totales.perdida }}</td><td>{{ cot_totales.vencida }}</td><td>{{ '{:.0f}%'.format(cot_totales.ganada / n_cot * 100) if n_cot else '—' }}</td></tr>
+    </table>
+  </td>
+  <td style="width: 3%;"></td>
+  <td style="width: 41%; vertical-align: top; padding: 0;">
+    <table class="t" repeat="1">
+      <tr><th class="i" style="width: 70%;">CLIENTES MÁS COTIZADOS</th><th style="width: 15%;">COTIZ.</th><th style="width: 15%;">GAN.</th></tr>
+      {% for c in top_cotizados %}
+      <tr><td class="i n">{{ c.nombre[:30] }}{% if c.prospecto %} <span style="color: #4338ca; font-size: 6pt;">(prospecto)</span>{% endif %}</td><td><b>{{ c.total }}</b></td><td class="pos">{{ c.ganada or '—' }}</td></tr>
+      {% endfor %}
+    </table>
+  </td>
+</tr></table>
+<p style="font-size: 6pt; color: #9ca3af; margin-top: 4pt;">Ganada = cotización con booking aplicado; vencida = vigente con fecha de vencimiento pasada. Observaciones, riesgos y clientes a revisar se calculan automáticamente con el historial de bookings.</p>
+</body></html>

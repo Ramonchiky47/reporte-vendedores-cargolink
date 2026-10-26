@@ -1,0 +1,41 @@
+{% macro dinero(v) -%}{{ '-' if v < 0 else '' }}${{ '{:,.0f}'.format(v|abs) }}{%- endmacro %}
+<div style="font-family: Arial, Helvetica, sans-serif; color: #1f2937; max-width: 640px;">
+  <p style="margin: 0 0 4px; font-size: 11px; font-weight: bold; letter-spacing: 1.5px; text-transform: uppercase; color: #7a1f1f;">Reporte ejecutivo de ventas</p>
+  <h2 style="margin: 0 0 4px; font-size: 22px; color: #111827;">{{ mes_nombre }}</h2>
+  <p style="margin: 0 0 16px; font-size: 12px; color: #6b7280;">Datos al corte: {{ datos.generado_en }}. El reporte completo va en el PDF adjunto.</p>
+
+  <table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; margin-bottom: 18px;">
+    <tr>
+      {% for etq, val in [('Bookings', '{:,}'.format(total.cant_book)), ('Venta', dinero(total.venta)), ('Profit', dinero(total.profit)), ('Presupuesto', dinero(total.ppto)), ('% Alcance', ('{:.0f}%'.format(total.alc * 100) if total.alc is not none else '—'))] %}
+      <td style="padding: 10px 12px; border-right: 1px solid #e5e7eb;">
+        <div style="font-size: 10px; font-weight: bold; color: #6b7280; text-transform: uppercase;">{{ etq }}</div>
+        <div style="font-size: 17px; font-weight: bold; color: #111827; margin-top: 3px;">{{ val }}</div>
+      </td>
+      {% endfor %}
+    </tr>
+  </table>
+
+  <p style="margin: 0 0 6px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #374151;">Observaciones del mes</p>
+  <ul style="margin: 0 0 16px; padding-left: 18px; font-size: 13px; line-height: 1.5;">
+    {% for tono, texto in analisis.observaciones %}<li style="margin-bottom: 4px;">{{ texto }}</li>{% endfor %}
+  </ul>
+
+  {% if analisis.riesgos %}
+  <p style="margin: 0 0 6px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #b91c1c;">Riesgos en la carga</p>
+  <ul style="margin: 0 0 16px; padding-left: 18px; font-size: 13px; line-height: 1.5;">
+    {% for r in analisis.riesgos %}<li style="margin-bottom: 4px;">{{ r }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if analisis.revisar %}
+  <p style="margin: 0 0 6px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #374151;">Principales clientes a revisar</p>
+  <table cellpadding="0" cellspacing="0" style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px;">
+    <tr style="background: #f3f4f6;"><th align="left" style="padding: 6px;">Cliente</th><th align="left" style="padding: 6px;">Plaza / vendedor</th><th align="left" style="padding: 6px;">Situación</th></tr>
+    {% for c in analisis.revisar[:8] %}
+    <tr><td style="padding: 6px; border-bottom: 1px solid #eee; font-weight: bold;">{{ c.nombre }}</td><td style="padding: 6px; border-bottom: 1px solid #eee;">{{ c.plaza }} · {{ c.vendedor }}</td><td style="padding: 6px; border-bottom: 1px solid #eee; color: #b91c1c;">{{ c.motivo }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <p style="margin: 18px 0 0; font-size: 11px; color: #9ca3af;">AV2 Logistics · Envío automático cada lunes a las 8:00 AM.</p>
+</div>
