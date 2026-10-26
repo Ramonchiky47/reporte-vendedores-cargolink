@@ -63,7 +63,7 @@
   <div class="rx-cab">
     <div>
       <h2>{{ 'Clientes por reactivar' if tipo == 'inactivos' else 'Clientes recurrentes' }}</h2>
-      <p>{% if tipo == 'inactivos' %}Clientes que embarcaban con nosotros y llevan más de {{ dias_minimos }} días sin solicitar un booking. Elige la propuesta y descarga su informe semanal.{% else %}Clientes con booking en los últimos {{ dias_minimos }} días. Descarga su carta de servicio con el estatus de sus embarques vigentes.{% endif %}</p>
+      <p>{% if tipo == 'inactivos' %}Clientes que embarcaban con nosotros y llevan {{ dias_minimos }} días o más sin solicitar un booking. Elige la propuesta y descarga su informe semanal.{% else %}Clientes con booking en los últimos {{ dias_minimos - 1 }} días. Descarga su carta de servicio con el estatus de sus embarques vigentes.{% endif %}</p>
     </div>
     <div class="rx-tabs">
       <a class="{{ 'activa' if tipo == 'inactivos' else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None) }}">Por reactivar</a>
@@ -88,7 +88,7 @@
     <span class="rx-sep"></span>
     <label>Días sin carga</label>
     <div class="rx-rangos">
-      <a class="{{ 'activo' if not rango else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None, vendedor=vendedor or None) }}">Más de {{ dias_minimos }} <b>{{ total_inactivos }}</b></a>
+      <a class="{{ 'activo' if not rango else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None, vendedor=vendedor or None) }}">Todos <b>{{ total_inactivos }}</b></a>
       {% for r in rangos_dias %}
       <a class="{{ 'activo' if r.clave == rango else '' }}" href="{{ url_for('reportes_reactivacion', plaza=plaza or None, vendedor=vendedor or None, dias=r.clave) }}">{{ r.etiqueta }} <b>{{ r.total }}</b></a>
       {% endfor %}
@@ -99,7 +99,7 @@
 
   {% set total_profit = totales_mes|sum %}
   <div class="rx-kpis">
-    <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{% if tipo == 'inactivos' %}{% if rango %}{{ (rangos_dias|selectattr('clave', 'equalto', rango)|first).etiqueta|lower }} sin booking{% else %}sin booking en más de {{ dias_minimos }} días{% endif %}{% else %}activos en el último mes{% endif %}</div></div>
+    <div class="rx-kpi vino"><div class="etq">Clientes</div><div class="val">{{ clientes|length }}</div><div class="sub">{% if tipo == 'inactivos' %}{% if rango %}{{ (rangos_dias|selectattr('clave', 'equalto', rango)|first).etiqueta|lower }} sin booking{% else %}sin booking en {{ dias_minimos }} días o más{% endif %}{% else %}con booking en los últimos {{ dias_minimos - 1 }} días{% endif %}</div></div>
     <div class="rx-kpi"><div class="etq">Profit {{ anio }}</div><div class="val">${{ '{:,.0f}'.format(total_profit) }}</div><div class="sub">de estos clientes, enero a la fecha</div></div>
     {% if tipo == 'inactivos' %}<div class="rx-kpi perdido"><div class="etq">Profit perdido estimado</div><div class="val">${{ '{:,.0f}'.format(profit_perdido_total) }}</div><div class="sub">por falta de servicio, según su tendencia</div></div>{% endif %}
     <div class="rx-kpi"><div class="etq">Embarques 12 meses</div><div class="val">{{ clientes|sum(attribute='embarques') }}</div><div class="sub">importaciones marítimas</div></div>

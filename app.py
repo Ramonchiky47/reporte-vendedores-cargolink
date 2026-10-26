@@ -12570,12 +12570,17 @@ def permisos_seguimientos(usuario_id):
 # Importaciones (rutas) + Operaciones marítimas (datos de CargoLink) +
 # reporte_bookings (para descartar a quien sigue activo en otros servicios).
 # ---------------------------------------------------------------------------
-DIAS_SIN_BOOKING_REACTIVACION = 30
+# Desde 20 días sin carga el cliente pasa a "Por reactivar"; con menos es recurrente.
+DIAS_SIN_BOOKING_REACTIVACION = 20
 # Rangos de días sin carga para filtrar "Por reactivar" (clave, etiqueta, desde, hasta inclusive).
 RANGOS_DIAS_SIN_CARGA = [
-    ("31-90", "31 a 90 días", 31, 90),
-    ("91-180", "91 a 180 días", 91, 180),
-    ("181+", "Más de 180 días", 181, None),
+    ("20-30", "20 a 30 días", 20, 30),
+    ("31-60", "31 a 60 días", 31, 60),
+    ("61-90", "61 a 90 días", 61, 90),
+    ("91-120", "91 a 120 días", 91, 120),
+    ("121-150", "121 a 150 días", 121, 150),
+    ("151-180", "151 a 180 días", 151, 180),
+    ("181+", "181 en adelante", 181, None),
 ]
 DISENOS_INFORME_REACTIVACION = [
     (1, "Ruta en portada"), (2, "Tablero ejecutivo"), (3, "Boletos de embarque"),
@@ -12687,7 +12692,7 @@ def clientes_por_reactivar(recurrentes=False):
         dias = (hoy - ultimo).days
         # recurrentes=True: los que SÍ han pedido booking en el último mes
         # (para la carta de servicio); si no, los que llevan más de un mes sin.
-        if (dias <= DIAS_SIN_BOOKING_REACTIVACION) != recurrentes:
+        if (dias < DIAS_SIN_BOOKING_REACTIVACION) != recurrentes:
             continue
         if plazas_permitidas is not None and plaza_por_vendedor.get(normalizar(f["vendedor"] or "")) not in plazas_permitidas:
             continue
