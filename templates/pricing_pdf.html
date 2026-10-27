@@ -90,7 +90,7 @@
     </tr>
   </table>
   {% if fila.descripcion_material %}
-  <p class="texto"><b>{{ t.descripcion_material }}</b> {{ fila.descripcion_material }}</p>
+  <p class="texto"><b>{{ t.descripcion_material }}</b><br>{{ (fila.descripcion_material or '')|trim|nl2br }}</p>
   {% endif %}
 
   {% if fila.requerimientos_especiales or fila.agente_a_cotizar or fila.propiedad or fila.anexos_notas %}
@@ -98,7 +98,7 @@
   {% if fila.agente_a_cotizar %}<p class="texto"><b>{{ t.agente_a_cotizar }}</b> {{ fila.agente_a_cotizar }}</p>{% endif %}
   {% if fila.propiedad %}<p class="texto"><b>{{ t.propiedad }}</b> {{ fila.propiedad }}</p>{% endif %}
   {% if fila.requerimientos_especiales %}<p class="texto"><b>{{ t.requerimientos_especiales }}</b> {{ fila.requerimientos_especiales|nl2br }}</p>{% endif %}
-  {% if fila.anexos_notas %}<p class="texto"><b>{{ t.anexos_notas }}</b> {{ fila.anexos_notas }}</p>{% endif %}
+  {% if fila.anexos_notas %}<p class="texto"><b>{{ t.anexos_notas }}</b><br>{{ fila.anexos_notas|trim|nl2br }}</p>{% endif %}
   {% endif %}
 
   <table><tr><td class="barra">{{ t.respuestas_pricing if respuestas|length != 1 else t.respuesta_pricing }}</td></tr></table>

@@ -83,7 +83,7 @@
       <td colspan="3"><p class="etiqueta">¿Peligroso?</p><p class="valor">{{ fila.peligroso or '—' }}</p></td>
     </tr>
   </table>
-  {% if fila.requisito_adicional %}<p class="texto"><b>Requisito adicional:</b> {{ fila.requisito_adicional }}</p>{% endif %}
+  {% if fila.requisito_adicional %}<p class="texto"><b>Requisito adicional:</b><br>{{ fila.requisito_adicional|trim|nl2br }}</p>{% endif %}
 
   <table><tr><td class="barra">{{ 'Respuestas' if respuestas|length != 1 else 'Respuesta' }}</td></tr></table>
   {% if respuestas %}

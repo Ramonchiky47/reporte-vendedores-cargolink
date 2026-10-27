@@ -111,7 +111,7 @@
           </div>
           <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
             <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Requisito adicional</div>
-            <p style="margin: 0; font-size: .85rem; line-height: 1.5; {{ '' if fila.requisito_adicional else 'color: var(--ink-3); font-style: italic;' }}">{{ fila.requisito_adicional or 'Sin requisitos adicionales.' }}</p>
+            <p style="margin: 0; font-size: .85rem; line-height: 1.6; white-space: pre-line; {{ '' if fila.requisito_adicional else 'color: var(--ink-3); font-style: italic;' }}">{{ (fila.requisito_adicional or 'Sin requisitos adicionales.')|trim }}</p>
           </div>
         </div>
       </div>

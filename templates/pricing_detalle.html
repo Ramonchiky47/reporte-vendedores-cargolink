@@ -77,7 +77,7 @@
           {% if fila.descripcion_material %}
           <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
             <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Descripción del material</div>
-            <p style="margin: 0; font-size: .85rem; line-height: 1.5;">{{ fila.descripcion_material }}</p>
+            <p style="margin: 0; font-size: .85rem; line-height: 1.6; white-space: pre-line;">{{ (fila.descripcion_material or '')|trim }}</p>
           </div>
           {% endif %}
         </div>
@@ -91,7 +91,7 @@
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Requerimientos especiales</div>
           <p style="margin: 0 0 1rem; font-size: .85rem; line-height: 1.5; white-space: pre-line;">{{ fila.requerimientos_especiales or '—' }}</p>
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Anexos / notas</div>
-          <p style="margin: 0; font-size: .85rem; line-height: 1.5; {{ '' if fila.anexos_notas else 'color: var(--ink-3); font-style: italic;' }}">{{ fila.anexos_notas or 'Sin anexos.' }}</p>
+          <p style="margin: 0; font-size: .85rem; line-height: 1.6; white-space: pre-line; {{ '' if fila.anexos_notas else 'color: var(--ink-3); font-style: italic;' }}">{{ (fila.anexos_notas or 'Sin anexos.')|trim }}</p>
         </div>
       </div>
 

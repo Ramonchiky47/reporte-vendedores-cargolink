@@ -86,9 +86,9 @@
   {% if fila.direccion_origen %}<p class="texto"><b>{{ t.direccion_origen }}</b> {{ fila.direccion_origen }}</p>{% endif %}
   {% if fila.direccion_destino %}<p class="texto"><b>{{ t.direccion_destino }}</b> {{ fila.direccion_destino }}</p>{% endif %}
   {% if fila.direccion_aa %}<p class="texto"><b>{{ t.direccion_aa }}</b> {{ fila.direccion_aa }}</p>{% endif %}
-  {% if fila.descripcion_material %}<p class="texto"><b>{{ t.descripcion_material }}</b> {{ fila.descripcion_material }}</p>{% endif %}
+  {% if fila.descripcion_material %}<p class="texto"><b>{{ t.descripcion_material }}</b><br>{{ fila.descripcion_material|trim|nl2br }}</p>{% endif %}
   {% if fila.correo_solicitante %}<p class="texto"><b>{{ t.correo_solicitante }}</b> {{ fila.correo_solicitante }}</p>{% endif %}
-  {% if fila.requisitos_comentarios %}<p class="texto"><b>{{ t.requisitos_comentarios }}</b> {{ fila.requisitos_comentarios }}</p>{% endif %}
+  {% if fila.requisitos_comentarios %}<p class="texto"><b>{{ t.requisitos_comentarios }}</b><br>{{ fila.requisitos_comentarios|trim|nl2br }}</p>{% endif %}
 
   <table><tr><td class="barra">{{ t.respuestas if respuestas|length != 1 else t.respuesta }}</td></tr></table>
   {% if respuestas %}

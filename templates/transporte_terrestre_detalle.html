@@ -105,9 +105,9 @@
         <div class="card pd-seccion">
           <h2>Material y comentarios</h2>
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Descripción del material</div>
-          <p style="margin: 0 0 1rem; font-size: .85rem; line-height: 1.5;">{{ fila.descripcion_material or '—' }}</p>
+          <p style="margin: 0 0 1rem; font-size: .85rem; line-height: 1.6; white-space: pre-line;">{{ (fila.descripcion_material or '—')|trim }}</p>
           <div class="label" style="color: var(--ink-3); font-size: .72rem; text-transform: uppercase; margin-bottom: .3rem;">Requisitos / Comentarios</div>
-          <p style="margin: 0; font-size: .85rem; line-height: 1.5; {{ '' if fila.requisitos_comentarios else 'color: var(--ink-3); font-style: italic;' }}">{{ fila.requisitos_comentarios or 'Sin comentarios.' }}</p>
+          <p style="margin: 0; font-size: .85rem; line-height: 1.6; white-space: pre-line; {{ '' if fila.requisitos_comentarios else 'color: var(--ink-3); font-style: italic;' }}">{{ (fila.requisitos_comentarios or 'Sin comentarios.')|trim }}</p>
         </div>
       </div>
 
