@@ -2477,7 +2477,7 @@ function formatoMoneda(valor) {
 // Genera el documento PDF de una cotizacion y lo transmite directo a la respuesta.
 // inline (Ver) muestra el PDF en el navegador; attachment (Descargar) fuerza la descarga.
 function generarPdfCotizacion(cotizacion, res, { descargar }) {
-  const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+  const doc = new PDFDocument({ size: 'LETTER', margin: 50, bufferPages: true });
   const nombreArchivo = `${cotizacion.id_cotizacion}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `${descargar ? 'attachment' : 'inline'}; filename="${nombreArchivo}"`);
@@ -2609,6 +2609,12 @@ function generarPdfCotizacion(cotizacion, res, { descargar }) {
   lineasFirma.forEach((linea) => doc.text(linea));
   doc.fillColor('#000');
 
+  // Logo de SYSMON, pequeño, al pie de cada hoja.
+  const rango = doc.bufferedPageRange();
+  for (let p = rango.start; p < rango.start + rango.count; p++) {
+    doc.switchToPage(p);
+    doc.image(path.join(__dirname, 'public', 'sysmon.png'), doc.page.width - 50 - 54, doc.page.height - 26, { width: 54, height: 16 });
+  }
   doc.end();
 }
 

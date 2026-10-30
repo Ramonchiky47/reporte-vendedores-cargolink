@@ -1577,6 +1577,7 @@ function generarHtmlCotizacionPDF(c) {
   .consideraciones li { margin-bottom: 6px; }
   .footer { margin-top: 40px; }
   .footer p { margin: 0 0 10px; }
+  .sysmon { position: fixed; right: 30px; bottom: 6px; width: 54px; height: 16px; }
   @media print {
     body { padding: 0 30px 20px; }
     @page { size: letter; margin: 18mm 15mm; }
@@ -1584,6 +1585,7 @@ function generarHtmlCotizacionPDF(c) {
 </style>
 </head>
 <body>
+  <img class="sysmon" src="${location.origin}/sysmon.svg" alt="SYSMON">
   <div class="logo">GONPAL</div>
   <div class="encabezado">
     <h1>${escaparHtml(c.nombre)}</h1>

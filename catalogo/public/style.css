@@ -1749,3 +1749,19 @@ td.acciones {
     color: #eee;
   }
 }
+
+/* Logo de SYSMON, pequeño, en todas las páginas. */
+body::after {
+  content: "";
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  width: 58px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.8) url("sysmon.svg") center / 54px 16px no-repeat;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 40;
+}
