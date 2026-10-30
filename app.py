@@ -2483,6 +2483,21 @@ try:
 except OSError:
     app.jinja_env.globals["logo_av2_data_uri"] = ""
 
+# Logo de SYSMON (static/sysmon.png), pequeño en todos los PDF: va en el
+# encabezado común (templates/_encabezado_pdf.html), embebido igual que el de AV2.
+try:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "sysmon.png"), "rb") as _logo:
+        app.jinja_env.globals["logo_sysmon_data_uri"] = "data:image/png;base64," + base64.b64encode(_logo.read()).decode("ascii")
+except OSError:
+    app.jinja_env.globals["logo_sysmon_data_uri"] = ""
+
+# Y en todas las pantallas: fijo abajo a la derecha, sin estorbar los clics.
+LOGO_SYSMON_HTML = (
+    '<img src="/static/sysmon.svg" alt="SYSMON" style="position:fixed;right:12px;bottom:8px;height:20px;width:auto;'
+    'padding:2px 4px;background:rgba(255,255,255,.9);border:1px solid #facc15;border-radius:4px;'
+    'box-shadow:0 1px 2px rgba(0,0,0,.12);pointer-events:none;z-index:9999">'
+).encode()
+
 # EN_VERCEL: solo exigimos cookies "Secure" en producción (HTTPS). En local
 # (HTTP en 127.0.0.1) exigirlo rompería el login, porque el navegador nunca
 # manda una cookie Secure sobre una conexión sin TLS.
@@ -2532,6 +2547,11 @@ def agregar_cabeceras_seguridad(resp):
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if resp.mimetype == "text/html" and not resp.direct_passthrough and resp.status_code < 400:
+        cuerpo = resp.get_data()
+        i = cuerpo.rfind(b"</body>")
+        if i != -1:
+            resp.set_data(cuerpo[:i] + LOGO_SYSMON_HTML + cuerpo[i:])
     return resp
 
 
