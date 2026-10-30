@@ -1,15 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 64" width="216" height="64">
-  <!-- SYSMON: cabeza de robot-monitor con pulso, colores de la app (azul #16232f, naranja #c65a1f) -->
+  <!-- SYSMON: cabeza de robot-monitor con pulso, en azul y amarillo -->
   <g>
-    <line x1="32" y1="4" x2="32" y2="12" stroke="#c65a1f" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="32" cy="4" r="3.5" fill="#c65a1f"/>
-    <rect x="6" y="12" width="52" height="44" rx="12" fill="#16232f"/>
-    <rect x="12" y="18" width="40" height="32" rx="7" fill="#22394c"/>
-    <circle cx="23" cy="28" r="4" fill="#c65a1f"/>
-    <circle cx="41" cy="28" r="4" fill="#c65a1f"/>
-    <polyline points="15,41 23,41 27,35 32,46 36,38 40,41 49,41" fill="none" stroke="#5fd0c0" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="1" y="26" width="5" height="14" rx="2.5" fill="#16232f"/>
-    <rect x="58" y="26" width="5" height="14" rx="2.5" fill="#16232f"/>
+    <line x1="32" y1="4" x2="32" y2="12" stroke="#facc15" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="32" cy="4" r="3.5" fill="#facc15" stroke="#1e3a8a" stroke-width="1"/>
+    <rect x="6" y="12" width="52" height="44" rx="12" fill="#1e3a8a"/>
+    <rect x="12" y="18" width="40" height="32" rx="7" fill="#172554"/>
+    <circle cx="23" cy="28" r="4" fill="#facc15"/>
+    <circle cx="41" cy="28" r="4" fill="#facc15"/>
+    <polyline points="15,41 23,41 27,35 32,46 36,38 40,41 49,41" fill="none" stroke="#facc15" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="1" y="26" width="5" height="14" rx="2.5" fill="#1e3a8a"/>
+    <rect x="58" y="26" width="5" height="14" rx="2.5" fill="#1e3a8a"/>
   </g>
-  <text x="72" y="44" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="800" letter-spacing="2" fill="#16232f">SYS<tspan fill="#c65a1f">MON</tspan></text>
+  <text x="72" y="44" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="800" letter-spacing="2" fill="#1e3a8a">SYS<tspan fill="#eab308" stroke="#1e3a8a" stroke-width="0.6">MON</tspan></text>
 </svg>
