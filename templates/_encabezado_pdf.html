@@ -1,5 +1,10 @@
 {# Encabezado común de los PDF de AV2: logo a la izquierda, razón social,
    dirección y RFC al centro, y barra vino debajo. #}
+{# Logo de SYSMON arriba a la derecha, separado del encabezado, con la firma a su lado. #}
+{% if logo_sysmon_data_uri %}<table style="width: 100%; border-collapse: collapse; margin: 0 0 2px;"><tr>
+  <td style="border: none; padding: 0; text-align: right; vertical-align: middle; font-size: 6.5pt; font-style: italic; color: #6b7280;">By Ing Ramon Villanueva</td>
+  <td style="width: 66px; border: none; padding: 0 0 0 5px; text-align: right; vertical-align: middle;"><img src="{{ logo_sysmon_data_uri }}" style="width: 61px; height: 18px;"></td>
+</tr></table>{% endif %}
 <table style="width: 100%; border-collapse: collapse;">
   <tr>
     <td style="width: 34%; border: none; padding: 0 0 4px; vertical-align: middle;">
@@ -14,4 +19,3 @@
   </tr>
 </table>
 <table style="width: 100%; border-collapse: collapse; margin: 4px 0 8px;"><tr><td style="background-color: #7a1f1f; height: 7px; font-size: 1px; line-height: 1px; padding: 0; border: none;">&nbsp;</td></tr></table>
-{% if logo_sysmon_data_uri %}<p style="margin: -6px 0 4px; text-align: right;"><img src="{{ logo_sysmon_data_uri }}" style="width: 54px; height: 16px;"></p>{% endif %}
