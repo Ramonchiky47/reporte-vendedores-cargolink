@@ -12581,9 +12581,13 @@ def crm_tareas():
 
     actividades = db.execute("SELECT id, nombre, meta_mensual FROM crm_actividades ORDER BY nombre").fetchall()
 
-    clientes_por_vendedor = {}
+    # El nombre del vendedor no siempre está escrito igual en el catálogo y en
+    # la asignación de clientes ("Melisa Coronado" vs "MELISA CORONADO"): se
+    # agrupa por nombre normalizado y se publica con el nombre de cada opción.
+    clientes_por_norma = {}
     for r in db.execute("SELECT folio, razon_social, vendedor FROM asignacion_de_clientes WHERE vendedor IS NOT NULL ORDER BY razon_social"):
-        clientes_por_vendedor.setdefault(r["vendedor"], []).append({"folio": r["folio"], "nombre": r["razon_social"]})
+        clientes_por_norma.setdefault(normalizar(r["vendedor"]), []).append({"folio": r["folio"], "nombre": r["razon_social"]})
+    clientes_por_vendedor = {v: clientes_por_norma.get(normalizar(v), []) for v in vendedores_opciones}
 
     filas = db.execute("""
         SELECT t.id, t.actividad_id, t.fecha, t.vendedor, t.tipo_contacto, t.cliente_folio,
