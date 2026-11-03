@@ -117,7 +117,7 @@
       <label for="tn-solicitante">Solicitada por:</label>
       <select id="tn-solicitante" name="solicitante" onchange="this.form.submit()">
         <option value="">Todos</option>
-        {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol }}</option>{% endfor %}
+        {% for sol in solicitantes %}<option value="{{ sol }}" {{ 'selected' if sol == solicitante else '' }}>{{ sol|nombre_usuario }}</option>{% endfor %}
       </select>
       <label class="tn-check-cotizadas"><input type="checkbox" name="mostrar_cotizadas" value="1" {{ 'checked' if mostrar_cotizadas else '' }} onchange="this.form.submit()"> Mostrar cotizadas</label>
       {% set n_cotizadas = filas|selectattr('grupo', 'equalto', 'cotizada')|list|length %}
@@ -144,7 +144,7 @@
         <tbody>
           {% for u in estadistico_usuarios %}
           <tr class="{{ 'sel' if u.usuario == solicitante else '' }}" onclick="var s=document.getElementById('tn-solicitante'); s.value='{{ '' if u.usuario == solicitante else u.usuario }}'; s.form.submit();">
-            <td class="usuario">{{ u.usuario }}</td>
+            <td class="usuario" title="{{ u.usuario }}">{{ u.usuario|nombre_usuario }}</td>
             <td class="num"><div class="tn-barra"><i style="width:{{ (u.total / max_total * 100) if max_total else 0 }}%"></i></div><b>{{ u.total }}</b></td>
             {% for k in cols %}<td class="num{{ ' cero' if not u[k] else '' }}">{{ u[k] }}</td>{% endfor %}
           </tr>
@@ -194,7 +194,7 @@
             <div class="cliente">{{ fila.id_cotizacion or '' }}{% if fila.cliente_nombre %} · {{ fila.cliente_nombre }}{% endif %}</div>
           </td>
           <td>{{ fila.tipo_servicio or '—' }}</td>
-          <td>{{ fila.creado_por or '—' }}</td>
+          <td title="{{ fila.creado_por or '' }}">{{ fila.creado_por|nombre_usuario or '—' }}</td>
           <td class="nowrap">{{ fila.creado_en|hora_mx }}</td>
           <td class="col-operativo{{ '' if fila.operativo_asignado else ' sin-asignar' }}">{{ fila.operativo_asignado or 'Sin asignar' }}</td>
           <td>{{ fila.proveedor or '—' }}</td>

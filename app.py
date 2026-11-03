@@ -2625,6 +2625,36 @@ def hora_mx(valor, formato="%Y-%m-%d %H:%M"):
     return valor.astimezone(TZ_LOCAL).strftime(formato)
 
 
+@app.template_filter("nombre_usuario")
+def nombre_usuario(correo):
+    """Correo de un usuario -> su nombre en el sistema (vendedor asociado,
+    desarrollador asociado, firma o, si no hay, el que sale del correo).
+    Ej.: angelica.coronado@av2logistics.com -> "Melisa Coronado". Se arma una
+    vez por petición."""
+    if not correo or "@" not in str(correo):
+        return correo or ""
+    mapa = getattr(g, "_nombres_usuarios", None)
+    if mapa is None:
+        mapa = {}
+        try:
+            db = get_db()
+            for r in db.execute("""
+                SELECT lower(u.email) AS email, p.vendedor_asociado, p.desarrollador_asociado, f.nombre_firma
+                FROM auth.users u
+                LEFT JOIN app_user_permissions p ON p.user_id = u.id
+                LEFT JOIN crm_firmas f ON f.user_id = u.id
+            """):
+                nombre = r["vendedor_asociado"] or r["desarrollador_asociado"] or quitar_titulo(r["nombre_firma"])
+                if nombre:
+                    mapa[r["email"]] = nombre.strip().title() if nombre.isupper() else nombre.strip()
+            db.close()
+        except Exception:
+            app.logger.exception("No se pudo armar el mapa de nombres de usuario")
+        g._nombres_usuarios = mapa
+    correo = str(correo).strip().lower()
+    return mapa.get(correo) or nombre_desde_correo(correo)
+
+
 @app.template_filter("nl2br")
 def nl2br(texto):
     """Convierte saltos de línea en <br>, escapando el resto del texto.
@@ -11577,6 +11607,8 @@ def transporte_nacional():
         sin_acentos = "translate(lower({}), 'áéíóúüñ', 'aeiouun')"
         texto_fila = sin_acentos.format("""concat_ws(' ',
             s.referencia, s.creado_por, co.id_cotizacion, ac.razon_social, op.nombre_operativo,
+            (SELECT concat_ws(' ', p.vendedor_asociado, p.desarrollador_asociado) FROM auth.users uu
+               JOIN app_user_permissions p ON p.user_id = uu.id WHERE lower(uu.email) = lower(s.creado_por)),
             s.proveedor, s.observaciones, s.tipo_servicio, s.estado, s.cp_origen, s.cp_destino,
             to_char(s.creado_en AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD DD/MM/YYYY DD-MM-YYYY'))""")
         palabras = [w for w in busqueda.split() if w][:8]
