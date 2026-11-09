@@ -9,6 +9,7 @@
   h1 { font-size: 14pt; margin: 0; color: #1a1a1a; }
   .cliente { font-size: 11pt; font-weight: bold; color: #7a1f1f; margin: 2px 0 8px; }
   h2 { font-size: 9pt; margin: 12px 0 4px; color: #111827; }
+  table.resumen td.porvencer { color: #15803d; }
   table.resumen th { background-color: #7a1f1f; color: #ffffff; padding: 4px 8px; text-align: right; font-size: 7.6pt; }
   table.resumen th.izq, table.resumen td.izq { text-align: left; }
   table.resumen td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #e5e7eb; font-size: 8.4pt; }
@@ -33,35 +34,39 @@
     <thead><tr><th class="izq">Divisa</th><th>Total de saldos vencidos</th><th>Total por vencer</th><th>Saldo total</th></tr></thead>
     <tbody>
       {% for mon, r in ec.resumen.items() %}
-      <tr><td class="izq"><b>{{ mon }}</b></td><td class="vencido">${{ "{:,.2f}".format(r.vencido) }}</td><td>${{ "{:,.2f}".format(r.por_vencer) }}</td><td><b>${{ "{:,.2f}".format(r.total) }}</b></td></tr>
+      <tr><td class="izq"><b>{{ mon }}</b></td><td class="vencido">${{ "{:,.2f}".format(r.vencido) }}</td><td class="porvencer">${{ "{:,.2f}".format(r.por_vencer) }}</td><td><b>${{ "{:,.2f}".format(r.total) }}</b></td></tr>
       {% endfor %}
     </tbody>
   </table>
 
   {% macro tabla(filas, vencidas) %}
   {% if filas %}
+  {% set color = '#b91c1c' if vencidas else '#15803d' %}
   <table class="det" repeat="1">
     <thead>
       <tr>
-        <th style="width: 10%;">Booking</th><th style="width: 11%;">Referencia de cliente</th><th style="width: 13%;">Contenedor</th>
-        <th style="width: 6%;">Factura</th><th style="width: 7.5%;">Fecha factura</th><th style="width: 8.5%;">Fecha de vencimiento</th>
-        <th class="cen" style="width: 6%;">Días de crédito</th><th class="cen" style="width: 7%;">Días transcurridos</th>
-        <th class="cen" style="width: 6%;">Demoras</th><th class="cen" style="width: 5%;">Divisa</th><th class="der" style="width: 10%;">Importe</th>
+        <th style="width: 9%;">Booking</th><th style="width: 10%;">Referencia de cliente</th><th style="width: 18%;">Contenedor</th>
+        <th class="cen" style="width: 5%;">Demoras</th><th class="cen" style="width: 6.5%;">ATD</th><th class="cen" style="width: 6.5%;">ETA</th>
+        <th class="cen" style="width: 7.5%;">Fecha de vencimiento</th><th class="cen" style="width: 6%;">Días transcurridos</th>
+        <th class="cen" style="width: 5.5%;">Factura</th><th class="cen" style="width: 7%;">Fecha factura</th>
+        <th class="cen" style="width: 5%;">Días de crédito</th><th class="cen" style="width: 4.5%;">Divisa</th><th class="der" style="width: 9%;">Importe</th>
       </tr>
     </thead>
     <tbody>
       {% for f in filas %}
-      <tr>
-        <td>{{ f.booking or "—" }}</td><td>{{ f.referencia or "—" }}</td><td>{{ f.contenedor or "—" }}</td>
-        <td>{{ f.folio or "—" }}</td><td>{{ f.fecha_factura or "—" }}</td><td>{{ f.vencimiento or "—" }}</td>
-        <td class="cen">{{ f.dias_credito }}</td>
-        <td class="cen{{ ' vencido' if vencidas else '' }}">{{ f.dias_transcurridos if f.dias_transcurridos is not none else "—" }}</td>
-        <td class="cen">{{ 'Sí' if f.demoras else 'No' }}</td><td class="cen">{{ f.moneda }}</td>
-        <td class="der">${{ "{:,.2f}".format(f.total) }}</td>
+      <tr style="color: {{ color }};">
+        <td style="color: {{ color }};">{{ f.booking or "—" }}</td><td style="color: {{ color }};">{{ f.referencia or "—" }}</td><td style="color: {{ color }};">{{ f.contenedor or "—" }}</td>
+        <td class="cen" style="color: {{ color }};">{{ 'Sí' if f.demoras else 'No' }}</td>
+        <td class="cen" style="color: {{ color }};">{{ f.atd or "—" }}</td><td class="cen" style="color: {{ color }};">{{ f.eta or "—" }}</td>
+        <td class="cen" style="color: {{ color }};">{{ f.vencimiento or "—" }}</td>
+        <td class="cen" style="color: {{ color }}; font-weight: bold;">{{ f.dias_transcurridos if f.dias_transcurridos is not none else "—" }}</td>
+        <td class="cen" style="color: {{ color }};">{{ f.folio or "—" }}</td><td class="cen" style="color: {{ color }};">{{ f.fecha_factura or "—" }}</td>
+        <td class="cen" style="color: {{ color }};">{{ f.dias_credito }}</td><td class="cen" style="color: {{ color }};">{{ f.moneda }}</td>
+        <td class="der" style="color: {{ color }};">${{ "{:,.2f}".format(f.total) }}</td>
       </tr>
       {% endfor %}
       {% for mon, tot in filas|groupby('moneda') %}
-      <tr class="subtotal"><td colspan="9">Total {{ 'vencido' if vencidas else 'por vencer' }} {{ mon }}</td><td class="cen">{{ mon }}</td><td class="der">${{ "{:,.2f}".format(tot|sum(attribute='total')) }}</td></tr>
+      <tr class="subtotal"><td colspan="11" style="text-align: right;">Saldo total {{ mon }} {{ 'vencido' if vencidas else 'por vencer' }}</td><td class="cen">{{ mon }}</td><td class="der" style="color: {{ color }};">${{ "{:,.2f}".format(tot|sum(attribute='total')) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -70,10 +75,10 @@
   {% endif %}
   {% endmacro %}
 
-  <h2>Información detallada de los documentos vencidos hasta {{ ec.fecha }}</h2>
+  <h2 style="color: #b91c1c;">Información detallada de los documentos vencidos hasta {{ ec.fecha }}</h2>
   {{ tabla(ec.vencidas, true) }}
 
-  <h2>Información detallada de los documentos por vencer</h2>
+  <h2 style="color: #15803d;">Información detallada de los documentos por vencer</h2>
   {{ tabla(ec.por_vencer, false) }}
 
   {% set c = ec.contacto %}

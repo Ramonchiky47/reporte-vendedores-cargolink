@@ -397,6 +397,10 @@ def init_db():
             actualizado_en timestamptz not null default now()
         );
     """)
+    db.execute("ALTER TABLE estado_cuenta_bookings ADD COLUMN IF NOT EXISTS atd text;")
+    db.execute("ALTER TABLE estado_cuenta_bookings ADD COLUMN IF NOT EXISTS eta text;")
+    # completo = ya se consultaron también ATD/ETA (las filas viejas se vuelven a consultar una vez).
+    db.execute("ALTER TABLE estado_cuenta_bookings ADD COLUMN IF NOT EXISTS completo boolean not null default false;")
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_copia_correos (
             id bigint generated always as identity primary key,
@@ -1762,6 +1766,8 @@ def descargar_antiguedad_saldos_cargolink():
             "demoras": (v.get("contieneDemoras") or "").upper() == "SI",
             "concepto": v.get("concepto"),
             "servicio": v.get("tabla"),
+            # {"40 HC": "2"} / {"PALLETS": "1"}: cantidad y tipo de equipo del booking.
+            "carga": {k: v2 for k, v2 in (v.get("datosBookingCargaContenedor") or {}).items() if k} if isinstance(v.get("datosBookingCargaContenedor"), dict) else {},
         })
 
     totales_moneda = {}
@@ -5773,15 +5779,17 @@ def datos_bookings_estado_cuenta(bookings, presupuesto_segundos=5):
     (estado_cuenta_bookings) y Operaciones marítimas; lo que falte se consulta
     en CargoLink (consultaBooking) en paralelo, con un tope de tiempo para no
     trabar la página; lo encontrado se guarda para la siguiente vez."""
+    inicio = time.time()
     bookings = sorted({b for b in bookings if b})
     if not bookings:
         return {}
     db = get_db()
-    datos = {r["no_booking"]: {"referencia": r["referencia"], "contenedores": r["contenedores"]}
-             for r in db.execute("SELECT no_booking, referencia, contenedores FROM estado_cuenta_bookings WHERE no_booking = ANY(%s)", (bookings,))}
-    for r in db.execute("""SELECT no_booking, datos->>'referencia' AS referencia, coalesce(datos->>'noContenedores', contenedores) AS contenedores
+    datos = {r["no_booking"]: {"referencia": r["referencia"], "contenedores": r["contenedores"], "atd": r["atd"], "eta": r["eta"]}
+             for r in db.execute("SELECT no_booking, referencia, contenedores, atd, eta FROM estado_cuenta_bookings WHERE no_booking = ANY(%s) AND completo", (bookings,))}
+    for r in db.execute("""SELECT no_booking, datos->>'referencia' AS referencia, coalesce(datos->>'noContenedores', contenedores) AS contenedores,
+                                  coalesce(nullif(datos->>'fecha_atd', ''), etd_atd::text) AS atd, coalesce(nullif(datos->>'buque_eta', ''), eta::text) AS eta
                            FROM operaciones_maritima WHERE no_booking = ANY(%s)""", ([b for b in bookings if b not in datos],)):
-        datos[r["no_booking"]] = {"referencia": r["referencia"], "contenedores": r["contenedores"]}
+        datos[r["no_booking"]] = {"referencia": r["referencia"], "contenedores": r["contenedores"], "atd": r["atd"], "eta": r["eta"]}
     db.close()
     faltan = [b for b in bookings if b not in datos]
     nuevos = {}
@@ -5789,43 +5797,54 @@ def datos_bookings_estado_cuenta(bookings, presupuesto_segundos=5):
         try:
             h = {"User-Agent": "Mozilla/5.0"}
             sesion = requests.Session()
-            sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": os.environ.get("CARGOLINK_USUARIO", ""), "password": os.environ.get("CARGOLINK_PASSWORD", "")}, headers=h, timeout=20)
-            pagina = sesion.get("https://fwd.cargolink.mx/templates/antiguedadSaldoIngreso/?m=63", headers=h, timeout=20).text
+            sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": os.environ.get("CARGOLINK_USUARIO", ""), "password": os.environ.get("CARGOLINK_PASSWORD", "")}, headers=h, timeout=8)
+            pagina = sesion.get("https://fwd.cargolink.mx/templates/antiguedadSaldoIngreso/?m=63", headers=h, timeout=8).text
             token = re.search(r"token=([a-f0-9]{32}\d*)", pagina).group(1)
 
             def uno(no_booking):
                 r = sesion.post(f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api&fn=consultaBooking&tabla=&limit=0",
                                 json={"tipo_fecha": "", "pagadoBooking": "", "no_booking": no_booking}, headers={"Content-Type": "application/json"}, timeout=10)
                 v = ((r.json() or {}).get("valores") or [None])[0] or {}
-                return no_booking, {"referencia": v.get("referencia"), "contenedores": v.get("no_contenedores") or v.get("contenedores")}
+                return no_booking, {"referencia": v.get("referencia"), "contenedores": v.get("no_contenedores") or v.get("contenedores"),
+                                    "atd": v.get("fecha_atd"), "eta": v.get("buque_eta")}
 
             import concurrent.futures
-            inicio = time.time()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-                futuros = [pool.submit(uno, b) for b in faltan]
+            # Sin "with": al llegar al tope de tiempo no se espera a las consultas
+            # pendientes (lo que falte se completa la próxima vez).
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+            futuros = [pool.submit(uno, b) for b in faltan]
+            try:
                 for fut in concurrent.futures.as_completed(futuros, timeout=max(1, presupuesto_segundos - (time.time() - inicio))):
                     try:
                         b, d = fut.result()
                         nuevos[b] = d
                     except Exception:
                         pass
+            except concurrent.futures.TimeoutError:
+                pass
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
         except Exception:
             app.logger.exception("No se pudo consultar referencia/contenedores en CargoLink")
     if nuevos:
         datos.update(nuevos)
         try:
             db = get_db()
-            for b, d in nuevos.items():
-                db.execute("""INSERT INTO estado_cuenta_bookings (no_booking, referencia, contenedores) VALUES (%s, %s, %s)
-                              ON CONFLICT (no_booking) DO UPDATE SET referencia = EXCLUDED.referencia, contenedores = EXCLUDED.contenedores, actualizado_en = now()""",
-                           (b, d["referencia"], d["contenedores"]))
+            db.cursor().executemany("""INSERT INTO estado_cuenta_bookings (no_booking, referencia, contenedores, atd, eta, completo) VALUES (%s, %s, %s, %s, %s, true)
+                              ON CONFLICT (no_booking) DO UPDATE SET referencia = EXCLUDED.referencia, contenedores = EXCLUDED.contenedores,
+                                  atd = EXCLUDED.atd, eta = EXCLUDED.eta, completo = true, actualizado_en = now()""",
+                           [(b, d["referencia"], d["contenedores"], d["atd"], d["eta"]) for b, d in nuevos.items()])
             db.commit()
             db.close()
         except Exception:
             app.logger.exception("No se pudo guardar referencia/contenedores")
+    def fecha_corta(x):
+        x = (x or "")[:10]
+        return f"{x[8:10]}-{x[5:7]}-{x[:4]}" if re.match(r"\d{4}-\d{2}-\d{2}$", x) and not x.startswith("0000") else ""
     for d in datos.values():
         d["contenedores"] = ", ".join(RX_CONTENEDOR.findall((d.get("contenedores") or "").upper()))
         d["referencia"] = (d.get("referencia") or "").strip()
+        d["atd"], d["eta"] = fecha_corta(d.get("atd")), fecha_corta(d.get("eta"))
     return datos
 
 
@@ -5851,10 +5870,22 @@ def armar_estado_cuenta(cliente, facturas):
         if not credito and emision and venc:
             credito = (venc - emision).days
         e = extra.get(f["booking"]) or {}
-        filas.append({**f, "referencia": e.get("referencia") or "", "contenedor": e.get("contenedores") or "",
-                      "dias_credito": credito or 0, "dias_transcurridos": (hoy - emision).days if emision else None,
+        # Contenedor como en el formato de CargoLink: "cantidad/números" si hay
+        # números de contenedor, si no "cantidad/tipo" (2/40 HC, 1/PALLETS).
+        numeros = [c for c in (e.get("contenedores") or "").split(", ") if c]
+        carga = f.get("carga") or {}
+        if numeros:
+            contenedor = f"{len(numeros)}/{', '.join(numeros)}"  # con espacio para que el PDF lo parta en renglones
+        elif carga:
+            contenedor = ", ".join(f"{int(float(n or 0))}/{tipo}" for tipo, n in carga.items())
+        else:
+            contenedor = ""
+        # Días transcurridos = el dato de CargoLink: negativo = días vencida, positivo = días para vencer.
+        filas.append({**f, "referencia": e.get("referencia") or "", "contenedor": contenedor,
+                      "atd": e.get("atd") or "", "eta": e.get("eta") or "",
+                      "dias_credito": credito or 0, "dias_transcurridos": round(dias_venc) if dias_venc is not None else None,
                       "vencida": vencida, "dias_vencido": abs(round(dias_venc)) if vencida else 0})
-    orden = lambda f: (f["moneda"] or "", -(f["dias_transcurridos"] or 0))
+    orden = lambda f: (f["dias_transcurridos"] if f["dias_transcurridos"] is not None else 0, f["booking"] or "")
     vencidas = sorted([f for f in filas if f["vencida"]], key=orden)
     por_vencer = sorted([f for f in filas if not f["vencida"]], key=orden)
     resumen = {}
@@ -6104,7 +6135,7 @@ def administracion_antiguedad_saldos_cliente_exportar():
         ws.title = "Estado de cuenta"
         ws.row_dimensions[1].height = 38
         logo_excel(ws, "A1")
-        ws.merge_cells("D1:K1")
+        ws.merge_cells("D1:M1")
         ws["D1"] = f"Estado de cuenta · {cliente}"
         ws["D1"].font = Font(bold=True, size=14)
         ws["D1"].alignment = Alignment(horizontal="right", vertical="center")
@@ -6122,8 +6153,8 @@ def administracion_antiguedad_saldos_cliente_exportar():
                 if k == "vencido":
                     c.font = Font(bold=True, color="B91C1C")
 
-        encabezados = ["Booking", "Referencia de cliente", "Contenedor", "Factura", "Fecha factura", "Fecha de vencimiento",
-                       "Días de crédito", "Días transcurridos", "Demoras", "Divisa", "Importe"]
+        encabezados = ["Booking", "Referencia de cliente", "Contenedor", "Demoras", "ATD", "ETA", "Fecha de vencimiento",
+                       "Días transcurridos", "Factura", "Fecha factura", "Días de crédito", "Divisa", "Importe"]
 
         def seccion(titulo, filas, fila):
             fila += 2
@@ -6138,20 +6169,22 @@ def administracion_antiguedad_saldos_cliente_exportar():
                 return fila
             for f in filas:
                 fila += 1
-                valores = [f["booking"], f["referencia"] or "—", f["contenedor"] or "—", f["folio"], f["fecha_factura"], f["vencimiento"],
-                           f["dias_credito"], f["dias_transcurridos"], "Sí" if f["demoras"] else "No", f["moneda"], f["total"]]
+                valores = [f["booking"], f["referencia"] or "—", f["contenedor"] or "—", "Sí" if f["demoras"] else "No", f["atd"] or "—", f["eta"] or "—",
+                           f["vencimiento"], f["dias_transcurridos"], f["folio"], f["fecha_factura"], f["dias_credito"], f["moneda"], f["total"]]
+                color = "B91C1C" if f["vencida"] else "15803D"  # vencido en rojo, por vencer en verde
                 for col, v in enumerate(valores, start=1):
                     c = ws.cell(row=fila, column=col, value=v)
-                    if 7 <= col <= 10:
+                    c.font = Font(color=color)
+                    if 4 <= col <= 12:
                         c.alignment = Alignment(horizontal="center")
-                    if col == 11:
+                    if col == 13:
                         c.number_format = moneda_fmt
             for mon in sorted({f["moneda"] for f in filas}):
                 fila += 1
-                ws.cell(row=fila, column=9, value=f"Total {mon}").font = Font(bold=True)
-                c = ws.cell(row=fila, column=11, value=sum(x["total"] for x in filas if x["moneda"] == mon))
+                ws.cell(row=fila, column=10, value=f"Saldo total {mon} {'vencido' if filas[0]['vencida'] else 'por vencer'}").font = Font(bold=True)
+                c = ws.cell(row=fila, column=13, value=sum(x["total"] for x in filas if x["moneda"] == mon))
                 c.number_format, c.font = moneda_fmt, Font(bold=True)
-                for col in range(1, 12):
+                for col in range(1, 14):
                     ws.cell(row=fila, column=col).fill = gris
             return fila
 
@@ -6165,7 +6198,7 @@ def administracion_antiguedad_saldos_cliente_exportar():
         ws.cell(row=fila, column=1, value=" · ".join(x for x in [c.get("nombre") or "Departamento de Cobranza, AV2 Logistics", c.get("puesto"),
                                                                ("Tel. " + c["telefono"]) if c.get("telefono") else None, c.get("correo")] if x))
 
-        for col, ancho in zip("ABCDEFGHIJK", [16, 20, 26, 10, 13, 14, 10, 12, 9, 8, 14]):
+        for col, ancho in zip("ABCDEFGHIJKLM", [16, 18, 26, 9, 11, 11, 13, 11, 9, 12, 9, 7, 14]):
             ws.column_dimensions[col].width = ancho
 
         buffer = io.BytesIO()

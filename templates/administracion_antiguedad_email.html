@@ -21,28 +21,37 @@
       </tr>
       {% for mon, r in ec.resumen.items() %}
       <tr><td style="{{ td }}"><b>{{ mon }}</b></td><td style="{{ td }} text-align:right; color:#b91c1c; font-weight:bold;">${{ "{:,.2f}".format(r.vencido) }}</td>
-        <td style="{{ td }} text-align:right;">${{ "{:,.2f}".format(r.por_vencer) }}</td><td style="{{ td }} text-align:right;"><b>${{ "{:,.2f}".format(r.total) }}</b></td></tr>
+        <td style="{{ td }} text-align:right; color:#15803d;">${{ "{:,.2f}".format(r.por_vencer) }}</td><td style="{{ td }} text-align:right;"><b>${{ "{:,.2f}".format(r.total) }}</b></td></tr>
       {% endfor %}
     </table>
 
     {% macro tabla(filas, vencidas) %}
     {% if filas %}
+    {% set color = '#b91c1c' if vencidas else '#15803d' %}
     <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
       <tr style="background:#C1502E; color:#fff;">
         <th style="{{ th }}">Booking</th><th style="{{ th }}">Referencia de cliente</th><th style="{{ th }}">Contenedor</th>
-        <th style="{{ th }}">Factura</th><th style="{{ th }}">Fecha factura</th><th style="{{ th }}">Fecha de vencimiento</th>
-        <th style="{{ th }} text-align:center;">Días de crédito</th><th style="{{ th }} text-align:center;">Días transcurridos</th>
-        <th style="{{ th }} text-align:center;">Demoras</th><th style="{{ th }} text-align:center;">Divisa</th><th style="{{ th }} text-align:right;">Importe</th>
+        <th style="{{ th }} text-align:center;">Demoras</th><th style="{{ th }} text-align:center;">ATD</th><th style="{{ th }} text-align:center;">ETA</th>
+        <th style="{{ th }} text-align:center;">Fecha de vencimiento</th><th style="{{ th }} text-align:center;">Días transcurridos</th>
+        <th style="{{ th }} text-align:center;">Factura</th><th style="{{ th }} text-align:center;">Fecha factura</th>
+        <th style="{{ th }} text-align:center;">Días de crédito</th><th style="{{ th }} text-align:center;">Divisa</th><th style="{{ th }} text-align:right;">Importe</th>
       </tr>
       {% for f in filas %}
+      {% set tdc = td ~ " color:" ~ color ~ ";" %}
       <tr>
-        <td style="{{ td }}">{{ f.booking or "—" }}</td><td style="{{ td }}">{{ f.referencia or "—" }}</td><td style="{{ td }}">{{ f.contenedor or "—" }}</td>
-        <td style="{{ td }}">{{ f.folio or "—" }}</td><td style="{{ td }}">{{ f.fecha_factura or "—" }}</td><td style="{{ td }}">{{ f.vencimiento or "—" }}</td>
-        <td style="{{ td }} text-align:center;">{{ f.dias_credito }}</td>
-        <td style="{{ td }} text-align:center;{{ ' color:#b91c1c; font-weight:bold;' if vencidas else '' }}">{{ f.dias_transcurridos if f.dias_transcurridos is not none else "—" }}</td>
-        <td style="{{ td }} text-align:center;">{{ 'Sí' if f.demoras else 'No' }}</td><td style="{{ td }} text-align:center;">{{ f.moneda }}</td>
-        <td style="{{ td }} text-align:right;">${{ "{:,.2f}".format(f.total) }}</td>
+        <td style="{{ tdc }}">{{ f.booking or "—" }}</td><td style="{{ tdc }}">{{ f.referencia or "—" }}</td><td style="{{ tdc }}">{{ f.contenedor or "—" }}</td>
+        <td style="{{ tdc }} text-align:center;">{{ 'Sí' if f.demoras else 'No' }}</td>
+        <td style="{{ tdc }} text-align:center;">{{ f.atd or "—" }}</td><td style="{{ tdc }} text-align:center;">{{ f.eta or "—" }}</td>
+        <td style="{{ tdc }} text-align:center;">{{ f.vencimiento or "—" }}</td>
+        <td style="{{ tdc }} text-align:center; font-weight:bold;">{{ f.dias_transcurridos if f.dias_transcurridos is not none else "—" }}</td>
+        <td style="{{ tdc }} text-align:center;">{{ f.folio or "—" }}</td><td style="{{ tdc }} text-align:center;">{{ f.fecha_factura or "—" }}</td>
+        <td style="{{ tdc }} text-align:center;">{{ f.dias_credito }}</td><td style="{{ tdc }} text-align:center;">{{ f.moneda }}</td>
+        <td style="{{ tdc }} text-align:right;">${{ "{:,.2f}".format(f.total) }}</td>
       </tr>
+      {% endfor %}
+      {% for mon, tot in filas|groupby('moneda') %}
+      <tr style="background:#f9fafb;"><td colspan="12" style="{{ td }} text-align:right; font-weight:bold;">Saldo total {{ mon }} {{ 'vencido' if vencidas else 'por vencer' }}</td>
+        <td style="{{ td }} text-align:right; font-weight:bold; color:{{ color }};">${{ "{:,.2f}".format(tot|sum(attribute='total')) }}</td></tr>
       {% endfor %}
     </table>
     {% else %}
@@ -50,9 +59,9 @@
     {% endif %}
     {% endmacro %}
 
-    <p style="margin:16px 0 6px; font-weight:bold;">Información detallada de los documentos vencidos hasta {{ ec.fecha }}</p>
+    <p style="margin:16px 0 6px; font-weight:bold; color:#b91c1c;">Información detallada de los documentos vencidos hasta {{ ec.fecha }}</p>
     {{ tabla(ec.vencidas, true) }}
-    <p style="margin:16px 0 6px; font-weight:bold;">Información detallada de los documentos por vencer</p>
+    <p style="margin:16px 0 6px; font-weight:bold; color:#15803d;">Información detallada de los documentos por vencer</p>
     {{ tabla(ec.por_vencer, false) }}
 
     <p style="margin-top:20px;">Quedo a su entera disposición por si tiene alguna duda o requiere alguna aclaración con la información presentada.</p>
