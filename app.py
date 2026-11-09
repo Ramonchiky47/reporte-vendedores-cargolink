@@ -81,7 +81,7 @@ CARGOLINK_ANTIGUEDAD_EGRESOS_URL = "https://fwd.cargolink.mx/templates/antigueda
 CARGOLINK_REPORTE_CLIENTES_URL = "https://fwd.cargolink.mx/templates/pdfs/ReporteClientesExcel.php"
 CARGOLINK_LIQ_VENDEDOR_URL = "https://fwd.cargolink.mx/templates/egresos_liq_vendedor/"
 CARGOLINK_PAGOS_URL = "https://fwd.cargolink.mx/templates/reportePagos/"
-RECIBO_PAGO_VENTANA_DIAS = 6  # +/- días alrededor de la fecha leída del recibo, para buscar el movimiento bancario en CargoLink
+RECIBO_PAGO_VENTANA_DIAS = 6  # (legado)  +/- días alrededor de la fecha leída del recibo, para buscar el movimiento bancario en CargoLink
 
 
 def get_secret_key():
@@ -438,6 +438,9 @@ def init_db():
             procesado_en timestamptz
         );
     """)
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS rfc_extraido text")
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS referencia_extraida text")
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS revisado_en timestamptz")
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
             id bigint generated always as identity primary key,
@@ -1437,41 +1440,120 @@ def _normalizar_texto_proveedor(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-def emparejar_proveedores_cargolink(nombre_extraido, nombre_archivo, proveedores, top=5):
+_RFC_GENERICOS = {"XEXX010101000", "XAXX010101000"}
+_PALABRAS_RAZON_IGNORAR = {"SA", "DE", "CV", "S", "A", "C", "V", "RL", "SAPI", "LTD", "INC", "LLC", "CO", "THE", "Y", "SC"}
+# Palabras que por sí solas no identifican a un proveedor ("C&A MEXICO" no
+# debe empatar con "MAERSK MEXICO" solo por "MEXICO").
+_PALABRAS_RAZON_GENERICAS = {
+    "MEXICO", "MEXICANA", "LOGISTICS", "LOGISTIC", "LOGISTICA", "LOGISTICO", "TRANSPORTES", "TRANSPORTE", "GLOBAL",
+    "SERVICES", "SERVICIOS", "SERVICE", "GROUP", "GRUPO", "CARGO", "INTERNATIONAL", "INTERNACIONAL", "SHIPPING",
+    "LINE", "LINES", "EXPRESS", "COMPANY", "CORPORATION", "AGENCY", "LIMITED", "SOLUTIONS", "FREIGHT",
+}
+
+
+def _palabras_razon(texto):
+    return {w for w in _normalizar_texto_proveedor(texto).split() if w not in _PALABRAS_RAZON_IGNORAR and len(w) > 1}
+
+
+_CATALOGO_NORMALIZADO = {"id": None, "filas": []}
+_CACHE_EMPAREJAR = {}
+
+
+def _catalogo_normalizado(proveedores):
+    """Normaliza el catálogo una sola vez por lista (son ~2,800 proveedores)."""
+    if _CATALOGO_NORMALIZADO["id"] is not proveedores:
+        filas = []
+        for p in proveedores:
+            razon = _normalizar_texto_proveedor(p.get("razonsocial"))
+            if razon:
+                filas.append((p, razon, _palabras_razon(razon), (p.get("rfc") or "").strip().upper(), _prefijos(razon)))
+        _CATALOGO_NORMALIZADO.update(id=proveedores, filas=filas)
+        _CACHE_EMPAREJAR.clear()
+    return _CATALOGO_NORMALIZADO["filas"]
+
+
+def _prefijos(texto):
+    """Inicios (4 letras) de las palabras de un nombre: prefiltro barato para
+    no comparar a fondo contra los ~2,800 proveedores del catálogo."""
+    return {w[:4] for w in texto.split() if len(w) >= 3 and w not in _PALABRAS_RAZON_IGNORAR}
+
+
+def _similitud(a, b):
+    if not a:
+        return 0
+    sm = difflib.SequenceMatcher(None, a, b)
+    # Filtros baratos primero: si ni la cota superior llega a 0.5, no vale
+    # la pena el cálculo completo (es lo que hacía lenta la búsqueda).
+    if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
+        return 0
+    return sm.ratio()
+
+
+def emparejar_proveedores_cargolink(nombre_extraido, nombre_archivo, proveedores, top=5, rfc=None):
     """Ordena el catálogo de proveedores de CargoLink por similitud contra
     el proveedor que leyó la IA del recibo y, como respaldo, contra el
     nombre del archivo (a veces uno de los dos viene incompleto) — se toma
-    el mejor de los dos puntajes por proveedor."""
+    el mejor de los puntajes por proveedor: parecido del texto, palabras
+    del catálogo contenidas en lo leído, o RFC idéntico (= 100%)."""
+    filas = _catalogo_normalizado(proveedores)
+    llave = (nombre_extraido, nombre_archivo, rfc, top)
+    if llave in _CACHE_EMPAREJAR:
+        return [dict(c) for c in _CACHE_EMPAREJAR[llave]]
+
     objetivo_1 = _normalizar_texto_proveedor(nombre_extraido)
     objetivo_2 = _normalizar_texto_proveedor(os.path.splitext(nombre_archivo)[0])
+    palabras_obj = _palabras_razon(nombre_extraido) | _palabras_razon(os.path.splitext(nombre_archivo)[0])
+    rfc_objetivo = (rfc or "").strip().upper()
+    if rfc_objetivo in _RFC_GENERICOS:
+        rfc_objetivo = ""
 
+    prefijos_obj = _prefijos(objetivo_1) | _prefijos(objetivo_2)
     candidatos = []
-    for p in proveedores:
-        razon = _normalizar_texto_proveedor(p.get("razonsocial"))
-        if not razon:
+    for p, razon, palabras_cat, rfc_cat, prefijos_cat in filas:
+        if not (prefijos_cat & prefijos_obj) and not (rfc_objetivo and rfc_cat == rfc_objetivo):
             continue
-        score = max(
-            difflib.SequenceMatcher(None, objetivo_1, razon).ratio() if objetivo_1 else 0,
-            difflib.SequenceMatcher(None, objetivo_2, razon).ratio() if objetivo_2 else 0,
-        )
+        score = max(_similitud(objetivo_1, razon), _similitud(objetivo_2, razon))
+        # Palabras significativas del catálogo contenidas en lo leído (p.ej.
+        # "EVERGREEN SHIPPING AGENCY MEXICO" dentro de "EVERGREEN SHIPPING
+        # AGENCY MEXICO SA DE C", o "AMACARGA" en el nombre del archivo).
+        if palabras_cat - _PALABRAS_RAZON_GENERICAS:
+            cubiertas = len(palabras_cat & palabras_obj) / len(palabras_cat)
+            if cubiertas == 1:
+                score = max(score, 0.9 + min(len(palabras_cat), 5) * 0.01)
+            else:
+                score = max(score, cubiertas * 0.8)
+        if rfc_objetivo and rfc_cat == rfc_objetivo:
+            score = 1.0
         if score <= 0:
             continue
         candidatos.append({"id_proveedor": p["id_proveedor"], "razonsocial": p["razonsocial"], "score": round(score, 3)})
     candidatos.sort(key=lambda c: c["score"], reverse=True)
-    return candidatos[:top]
+    _CACHE_EMPAREJAR[llave] = candidatos[:top]
+    return [dict(c) for c in candidatos[:top]]
 
 
-def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PAGO_VENTANA_DIAS):
+_CANDADO_SESION_PAGOS = threading.Lock()
+
+
+def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PAGO_VENTANA_DIAS, dias_despues=None, conexion=None):
     """Movimientos bancarios (Pagos) de un proveedor en CargoLink dentro de
     una ventana de días alrededor de la fecha leída del recibo — para poder
-    cotejar por monto/moneda y elegir a cuál adjuntar el comprobante."""
-    sesion, headers, token = _conectar_pagos_cargolink()
+    cotejar por monto/moneda y elegir a cuál adjuntar el comprobante.
+    `dias_despues` permite una ventana asimétrica (Cuentas por pagar suele
+    registrar el pago en CargoLink días después de hecha la transferencia).
+    `conexion` reutiliza un login ya hecho: una lista [sesion, headers, token]
+    que se renueva en el lugar si CargoLink invalida la sesión (solo permite
+    una sesión por usuario: si otro proceso entra, la nuestra responde
+    {"status_conexion": "Invalida"} con cero resultados)."""
+    if conexion is None:
+        conexion = list(_conectar_pagos_cargolink())
+    sesion, headers, token = conexion
     fecha_ini = fecha_fin = ""
     if fecha:
         try:
             fecha_dt = datetime.strptime(fecha, "%Y-%m-%d").date()
             fecha_ini = (fecha_dt - timedelta(days=dias_ventana)).isoformat()
-            fecha_fin = (fecha_dt + timedelta(days=dias_ventana)).isoformat()
+            fecha_fin = (fecha_dt + timedelta(days=dias_ventana if dias_despues is None else dias_despues)).isoformat()
         except ValueError:
             pass
     body = {
@@ -1479,13 +1561,28 @@ def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PA
         "filtros2": {"fechaini": fecha_ini, "fechafin": fecha_fin},
         "filtros3": {"id_proveedor": str(id_proveedor)},
     }
-    r = sesion.post(
-        f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit=0",
-        json=body, headers={"Content-Type": "application/json"}, timeout=60,
-    )
-    if r.status_code != 200:
-        raise RuntimeError("Error al consultar los pagos del proveedor en CargoLink.")
-    return r.json().get("valores", [])
+    for intento in range(4):
+        sesion, headers, token = conexion
+        r = sesion.post(
+            f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit=0",
+            json=body, headers={"Content-Type": "application/json"}, timeout=60,
+        )
+        if r.status_code != 200:
+            raise RuntimeError("Error al consultar los pagos del proveedor en CargoLink.")
+        datos = r.json()
+        if datos.get("status_conexion") == "Invalida":
+            if intento < 3:
+                # A veces un login recién hecho nace inválido y el siguiente
+                # sí funciona (comprobado): se reintenta con pausa corta. Con
+                # consultas en paralelo solo UN hilo renueva la sesión (cada
+                # login invalida el anterior); los demás toman el token nuevo.
+                with _CANDADO_SESION_PAGOS:
+                    if conexion[2] == token:
+                        time.sleep(1.5)
+                        conexion[:] = _conectar_pagos_cargolink()
+                continue
+            raise RuntimeError("CargoLink cerró la sesión (alguien más entró con el mismo usuario). Intenta de nuevo.")
+        return datos.get("valores", [])
 
 
 def pagos_con_facturas_ligadas_cargolink(id_proveedor):
@@ -1536,6 +1633,8 @@ def adjuntar_comprobante_pago_cargolink(id_mov_banco, nombre_archivo, contenido,
     )
     if r.status_code != 200:
         raise RuntimeError(f"CargoLink respondió {r.status_code} al subir el comprobante.")
+    if '"Invalida"' in r.text:
+        raise RuntimeError("CargoLink cerró la sesión antes de subir el comprobante (alguien más entró con el mismo usuario). Intenta de nuevo.")
     return r
 
 
@@ -1562,9 +1661,13 @@ def extraer_datos_recibo_ia(nombre_archivo, contenido, tipo_mime):
         "- moneda: código de 3 letras (MXN, USD, etc). Si el documento dice MXP, repórtalo como MXN.\n"
         "- proveedor: el nombre de quien RECIBE el pago (el titular/beneficiario de la cuenta de depósito o "
         "destino — nunca la cuenta de retiro/origen, y nunca AV2).\n"
-        "- fecha: la fecha de aplicación u operación del pago, en formato YYYY-MM-DD.\n\n"
+        "- fecha: la fecha de aplicación u operación del pago, en formato YYYY-MM-DD.\n"
+        "- rfc: el RFC del beneficiario si aparece (vacío si no).\n"
+        "- referencia: el concepto de pago / descripción que identifica qué se pagó (factura, BL, booking); "
+        "si hay varios, sepáralos con coma. Vacío si no hay.\n\n"
+        "Si el beneficiario es la propia AV2 (traspaso entre cuentas propias), pon proveedor = \"AV2 LOGISTICS SA DE CV\".\n"
         "Responde ÚNICAMENTE con un JSON, sin texto adicional ni bloque de código, con este formato exacto: "
-        '{"monto": 1234.56, "moneda": "MXN", "proveedor": "NOMBRE DEL PROVEEDOR", "fecha": "2026-01-31"}'
+        '{"monto": 1234.56, "moneda": "MXN", "proveedor": "NOMBRE DEL PROVEEDOR", "fecha": "2026-01-31", "rfc": "", "referencia": ""}'
     )
     headers = {
         "x-api-key": api_key,
@@ -1596,7 +1699,103 @@ def extraer_datos_recibo_ia(nombre_archivo, contenido, tipo_mime):
         "moneda": (extraido.get("moneda") or "").strip().upper() or "MXN",
         "proveedor": (extraido.get("proveedor") or "").strip(),
         "fecha": extraido.get("fecha") or None,
+        "rfc": (extraido.get("rfc") or "").strip().upper(),
+        "referencia": (extraido.get("referencia") or "").strip(),
     }
+
+
+RECIBO_PAGO_DIAS_ANTES = 7     # el pago en CargoLink rara vez se registra antes de la transferencia
+RECIBO_PAGO_DIAS_DESPUES = 30  # ...pero sí puede registrarse varias semanas después
+
+
+def es_traspaso_propio(proveedor, nombre_archivo):
+    """Traspaso entre cuentas propias de AV2 (p.ej. 'TRASPASO A MONEX'):
+    no hay proveedor ni pago que cotejar en CargoLink."""
+    prov = _normalizar_texto_proveedor(proveedor)
+    archivo = _normalizar_texto_proveedor(nombre_archivo)
+    return prov.startswith("AV2 LOGISTICS") or archivo.startswith("TRASPASO")
+
+
+def proveedores_recibo(proveedor, nombre_archivo, proveedores, rfc=None, id_proveedor_fijo=None):
+    """(candidatos_proveedor, ids a revisar) para un recibo. Si hay varias
+    altas casi iguales del mismo proveedor (p.ej. dos de Evergreen) se
+    revisan hasta 3."""
+    candidatos = emparejar_proveedores_cargolink(proveedor, nombre_archivo, proveedores, rfc=rfc) if proveedores is not None else []
+    if id_proveedor_fijo:
+        return candidatos, [str(id_proveedor_fijo)]
+    if candidatos and candidatos[0]["score"] >= 0.82:
+        mejor = candidatos[0]["score"]
+        return candidatos, [c["id_proveedor"] for c in candidatos if c["score"] >= 0.82 and mejor - c["score"] < 0.12][:3]
+    return candidatos, []
+
+
+def _fecha_txt(fecha):
+    return fecha.isoformat() if hasattr(fecha, "isoformat") else fecha
+
+
+def precargar_pagos_cargolink(llaves, conexion, presupuesto_segundos=35):
+    """Consulta en paralelo los pagos de varios (id_proveedor, fecha) — cada
+    consulta tarda ~3 s en CargoLink, en paralelo baja ~4x. Regresa un dict
+    {(id_proveedor, fecha): pagos}; lo que no alcance a responder dentro del
+    presupuesto simplemente no queda en el dict."""
+    llaves = list(dict.fromkeys(llaves))
+    if not llaves:
+        return {}
+    inicio = time.time()
+    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
+    pool = ThreadPoolExecutor(max_workers=8)
+    futuros = {
+        pool.submit(buscar_pagos_proveedor_cargolink, idp, f, RECIBO_PAGO_DIAS_ANTES, RECIBO_PAGO_DIAS_DESPUES, conexion): (idp, f)
+        for idp, f in llaves
+    }
+    cache = {}
+    try:
+        for fut in as_completed(futuros, timeout=max(1, presupuesto_segundos - (time.time() - inicio))):
+            try:
+                cache[futuros[fut]] = fut.result()
+            except (RuntimeError, requests.RequestException, ValueError):
+                pass
+    except FuturesTimeout:
+        pass
+    pool.shutdown(wait=False, cancel_futures=True)
+    return cache
+
+
+def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveedores, rfc=None, id_proveedor_fijo=None, conexion=None, cache=None):
+    """Busca a qué pago de CargoLink corresponde un recibo. Regresa
+    (candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido).
+
+    - Proveedor: por RFC y nombre (ver proveedores_recibo).
+    - Pago: misma moneda, diferencia < 0.50 y sin comprobante, dentro de
+      7 días antes / 30 días después de la fecha del recibo.
+    - Si no hay ninguno, el recibo se queda 'esperando registro' y se
+      vuelve a buscar con el botón de reintento.
+    `cache` = resultado de precargar_pagos_cargolink (lo que falte se consulta)."""
+    candidatos_proveedor, ids = proveedores_recibo(proveedor, nombre_archivo, proveedores, rfc, id_proveedor_fijo)
+    if not ids:
+        return candidatos_proveedor, None, [], None
+
+    fecha_txt = _fecha_txt(fecha)
+    elegido, pagos_elegido, id_pago = ids[0], [], None
+    for i, id_prov in enumerate(ids):
+        if cache is not None and (id_prov, fecha_txt) in cache:
+            pagos = cache[(id_prov, fecha_txt)]
+        else:
+            if conexion is None:
+                conexion = list(_conectar_pagos_cargolink())
+            pagos = buscar_pagos_proveedor_cargolink(
+                id_prov, fecha_txt, dias_ventana=RECIBO_PAGO_DIAS_ANTES, dias_despues=RECIBO_PAGO_DIAS_DESPUES, conexion=conexion
+            )
+        coincidencias = [
+            p for p in pagos
+            if p.get("moneda_mov") == moneda and abs(float(p.get("Total") or 0) - float(monto or 0)) < 0.5 and not p.get("url_pago")
+        ]
+        if i == 0 or coincidencias or (pagos and not pagos_elegido):
+            elegido, pagos_elegido = id_prov, pagos
+            id_pago = coincidencias[0]["Id"] if len(coincidencias) == 1 else None
+        if coincidencias:
+            break
+    return candidatos_proveedor, elegido, pagos_elegido, id_pago
 
 
 def descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin):
@@ -6461,6 +6660,7 @@ def administracion_recibos_pago():
             return redirect(url_for("administracion_recibos_pago"))
 
         procesados, con_error = 0, 0
+        conexion = None
         for archivo in archivos:
             nombre = archivo.filename
             extension = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
@@ -6473,36 +6673,35 @@ def administracion_recibos_pago():
 
             try:
                 extraido = extraer_datos_recibo_ia(nombre, contenido, tipo_mime)
-                candidatos_proveedor = emparejar_proveedores_cargolink(extraido["proveedor"], nombre, proveedores)
-                id_proveedor_elegido = None
-                candidatos_pago = []
-                id_pago_elegido = None
-                if candidatos_proveedor and candidatos_proveedor[0]["score"] >= 0.82 and (
-                    len(candidatos_proveedor) == 1
-                    or candidatos_proveedor[0]["score"] - candidatos_proveedor[1]["score"] >= 0.12
-                ):
-                    id_proveedor_elegido = candidatos_proveedor[0]["id_proveedor"]
-                    candidatos_pago = buscar_pagos_proveedor_cargolink(id_proveedor_elegido, extraido["fecha"])
-                    coincidencias = [
-                        p for p in candidatos_pago
-                        if p.get("moneda_mov") == extraido["moneda"]
-                        and abs(float(p.get("Total") or 0) - extraido["monto"]) < 0.5
-                        and not p.get("url_pago")
-                    ]
-                    if len(coincidencias) == 1:
-                        id_pago_elegido = coincidencias[0]["Id"]
+                if es_traspaso_propio(extraido["proveedor"], nombre):
+                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido = [], None, [], None
+                    estatus = "traspaso"
+                else:
+                    if conexion is None:
+                        conexion = list(_conectar_pagos_cargolink())
+                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido = cotejar_recibo_pago(
+                        extraido["monto"], extraido["moneda"], extraido["proveedor"], extraido["fecha"], nombre,
+                        proveedores, rfc=extraido["rfc"], conexion=conexion,
+                    )
+                    estatus = "pendiente"
+                    if id_pago_elegido and db.execute(
+                        "SELECT 1 FROM recibos_pago_procesados WHERE id_pago_elegido = %s AND estatus IN ('pendiente', 'adjuntado')",
+                        (id_pago_elegido,),
+                    ).fetchone():
+                        id_pago_elegido = None  # ese pago ya está ligado a otro recibo (archivo repetido)
 
                 db.execute("""
                     INSERT INTO recibos_pago_procesados
                         (nombre_archivo, contenido_archivo, tipo_mime, monto_extraido, moneda_extraida,
                          proveedor_extraido, fecha_extraida, candidatos_proveedor, candidatos_pago,
-                         id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pendiente', %s)
+                         id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id,
+                         rfc_extraido, referencia_extraida)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     nombre, contenido, tipo_mime, extraido["monto"], extraido["moneda"],
                     extraido["proveedor"], extraido["fecha"], json.dumps(candidatos_proveedor),
-                    json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido,
-                    session.get("usuario_id"),
+                    json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido, estatus,
+                    session.get("usuario_id"), extraido["rfc"], extraido["referencia"],
                 ))
                 db.commit()
                 procesados += 1
@@ -6524,11 +6723,26 @@ def administracion_recibos_pago():
 
     recibos = db.execute("""
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
-               candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en
-        FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 100
+               candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en,
+               rfc_extraido, referencia_extraida
+        FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 200
     """).fetchall()
+    # Resumen sobre TODOS los recibos (no solo los que caben en la tabla).
+    resumen = {k: {"n": 0, "montos": {}} for k in ("listo", "espera", "traspaso", "adjuntado")}
+    for f in db.execute("""
+        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL THEN 'listo'
+                    WHEN estatus = 'pendiente' THEN 'espera' ELSE estatus END AS grupo,
+               moneda_extraida AS moneda, count(*) AS n, coalesce(sum(monto_extraido), 0) AS total
+        FROM recibos_pago_procesados
+        WHERE estatus IN ('pendiente', 'traspaso', 'adjuntado')
+        GROUP BY 1, 2 ORDER BY 2
+    """).fetchall():
+        grupo = resumen[f["grupo"]]
+        grupo["n"] += f["n"]
+        if f["moneda"]:
+            grupo["montos"][f["moneda"]] = float(f["total"])
     db.close()
-    return render_template("administracion_recibos_pago.html", recibos=recibos)
+    return render_template("administracion_recibos_pago.html", recibos=recibos, resumen=resumen)
 
 
 @app.route("/administracion/recibos-pago/<int:recibo_id>/reasignar-proveedor", methods=["POST"])
@@ -6542,15 +6756,10 @@ def administracion_recibos_pago_reasignar_proveedor(recibo_id):
         return redirect(url_for("administracion_recibos_pago"))
 
     try:
-        fecha_txt = recibo["fecha_extraida"].isoformat() if recibo["fecha_extraida"] else None
-        candidatos_pago = buscar_pagos_proveedor_cargolink(id_proveedor, fecha_txt)
-        coincidencias = [
-            p for p in candidatos_pago
-            if p.get("moneda_mov") == recibo["moneda_extraida"]
-            and abs(float(p.get("Total") or 0) - float(recibo["monto_extraido"] or 0)) < 0.5
-            and not p.get("url_pago")
-        ]
-        id_pago_elegido = coincidencias[0]["Id"] if len(coincidencias) == 1 else None
+        _, _, candidatos_pago, id_pago_elegido = cotejar_recibo_pago(
+            recibo["monto_extraido"], recibo["moneda_extraida"], None, recibo["fecha_extraida"], "",
+            None, id_proveedor_fijo=id_proveedor,
+        )
         db.execute("""
             UPDATE recibos_pago_procesados
             SET id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s
@@ -6592,6 +6801,134 @@ def administracion_recibos_pago_confirmar(recibo_id):
         db.execute("UPDATE recibos_pago_procesados SET estatus = 'error', mensaje = %s WHERE id = %s", (str(e), recibo_id))
         db.commit()
         flash(f"No se pudo adjuntar el comprobante en CargoLink: {e}")
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
+@app.route("/administracion/recibos-pago/volver-a-buscar", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_volver_a_buscar():
+    """Vuelve a cotejar todos los recibos pendientes (también revalida los
+    que ya tenían coincidencia) — para cuando Cuentas por pagar ya registró
+    el pago en CargoLink después de que se subió el recibo. Solo lee CargoLink."""
+    db = get_db()
+    # Primero lo que lleva más tiempo sin revisarse: así cada clic avanza
+    # aunque CargoLink no alcance a responder todo en un solo intento.
+    pendientes = db.execute("""
+        SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
+               rfc_extraido, id_proveedor_elegido
+        FROM recibos_pago_procesados
+        WHERE estatus = 'pendiente' AND monto_extraido IS NOT NULL
+        ORDER BY revisado_en ASC NULLS FIRST, creado_en ASC LIMIT 200
+    """).fetchall()
+    # Un pago de CargoLink solo puede llevar un comprobante: si otro recibo
+    # (p.ej. el mismo PDF subido dos veces) ya lo tiene, no se vuelve a proponer.
+    usados = {
+        r["id_pago_elegido"]: r["id"] for r in db.execute("""
+            SELECT id, id_pago_elegido FROM recibos_pago_procesados
+            WHERE id_pago_elegido IS NOT NULL AND estatus = 'adjuntado'
+        """).fetchall()
+    }
+    encontrados, traspasos, duplicados, sin_respuesta = 0, 0, 0, 0
+    try:
+        proveedores = obtener_proveedores_cargolink() if pendientes else []
+        conexion = list(_conectar_pagos_cargolink()) if pendientes else None
+
+        por_revisar, llaves = [], []
+        for r in pendientes:
+            if es_traspaso_propio(r["proveedor_extraido"], r["nombre_archivo"]):
+                db.execute("UPDATE recibos_pago_procesados SET estatus = 'traspaso', id_pago_elegido = NULL WHERE id = %s", (r["id"],))
+                traspasos += 1
+                continue
+            _, ids = proveedores_recibo(r["proveedor_extraido"], r["nombre_archivo"], proveedores, r["rfc_extraido"], r["id_proveedor_elegido"])
+            llaves += [(i, _fecha_txt(r["fecha_extraida"])) for i in ids]
+            por_revisar.append(r)
+        cache = precargar_pagos_cargolink(llaves, conexion)
+
+        cambios = []
+        for r in por_revisar:
+            _, ids = proveedores_recibo(r["proveedor_extraido"], r["nombre_archivo"], proveedores, r["rfc_extraido"], r["id_proveedor_elegido"])
+            if any((i, _fecha_txt(r["fecha_extraida"])) not in cache for i in ids):
+                sin_respuesta += 1
+                continue  # CargoLink no alcanzó a responder: se queda como estaba
+            candidatos_proveedor, id_prov, candidatos_pago, id_pago = cotejar_recibo_pago(
+                r["monto_extraido"], r["moneda_extraida"], r["proveedor_extraido"], r["fecha_extraida"],
+                r["nombre_archivo"], proveedores, rfc=r["rfc_extraido"], id_proveedor_fijo=r["id_proveedor_elegido"],
+                cache=cache,
+            )
+            mensaje = None
+            if id_pago and id_pago in usados:
+                mensaje = f"Posible duplicado: el pago {id_pago} ya está ligado al recibo #{usados[id_pago]}."
+                id_pago = None
+                duplicados += 1
+            elif id_pago:
+                usados[id_pago] = r["id"]
+                encontrados += 1
+            cambios.append((json.dumps(candidatos_proveedor), id_prov, json.dumps(candidatos_pago), id_pago, mensaje, r["id"]))
+        if cambios:
+            with db.cursor() as cur:
+                cur.executemany("""
+                    UPDATE recibos_pago_procesados
+                    SET candidatos_proveedor = %s, id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s, mensaje = %s,
+                        revisado_en = now()
+                    WHERE id = %s
+                """, cambios)
+        db.commit()
+        msg = f"Revisé {len(pendientes)} recibo(s): {encontrados} ya tienen su pago en CargoLink."
+        if duplicados:
+            msg += f" {duplicados} parecen duplicados (mismo pago que otro recibo)."
+        if traspasos:
+            msg += f" {traspasos} marcado(s) como traspaso entre cuentas propias."
+        if sin_respuesta:
+            msg += f" {sin_respuesta} sin respuesta de CargoLink a tiempo: presiona otra vez."
+        flash(msg)
+    except RuntimeError as e:
+        db.commit()
+        flash(f"No se pudo consultar CargoLink: {e}")
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
+@app.route("/administracion/recibos-pago/adjuntar-coincidencias", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_adjuntar_coincidencias():
+    """Adjunta en CargoLink, de un jalón, todos los recibos pendientes que
+    tienen coincidencia exacta (mismo proveedor, monto y moneda, pago sin
+    comprobante). Solo se ejecuta con el clic y confirmación del usuario."""
+    db = get_db()
+    listos = db.execute("""
+        SELECT id, nombre_archivo, contenido_archivo, tipo_mime, id_pago_elegido
+        FROM recibos_pago_procesados WHERE estatus = 'pendiente' AND id_pago_elegido IS NOT NULL
+    """).fetchall()
+    ok, fallas, omitidos = 0, 0, 0
+    ya_adjuntados = {
+        r["id_pago_elegido"] for r in db.execute(
+            "SELECT id_pago_elegido FROM recibos_pago_procesados WHERE estatus = 'adjuntado' AND id_pago_elegido IS NOT NULL"
+        ).fetchall()
+    }
+    for r in listos:
+        if r["id_pago_elegido"] in ya_adjuntados:
+            db.execute(
+                "UPDATE recibos_pago_procesados SET id_pago_elegido = NULL, mensaje = %s WHERE id = %s",
+                (f"Posible duplicado: el pago {r['id_pago_elegido']} ya tiene comprobante desde otro recibo.", r["id"]),
+            )
+            db.commit()
+            omitidos += 1
+            continue
+        ya_adjuntados.add(r["id_pago_elegido"])
+        try:
+            adjuntar_comprobante_pago_cargolink(r["id_pago_elegido"], r["nombre_archivo"], bytes(r["contenido_archivo"]), r["tipo_mime"])
+            db.execute("UPDATE recibos_pago_procesados SET estatus = 'adjuntado', procesado_en = now() WHERE id = %s", (r["id"],))
+            ok += 1
+        except RuntimeError as e:
+            db.execute("UPDATE recibos_pago_procesados SET estatus = 'error', mensaje = %s WHERE id = %s", (str(e), r["id"]))
+            fallas += 1
+        db.commit()
+    flash(
+        f"{ok} comprobante(s) adjuntado(s) en CargoLink."
+        + (f" {fallas} con error." if fallas else "")
+        + (f" {omitidos} omitido(s) por duplicado." if omitidos else "")
+    )
     db.close()
     return redirect(url_for("administracion_recibos_pago"))
 

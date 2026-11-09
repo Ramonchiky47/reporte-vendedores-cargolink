@@ -12,6 +12,21 @@
   .rp-badge.adjuntado { background: #dcfce7; color: #166534; }
   .rp-badge.descartado { background: #e5e7eb; color: #374151; }
   .rp-badge.error { background: #fee2e2; color: #991b1b; }
+  .rp-badge.traspaso { background: #e0e7ff; color: #3730a3; }
+  .rp-badge.listo { background: #dcfce7; color: #166534; }
+  .rp-badge.espera { background: #fef3c7; color: #92400e; }
+  .rp-resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+  .rp-kpi { border: 1px solid var(--border); border-radius: 10px; padding: .7rem .9rem; border-left-width: 4px; }
+  .rp-kpi .n { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+  .rp-kpi .l { font-size: .75rem; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  .rp-kpi .m { font-size: .75rem; margin-top: .25rem; }
+  .rp-kpi.listo { border-left-color: #16a34a; } .rp-kpi.espera { border-left-color: #d97706; }
+  .rp-kpi.traspaso { border-left-color: #4f46e5; } .rp-kpi.adjuntado { border-left-color: #6b7280; }
+  .rp-acciones { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rp-nota { font-size: .75rem; line-height: 1.4; }
+  .rp-nota.espera { color: #92400e; } .rp-nota.listo { color: #166534; font-weight: 600; }
+  .rp-ref { font-size: .72rem; color: var(--ink-3); }
+  .rp-tabla-wrap { overflow-x: auto; }
   .rp-mensaje { color: var(--danger-dark); font-size: .75rem; margin-top: .3rem; }
   .rp-accion-form { display: flex; flex-direction: column; gap: .4rem; margin-top: .3rem; }
   .rp-btn-eliminar {
@@ -46,6 +61,33 @@
   {% if not recibos %}
   <p class="empty">Todavía no has subido ningún recibo.</p>
   {% else %}
+  {% macro montos(g) %}{% for mon, tot in g.montos.items() %}{{ mon }} ${{ "{:,.2f}".format(tot) }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+  <div class="rp-resumen">
+    <div class="rp-kpi listo"><div class="l">Listos para adjuntar</div><div class="n">{{ resumen.listo.n }}</div><div class="m">{{ montos(resumen.listo) }}</div></div>
+    <div class="rp-kpi espera"><div class="l">Esperando registro en CargoLink</div><div class="n">{{ resumen.espera.n }}</div><div class="m">{{ montos(resumen.espera) }}</div></div>
+    <div class="rp-kpi traspaso"><div class="l">Traspasos entre cuentas</div><div class="n">{{ resumen.traspaso.n }}</div><div class="m">{{ montos(resumen.traspaso) }}</div></div>
+    <div class="rp-kpi adjuntado"><div class="l">Ya adjuntados</div><div class="n">{{ resumen.adjuntado.n }}</div><div class="m">{{ montos(resumen.adjuntado) }}</div></div>
+  </div>
+  <div class="rp-acciones">
+    {% if resumen.listo.n %}
+    <form method="post" action="{{ url_for('administracion_recibos_pago_adjuntar_coincidencias') }}"
+          onsubmit="return confirm('¿Adjuntar en CargoLink los {{ resumen.listo.n }} recibo(s) con coincidencia exacta (mismo proveedor, monto y moneda)? Esta acción modifica registros reales.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn">Adjuntar {{ resumen.listo.n }} coincidencia(s) exacta(s)</button>
+    </form>
+    {% endif %}
+    {% if resumen.espera.n or resumen.listo.n %}
+    <form method="post" action="{{ url_for('administracion_recibos_pago_volver_a_buscar') }}" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Buscando en CargoLink… (hasta 1 min)';">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn secondary">Volver a buscar en CargoLink ({{ resumen.espera.n + resumen.listo.n }})</button>
+    </form>
+    {% endif %}
+  </div>
+  <p class="hint rp-nota">
+    Se cotejan por <b>proveedor + monto + moneda</b> contra los pagos <b>sin comprobante</b> de Egresos → Pagos (7 días antes a 30 días después de la fecha del recibo).
+    Si un recibo queda en <b>“Esperando registro”</b> es porque ese pago todavía no se captura en CargoLink: cuando lo capturen, presiona <b>Volver a buscar</b>.
+  </p>
+  <div class="rp-tabla-wrap">
   <table class="rp-tabla">
     <thead>
       <tr>
@@ -61,6 +103,7 @@
           {{ r.moneda_extraida }} ${{ "{:,.2f}".format(r.monto_extraido) }}<br>
           <small>{{ r.proveedor_extraido or "—" }}</small><br>
           <small>{{ r.fecha_extraida.strftime("%d/%m/%Y") if r.fecha_extraida else "sin fecha" }}</small>
+          {% if r.referencia_extraida %}<br><span class="rp-ref">Ref: {{ r.referencia_extraida }}</span>{% endif %}
           {% else %}
           <span class="hint">—</span>
           {% endif %}
@@ -88,10 +131,11 @@
           {% if r.estatus == 'pendiente' %}
             {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
             {% if not r.id_proveedor_elegido %}
-            <span class="hint">Elige primero el proveedor.</span>
+            <span class="rp-nota espera">No reconocí al proveedor en el catálogo de CargoLink. Elígelo en la lista; si no aparece, hay que darlo de alta.</span>
             {% elif not pagos_disponibles %}
-            <span class="hint">No encontré movimientos sin comprobante en esa ventana de fechas — verifica manualmente en CargoLink.</span>
+            <span class="rp-nota espera">Este pago aún no está capturado en CargoLink (Egresos → Pagos) o ya tiene comprobante. Cuando lo capturen, presiona <b>Volver a buscar</b>.</span>
             {% else %}
+            {% if r.id_pago_elegido %}<span class="rp-nota listo">✓ Coincidencia exacta</span>{% endif %}
             <form class="rp-accion-form" method="post" action="{{ url_for('administracion_recibos_pago_confirmar', recibo_id=r.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <select name="id_pago" required>
@@ -112,7 +156,11 @@
           {% endif %}
         </td>
         <td>
-          <span class="rp-badge {{ r.estatus }}">{{ r.estatus }}</span>
+          {% if r.estatus == 'pendiente' and r.id_pago_elegido %}<span class="rp-badge listo">listo</span>
+          {% elif r.estatus == 'pendiente' %}<span class="rp-badge espera">esperando registro</span>
+          {% elif r.estatus == 'traspaso' %}<span class="rp-badge traspaso">traspaso propio</span>
+          <p class="rp-nota">Entre cuentas de AV2: no se adjunta a ningún pago.</p>
+          {% else %}<span class="rp-badge {{ r.estatus }}">{{ r.estatus }}</span>{% endif %}
           {% if r.mensaje %}<p class="rp-mensaje">{{ r.mensaje }}</p>{% endif %}
         </td>
         <td>
@@ -133,6 +181,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}
