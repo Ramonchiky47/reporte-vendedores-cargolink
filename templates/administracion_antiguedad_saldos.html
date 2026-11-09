@@ -81,7 +81,7 @@
     <div class="card">
       <div class="adm-header-row">
         <div>
-          <h2>Antigüedad de Saldos</h2>
+          <h2>Estado de cuenta</h2>
           <p class="adm-descripcion">Datos en vivo de CargoLink (Ingresos → Antigüedad de saldos) — no se guarda nada, se consulta cada vez que entras a esta página.</p>
         </div>
         <div class="adm-header-actions">
@@ -95,8 +95,21 @@
     </div>
 
     <div class="card">
+      <h2>Contacto de cobranza en el estado de cuenta</h2>
+      <p class="hint" style="margin-top:-.5rem;">Se imprime al pie del estado de cuenta (PDF, Excel y correo) para que el cliente sepa con quién comunicarse.</p>
+      <form method="post" action="{{ url_for('administracion_estado_cuenta_contacto') }}" class="row" style="align-items:flex-end;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field"><label for="ec-nombre">Nombre</label><input id="ec-nombre" name="nombre" value="{{ contacto_cobranza.nombre or '' }}" placeholder="Nombre de quien atiende"></div>
+        <div class="field"><label for="ec-puesto">Puesto</label><input id="ec-puesto" name="puesto" value="{{ contacto_cobranza.puesto or '' }}" placeholder="Cobranza"></div>
+        <div class="field"><label for="ec-telefono">Teléfono</label><input id="ec-telefono" name="telefono" value="{{ contacto_cobranza.telefono or '' }}" placeholder="+52 33 ..."></div>
+        <div class="field"><label for="ec-correo">Correo</label><input type="email" id="ec-correo" name="correo" value="{{ contacto_cobranza.correo or '' }}" placeholder="cobranza@av2logistics.com"></div>
+        <div><button type="submit" class="btn">Guardar</button></div>
+      </form>
+    </div>
+
+    <div class="card">
       <h2>Copia (CC)</h2>
-      <p class="hint" style="margin-top:-.5rem;">Estos correos reciben copia de todos los correos de Antigüedad de Saldos que se envíen a clientes (semanal o "Enviar ahora").</p>
+      <p class="hint" style="margin-top:-.5rem;">Estos correos reciben copia de todos los correos de Estado de cuenta que se envíen a clientes (semanal o "Enviar ahora").</p>
       <form method="post" action="{{ url_for('administracion_antiguedad_saldos_copia_agregar') }}" class="row" style="align-items:flex-end;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
@@ -145,7 +158,7 @@
     <div class="card">
       <h2>Por cliente</h2>
       <p class="hint" style="margin-top:-.5rem;">
-        Marca "Enviar semanal" para que ese cliente reciba, cada semana, el detalle de su propia antigüedad de saldos por correo (al correo capturado en <a href="{{ url_for('catalogo_clientes_por_pagar') }}" target="_blank" rel="noopener">Catálogos → Clientes por Pagar</a>).
+        Marca "Enviar semanal" para que ese cliente reciba, cada semana, el detalle de su propio estado de cuenta por correo (al correo capturado en <a href="{{ url_for('catalogo_clientes_por_pagar') }}" target="_blank" rel="noopener">Catálogos → Clientes por Pagar</a>).
       </p>
       <div class="adm-controles-vista">
         <div class="adm-buscador" style="margin-bottom:0;">
@@ -283,7 +296,7 @@
 
         <div style="margin-top:1rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
           <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_guardar_envio') }}">Guardar selección</button>
-          <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_enviar_ahora') }}" class="btn secondary" onclick="return confirm('¿Enviar ahora el correo de antigüedad de saldos a los clientes marcados?');">Enviar ahora</button>
+          <button type="submit" formaction="{{ url_for('administracion_antiguedad_saldos_enviar_ahora') }}" class="btn secondary" onclick="return confirm('¿Enviar ahora el correo de estado de cuenta a los clientes marcados?');">Enviar ahora</button>
           <button type="button" class="btn secondary" id="btn-seleccionar-saldo">Seleccionar con saldo pendiente</button>
           <span class="adm-envio-contador"><span id="envio-contador">{{ envio_activo|length }}</span> cliente(s) seleccionado(s) para el envío semanal.</span>
         </div>
@@ -448,35 +461,48 @@
     return signo + "$" + Math.abs(n).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function abrirCliente(clienteReal, moneda) {
-    const facturas = FACTURAS.filter((f) => f.cliente === clienteReal && f.moneda === moneda)
+  // Estado de cuenta del cliente con todas sus monedas juntas (columna Moneda;
+  // un total por moneda, nunca se suman monedas distintas).
+  function abrirCliente(clienteReal) {
+    const facturas = FACTURAS.filter((f) => f.cliente === clienteReal)
       .sort((a, b) => (a.dias_vencimiento || 0) - (b.dias_vencimiento || 0));
 
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const diasDesde = (ddmmaaaa) => {
+      const p = (ddmmaaaa || "").split("-");
+      if (p.length !== 3) return null;
+      return Math.round((hoy - new Date(+p[2], +p[1] - 1, +p[0])) / 86400000);
+    };
     const filasHtml = facturas.map((f) => {
       const vencido = f.dias_vencimiento != null && f.dias_vencimiento < 0;
-      const diasTxt = f.dias_vencimiento == null ? "—" : (vencido ? `Vencido hace ${Math.abs(Math.round(f.dias_vencimiento))} días` : `Vence en ${Math.round(f.dias_vencimiento)} días`);
+      const transcurridos = diasDesde(f.fecha_factura);
       return `
         <tr>
           <td>${f.booking || "—"}</td>
           <td>${f.folio || "—"}</td>
           <td>${f.fecha_factura || "—"}</td>
           <td>${f.vencimiento || "—"}</td>
-          <td style="${vencido ? "color:var(--danger-dark);font-weight:600;" : ""}">${diasTxt}</td>
+          <td>${f.dias_credito ?? "—"}</td>
+          <td style="${vencido ? "color:var(--danger-dark);font-weight:600;" : ""}">${transcurridos ?? "—"}</td>
+          <td>${f.demoras ? "Sí" : "No"}</td>
           <td>${fmtMoneda(f.total)}</td>
+          <td>${f.moneda || "—"}</td>
         </tr>
       `;
     }).join("");
 
-    const total = facturas.reduce((acc, f) => acc + (f.total || 0), 0);
+    const totales = {};
+    facturas.forEach((f) => { totales[f.moneda] = (totales[f.moneda] || 0) + (f.total || 0); });
+    const totalesTxt = Object.entries(totales).map(([m, t]) => `${m} ${fmtMoneda(t)}`).join(" · ");
 
-    const params = new URLSearchParams({ cliente: clienteReal, moneda });
+    const params = new URLSearchParams({ cliente: clienteReal });
     linkExcel.href = URL_EXPORTAR_CLIENTE + "?" + params.toString() + "&formato=excel";
     linkPdf.href = URL_EXPORTAR_CLIENTE + "?" + params.toString() + "&formato=pdf";
 
     contenido.innerHTML = `
-      <p class="adm-modal-titulo">${clienteReal} · ${moneda} — ${facturas.length} factura(s), total ${fmtMoneda(total)}</p>
+      <p class="adm-modal-titulo">Estado de cuenta · ${clienteReal} — ${facturas.length} factura(s) · total ${totalesTxt}</p>
       <table class="adm-resumen">
-        <thead><tr><th>Booking</th><th>Folio</th><th>Fecha factura</th><th>Vencimiento</th><th>Estado</th><th>Total</th></tr></thead>
+        <thead><tr><th>Booking</th><th>Factura</th><th>Fecha factura</th><th>Fecha de vencimiento</th><th>Días de crédito</th><th>Días transcurridos</th><th>Demoras</th><th>Importe</th><th>Divisa</th></tr></thead>
         <tbody>${filasHtml}</tbody>
       </table>
     `;
@@ -484,7 +510,7 @@
   }
 
   document.querySelectorAll(".adm-resumen tbody tr[data-cliente-real]").forEach((tr) => {
-    tr.addEventListener("click", () => abrirCliente(tr.dataset.clienteReal, tr.dataset.moneda));
+    tr.addEventListener("click", () => abrirCliente(tr.dataset.clienteReal));
   });
 
   // Vista "Agrupada por cliente": en vez de expandir el desglose por moneda

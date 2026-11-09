@@ -380,6 +380,23 @@ def init_db():
             actualizado_en timestamptz not null default now()
         );
     """)
+    # Estado de cuenta (Administración): contacto de cobranza que se imprime al
+    # pie, y referencia de cliente / contenedores por booking (se consultan una
+    # vez en CargoLink y se reusan).
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS estado_cuenta_contacto (
+            id integer primary key default 1,
+            nombre text, puesto text, telefono text, correo text,
+            actualizado_en timestamptz not null default now()
+        );
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS estado_cuenta_bookings (
+            no_booking text primary key,
+            referencia text, contenedores text,
+            actualizado_en timestamptz not null default now()
+        );
+    """)
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_copia_correos (
             id bigint generated always as identity primary key,
@@ -1741,6 +1758,10 @@ def descargar_antiguedad_saldos_cargolink():
             "dias_vencimiento": num(v.get("venc")) if v.get("venc") is not None else None,
             "moneda": v.get("Moneda"),
             "total": num(v.get("Total")),
+            "dias_credito": int(num(v.get("dias_credito") or v.get("diasParaCredito"))),
+            "demoras": (v.get("contieneDemoras") or "").upper() == "SI",
+            "concepto": v.get("concepto"),
+            "servicio": v.get("tabla"),
         })
 
     totales_moneda = {}
@@ -5628,7 +5649,28 @@ def administracion_antiguedad_saldos():
         envio_activo=envio_activo,
         contactos_por_id=contactos_por_id,
         copia_correos=copia_correos,
+        contacto_cobranza=contacto_estado_cuenta(),
     )
+
+
+@app.route("/administracion/estado-cuenta/contacto", methods=["POST"])
+@login_required
+def administracion_estado_cuenta_contacto():
+    """Datos de contacto (cobranza) que se imprimen al pie del estado de cuenta."""
+    if not usuario_puede_ver_administracion():
+        flash("No tienes permiso para ver Administración.")
+        return redirect(url_for("dashboard_plazas_vendedores"))
+    campos = {k: (request.form.get(k) or "").strip()[:120] or None for k in ("nombre", "puesto", "telefono", "correo")}
+    db = get_db()
+    db.execute("""
+        INSERT INTO estado_cuenta_contacto (id, nombre, puesto, telefono, correo) VALUES (1, %(nombre)s, %(puesto)s, %(telefono)s, %(correo)s)
+        ON CONFLICT (id) DO UPDATE SET nombre = EXCLUDED.nombre, puesto = EXCLUDED.puesto, telefono = EXCLUDED.telefono,
+            correo = EXCLUDED.correo, actualizado_en = now()
+    """, campos)
+    db.commit()
+    db.close()
+    flash("Datos de contacto del estado de cuenta guardados.")
+    return redirect(url_for("administracion_antiguedad_saldos"))
 
 
 @app.route("/administracion/antiguedad-saldos/envio-semanal/guardar", methods=["POST"])
@@ -5716,6 +5758,125 @@ def administracion_antiguedad_saldos_copia_eliminar(copia_id):
     return redirect(url_for("administracion_antiguedad_saldos"))
 
 
+RX_CONTENEDOR = re.compile(r"[A-Z]{4}\d{7}")
+
+
+def contacto_estado_cuenta():
+    db = get_db()
+    fila = db.execute("SELECT nombre, puesto, telefono, correo FROM estado_cuenta_contacto WHERE id = 1").fetchone()
+    db.close()
+    return dict(fila) if fila else {}
+
+
+def datos_bookings_estado_cuenta(bookings, presupuesto_segundos=5):
+    """{no_booking: {"referencia", "contenedores"}}: primero lo ya guardado
+    (estado_cuenta_bookings) y Operaciones marítimas; lo que falte se consulta
+    en CargoLink (consultaBooking) en paralelo, con un tope de tiempo para no
+    trabar la página; lo encontrado se guarda para la siguiente vez."""
+    bookings = sorted({b for b in bookings if b})
+    if not bookings:
+        return {}
+    db = get_db()
+    datos = {r["no_booking"]: {"referencia": r["referencia"], "contenedores": r["contenedores"]}
+             for r in db.execute("SELECT no_booking, referencia, contenedores FROM estado_cuenta_bookings WHERE no_booking = ANY(%s)", (bookings,))}
+    for r in db.execute("""SELECT no_booking, datos->>'referencia' AS referencia, coalesce(datos->>'noContenedores', contenedores) AS contenedores
+                           FROM operaciones_maritima WHERE no_booking = ANY(%s)""", ([b for b in bookings if b not in datos],)):
+        datos[r["no_booking"]] = {"referencia": r["referencia"], "contenedores": r["contenedores"]}
+    db.close()
+    faltan = [b for b in bookings if b not in datos]
+    nuevos = {}
+    if faltan:
+        try:
+            h = {"User-Agent": "Mozilla/5.0"}
+            sesion = requests.Session()
+            sesion.post(CARGOLINK_LOGIN_URL, data={"usuario": os.environ.get("CARGOLINK_USUARIO", ""), "password": os.environ.get("CARGOLINK_PASSWORD", "")}, headers=h, timeout=20)
+            pagina = sesion.get("https://fwd.cargolink.mx/templates/antiguedadSaldoIngreso/?m=63", headers=h, timeout=20).text
+            token = re.search(r"token=([a-f0-9]{32}\d*)", pagina).group(1)
+
+            def uno(no_booking):
+                r = sesion.post(f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api&fn=consultaBooking&tabla=&limit=0",
+                                json={"tipo_fecha": "", "pagadoBooking": "", "no_booking": no_booking}, headers={"Content-Type": "application/json"}, timeout=10)
+                v = ((r.json() or {}).get("valores") or [None])[0] or {}
+                return no_booking, {"referencia": v.get("referencia"), "contenedores": v.get("no_contenedores") or v.get("contenedores")}
+
+            import concurrent.futures
+            inicio = time.time()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                futuros = [pool.submit(uno, b) for b in faltan]
+                for fut in concurrent.futures.as_completed(futuros, timeout=max(1, presupuesto_segundos - (time.time() - inicio))):
+                    try:
+                        b, d = fut.result()
+                        nuevos[b] = d
+                    except Exception:
+                        pass
+        except Exception:
+            app.logger.exception("No se pudo consultar referencia/contenedores en CargoLink")
+    if nuevos:
+        datos.update(nuevos)
+        try:
+            db = get_db()
+            for b, d in nuevos.items():
+                db.execute("""INSERT INTO estado_cuenta_bookings (no_booking, referencia, contenedores) VALUES (%s, %s, %s)
+                              ON CONFLICT (no_booking) DO UPDATE SET referencia = EXCLUDED.referencia, contenedores = EXCLUDED.contenedores, actualizado_en = now()""",
+                           (b, d["referencia"], d["contenedores"]))
+            db.commit()
+            db.close()
+        except Exception:
+            app.logger.exception("No se pudo guardar referencia/contenedores")
+    for d in datos.values():
+        d["contenedores"] = ", ".join(RX_CONTENEDOR.findall((d.get("contenedores") or "").upper()))
+        d["referencia"] = (d.get("referencia") or "").strip()
+    return datos
+
+
+def armar_estado_cuenta(cliente, facturas):
+    """Datos del estado de cuenta de un cliente (todas sus divisas): facturas
+    vencidas y por vencer con referencia, contenedor, días de crédito y días
+    transcurridos, y saldos vencido / por vencer / total por divisa."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    extra = datos_bookings_estado_cuenta([f["booking"] for f in facturas])
+    filas = []
+    for f in facturas:
+        try:
+            emision = datetime.strptime(f["fecha_factura"], "%d-%m-%Y").date()
+        except (TypeError, ValueError):
+            emision = None
+        try:
+            venc = datetime.strptime(f["vencimiento"], "%d-%m-%Y").date()
+        except (TypeError, ValueError):
+            venc = None
+        dias_venc = f.get("dias_vencimiento")
+        vencida = dias_venc is not None and dias_venc < 0
+        credito = f.get("dias_credito")
+        if not credito and emision and venc:
+            credito = (venc - emision).days
+        e = extra.get(f["booking"]) or {}
+        filas.append({**f, "referencia": e.get("referencia") or "", "contenedor": e.get("contenedores") or "",
+                      "dias_credito": credito or 0, "dias_transcurridos": (hoy - emision).days if emision else None,
+                      "vencida": vencida, "dias_vencido": abs(round(dias_venc)) if vencida else 0})
+    orden = lambda f: (f["moneda"] or "", -(f["dias_transcurridos"] or 0))
+    vencidas = sorted([f for f in filas if f["vencida"]], key=orden)
+    por_vencer = sorted([f for f in filas if not f["vencida"]], key=orden)
+    resumen = {}
+    for f in filas:
+        r = resumen.setdefault(f["moneda"], {"vencido": 0.0, "por_vencer": 0.0, "total": 0.0})
+        r["vencido" if f["vencida"] else "por_vencer"] += f["total"] or 0
+        r["total"] += f["total"] or 0
+    orden_mon = {"USD": 0, "MXN": 1, "EUR": 2}
+    resumen = dict(sorted(resumen.items(), key=lambda x: (orden_mon.get(x[0], 9), x[0])))
+    return {"cliente": cliente, "fecha": hoy.strftime("%d/%m/%Y"), "vencidas": vencidas, "por_vencer": por_vencer,
+            "resumen": resumen, "facturas": filas, "contacto": contacto_estado_cuenta()}
+
+
+def totales_por_moneda(facturas):
+    """{moneda: total} en orden USD, MXN, EUR y luego las demás (no se suman monedas distintas)."""
+    orden = {"USD": 0, "MXN": 1, "EUR": 2}
+    totales = {}
+    for f in facturas:
+        totales[f["moneda"]] = totales.get(f["moneda"], 0) + (f["total"] or 0)
+    return dict(sorted(totales.items(), key=lambda x: (orden.get(x[0], 9), x[0])))
+
+
 @app.route("/administracion/antiguedad-saldos/enviar-ahora", methods=["POST"])
 @login_required
 def administracion_antiguedad_saldos_enviar_ahora():
@@ -5769,22 +5930,14 @@ def administracion_antiguedad_saldos_enviar_ahora():
             continue
 
         adjuntos = []
-        bloques_moneda = []
-        for moneda in sorted({f["moneda"] for f in facturas_cliente}):
-            facturas_moneda = [f for f in facturas_cliente if f["moneda"] == moneda]
-            total_moneda = sum(f["total"] for f in facturas_moneda)
-            bloques_moneda.append({"moneda": moneda, "facturas": facturas_moneda, "total": total_moneda})
-            pdf_html = render_template(
-                "administracion_antiguedad_cliente_pdf.html",
-                cliente=cliente, moneda=moneda, facturas=facturas_moneda, total=total_moneda,
-                generado_en=datetime.now(TZ_LOCAL),
-            )
-            buffer_pdf = io.BytesIO()
-            resultado_pdf = pisa.CreatePDF(src=pdf_html, dest=buffer_pdf, encoding="utf-8")
-            if resultado_pdf.err:
-                fallidos.append(f"{cliente} (no se pudo generar el PDF en {moneda})")
-                continue
-            nombre_pdf = re.sub(r"[^a-zA-Z0-9]+", "_", f"Antiguedad_{cliente}_{moneda}").strip("_") + ".pdf"
+        facturas_cliente.sort(key=lambda f: f["dias_vencimiento"] if f["dias_vencimiento"] is not None else 0)
+        estado = armar_estado_cuenta(cliente, facturas_cliente)
+        pdf_html = render_template("administracion_antiguedad_cliente_pdf.html", estado=estado)
+        buffer_pdf = io.BytesIO()
+        if pisa.CreatePDF(src=pdf_html, dest=buffer_pdf, encoding="utf-8").err:
+            fallidos.append(f"{cliente} (no se pudo generar el PDF)")
+        else:
+            nombre_pdf = re.sub(r"[^a-zA-Z0-9]+", "_", f"Estado_de_cuenta_{cliente}").strip("_") + ".pdf"
             adjuntos.append((nombre_pdf, buffer_pdf.getvalue()))
 
         if not adjuntos:
@@ -5793,11 +5946,11 @@ def administracion_antiguedad_saldos_enviar_ahora():
         cuerpo = render_template(
             "administracion_antiguedad_email.html",
             nombre_contacto=nombre_contacto_cliente or "Cliente", fecha_envio=fecha_envio,
-            bloques_moneda=bloques_moneda,
+            estado=estado, logo_url=url_for("static", filename="logo_av2.png", _external=True),
         )
         cc_envio = correos_copia_cliente + copia_correos
         try:
-            enviar_correo_smtp(correo_principal, "Antigüedad de Saldos", cuerpo, adjuntos=adjuntos, cc=cc_envio)
+            enviar_correo_smtp(correo_principal, f"Estado de cuenta AV2 Logistics · {fecha_envio}", cuerpo, adjuntos=adjuntos, cc=cc_envio)
             enviados += 1
         except RuntimeError as e:
             flash(f"No se pudo enviar: {e}")
@@ -5839,7 +5992,7 @@ def administracion_antiguedad_saldos_exportar():
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "Antigüedad de Saldos"
+        ws.title = "Estado de cuenta"
 
         encabezados = ["Cliente", "Moneda"] + [label for _, label in buckets] + ["Total vencido", "Total"]
         for col, encabezado in enumerate(encabezados, start=1):
@@ -5868,13 +6021,22 @@ def administracion_antiguedad_saldos_exportar():
         ws.column_dimensions["A"].width = 40
         for i in range(2, len(encabezados) + 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = 13
-        ws.freeze_panes = "A2"
+        # Logo y título arriba de la tabla.
+        ws.insert_rows(1, amount=3)
+        ws.row_dimensions[1].height = 38
+        logo_excel(ws, "A1")
+        ws["C1"] = "Estado de cuenta"
+        ws["C1"].font = Font(bold=True, size=14)
+        ws["C1"].alignment = Alignment(vertical="center")
+        ws["C2"] = f"Generado {datetime.now(TZ_LOCAL):%d/%m/%Y %H:%M} · datos de CargoLink"
+        ws["C2"].font = Font(size=9, color="6B7280")
+        ws.freeze_panes = "A5"
 
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
         return send_file(
-            buffer, as_attachment=True, download_name="Antiguedad_Saldos.xlsx",
+            buffer, as_attachment=True, download_name="Estado_de_cuenta.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
@@ -5888,7 +6050,18 @@ def administracion_antiguedad_saldos_exportar():
         flash("No se pudo generar el PDF.")
         return redirect(url_for("administracion_antiguedad_saldos"))
     buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name="Antiguedad_Saldos.pdf", mimetype="application/pdf")
+    return send_file(buffer, as_attachment=True, download_name="Estado_de_cuenta.pdf", mimetype="application/pdf")
+
+
+def logo_excel(ws, celda="A1", alto=46):
+    """Pone el logo de AV2 (static/logo_av2.png) en una hoja de Excel."""
+    try:
+        from openpyxl.drawing.image import Image as ImagenExcel
+        img = ImagenExcel(os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "logo_av2.png"))
+        img.width, img.height = int(img.width * alto / img.height), alto
+        ws.add_image(img, celda)
+    except Exception:
+        app.logger.exception("No se pudo poner el logo en el Excel")
 
 
 @app.route("/administracion/antiguedad-saldos/cliente/exportar")
@@ -5900,8 +6073,8 @@ def administracion_antiguedad_saldos_cliente_exportar():
 
     formato = request.args.get("formato")
     cliente = request.args.get("cliente")
-    moneda = request.args.get("moneda")
-    if formato not in ("excel", "pdf") or not cliente or not moneda:
+    moneda = request.args.get("moneda") or None  # sin moneda: todas las monedas del cliente en un solo estado de cuenta
+    if formato not in ("excel", "pdf") or not cliente:
         flash("Parámetros inválidos para exportar.")
         return redirect(url_for("administracion_antiguedad_saldos"))
 
@@ -5911,65 +6084,88 @@ def administracion_antiguedad_saldos_cliente_exportar():
         flash(f"No se pudo generar la exportación: {e}")
         return redirect(url_for("administracion_antiguedad_saldos"))
 
-    facturas = [f for f in reporte["facturas"] if f["cliente"] == cliente and f["moneda"] == moneda]
+    facturas = [f for f in reporte["facturas"] if f["cliente"] == cliente and (moneda is None or f["moneda"] == moneda)]
     facturas.sort(key=lambda f: f["dias_vencimiento"] if f["dias_vencimiento"] is not None else 0)
-    total = sum(f["total"] for f in facturas)
-    nombre_archivo_base = re.sub(r"[^a-zA-Z0-9]+", "_", f"Antiguedad_{cliente}_{moneda}").strip("_")
+    nombre_archivo_base = re.sub(r"[^a-zA-Z0-9]+", "_", f"Estado_de_cuenta_{cliente}" + (f"_{moneda}" if moneda else "")).strip("_")
+
+    estado = armar_estado_cuenta(cliente, facturas)
 
     if formato == "excel":
         naranja = PatternFill(fill_type="solid", fgColor="C1502E")
-        amarillo = PatternFill(fill_type="solid", fgColor="FFF59D")
-        centrado = Alignment(horizontal="center", vertical="center")
+        vino = PatternFill(fill_type="solid", fgColor="7A1F1F")
+        gris = PatternFill(fill_type="solid", fgColor="F3F4F6")
+        blanco = Font(bold=True, color="FFFFFF")
+        centrado = Alignment(horizontal="center", vertical="center", wrap_text=True)
         derecha = Alignment(horizontal="right", vertical="center")
+        moneda_fmt = "#,##0.00"
 
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "Antigüedad de Saldos"
+        ws.title = "Estado de cuenta"
+        ws.row_dimensions[1].height = 38
+        logo_excel(ws, "A1")
+        ws.merge_cells("D1:K1")
+        ws["D1"] = f"Estado de cuenta · {cliente}"
+        ws["D1"].font = Font(bold=True, size=14)
+        ws["D1"].alignment = Alignment(horizontal="right", vertical="center")
 
-        ws.merge_cells("A1:F1")
-        titulo = ws["A1"]
-        titulo.value = f"{cliente} · {moneda}"
-        titulo.font = Font(bold=True, size=13)
-        titulo.alignment = centrado
-        ws.row_dimensions[1].height = 22
+        fila = 3
+        for col, t in enumerate(["Divisa", "Total de saldos vencidos", "Total por vencer", "Saldo total"], start=1):
+            c = ws.cell(row=fila, column=col, value=t)
+            c.fill, c.font, c.alignment = vino, blanco, centrado
+        for mon, r in estado["resumen"].items():
+            fila += 1
+            ws.cell(row=fila, column=1, value=mon).font = Font(bold=True)
+            for col, k in ((2, "vencido"), (3, "por_vencer"), (4, "total")):
+                c = ws.cell(row=fila, column=col, value=r[k])
+                c.number_format = moneda_fmt
+                if k == "vencido":
+                    c.font = Font(bold=True, color="B91C1C")
 
-        ws["A3"] = "Facturas"
-        ws["A3"].font = Font(bold=True)
-        ws["A3"].fill = amarillo
-        ws["B3"] = len(facturas)
-        ws["B3"].fill = amarillo
-        ws["D3"] = "Total"
-        ws["D3"].font = Font(bold=True)
-        ws["D3"].fill = amarillo
-        ws["E3"] = total
-        ws["E3"].number_format = "#,##0.00"
-        ws["E3"].fill = amarillo
+        encabezados = ["Booking", "Referencia de cliente", "Contenedor", "Factura", "Fecha factura", "Fecha de vencimiento",
+                       "Días de crédito", "Días transcurridos", "Demoras", "Divisa", "Importe"]
 
-        encabezados = ["Booking", "Folio", "Fecha factura", "Vencimiento", "Estado", "Total"]
-        for col, encabezado in enumerate(encabezados, start=1):
-            celda = ws.cell(row=5, column=col, value=encabezado)
-            celda.fill = naranja
-            celda.font = Font(bold=True, color="FFFFFF")
-            celda.alignment = centrado
+        def seccion(titulo, filas, fila):
+            fila += 2
+            ws.cell(row=fila, column=1, value=titulo).font = Font(bold=True, size=11)
+            fila += 1
+            for col, t in enumerate(encabezados, start=1):
+                c = ws.cell(row=fila, column=col, value=t)
+                c.fill, c.font, c.alignment = naranja, blanco, centrado
+            if not filas:
+                fila += 1
+                ws.cell(row=fila, column=1, value="Sin documentos.").font = Font(italic=True, color="6B7280")
+                return fila
+            for f in filas:
+                fila += 1
+                valores = [f["booking"], f["referencia"] or "—", f["contenedor"] or "—", f["folio"], f["fecha_factura"], f["vencimiento"],
+                           f["dias_credito"], f["dias_transcurridos"], "Sí" if f["demoras"] else "No", f["moneda"], f["total"]]
+                for col, v in enumerate(valores, start=1):
+                    c = ws.cell(row=fila, column=col, value=v)
+                    if 7 <= col <= 10:
+                        c.alignment = Alignment(horizontal="center")
+                    if col == 11:
+                        c.number_format = moneda_fmt
+            for mon in sorted({f["moneda"] for f in filas}):
+                fila += 1
+                ws.cell(row=fila, column=9, value=f"Total {mon}").font = Font(bold=True)
+                c = ws.cell(row=fila, column=11, value=sum(x["total"] for x in filas if x["moneda"] == mon))
+                c.number_format, c.font = moneda_fmt, Font(bold=True)
+                for col in range(1, 12):
+                    ws.cell(row=fila, column=col).fill = gris
+            return fila
 
-        for i, f in enumerate(facturas, start=6):
-            ws.cell(row=i, column=1, value=f["booking"])
-            ws.cell(row=i, column=2, value=f["folio"])
-            ws.cell(row=i, column=3, value=f["fecha_factura"])
-            ws.cell(row=i, column=4, value=f["vencimiento"])
-            dias = f["dias_vencimiento"]
-            if dias is None:
-                estado = "—"
-            elif dias < 0:
-                estado = f"Vencido hace {abs(round(dias))} días"
-            else:
-                estado = f"Vence en {round(dias)} días"
-            ws.cell(row=i, column=5, value=estado)
-            celda = ws.cell(row=i, column=6, value=f["total"])
-            celda.number_format = "#,##0.00"
-            celda.alignment = derecha
+        fila = seccion(f"Información detallada de los documentos vencidos hasta {estado['fecha']}", estado["vencidas"], fila)
+        fila = seccion("Información detallada de los documentos por vencer", estado["por_vencer"], fila)
 
-        for col, ancho in zip("ABCDEF", [16, 10, 14, 14, 22, 14]):
+        c = estado["contacto"]
+        fila += 2
+        ws.cell(row=fila, column=1, value="Para cualquier aclaración o para programar su pago, comuníquese con:").font = Font(bold=True)
+        fila += 1
+        ws.cell(row=fila, column=1, value=" · ".join(x for x in [c.get("nombre") or "Departamento de Cobranza, AV2 Logistics", c.get("puesto"),
+                                                               ("Tel. " + c["telefono"]) if c.get("telefono") else None, c.get("correo")] if x))
+
+        for col, ancho in zip("ABCDEFGHIJK", [16, 20, 26, 10, 13, 14, 10, 12, 9, 8, 14]):
             ws.column_dimensions[col].width = ancho
 
         buffer = io.BytesIO()
@@ -5980,10 +6176,7 @@ def administracion_antiguedad_saldos_cliente_exportar():
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
-    html = render_template(
-        "administracion_antiguedad_cliente_pdf.html",
-        cliente=cliente, moneda=moneda, facturas=facturas, total=total, generado_en=datetime.now(TZ_LOCAL),
-    )
+    html = render_template("administracion_antiguedad_cliente_pdf.html", estado=estado)
     buffer = io.BytesIO()
     resultado = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
     if resultado.err:

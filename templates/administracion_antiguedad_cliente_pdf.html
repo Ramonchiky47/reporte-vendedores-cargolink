@@ -3,57 +3,84 @@
 <head>
 <meta charset="utf-8">
 <style>
-  @page { size: letter; margin: 2cm; }
-  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 8pt; }
+  @page { size: letter landscape; margin: 1.3cm 1.4cm; }
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 7.6pt; }
   table { border-collapse: collapse; width: 100%; }
-  h1 { font-size: 13pt; margin: 0 0 2px; color: #1a1a1a; }
-  .sub { font-size: 8pt; color: #555555; margin: 0 0 10px; }
-  table.caja { background-color: #fff59d; margin: 8px 0 14px; }
-  table.caja td { padding: 8px 12px; font-weight: bold; border: none; }
-  th { background-color: #C1502E; color: #ffffff; font-weight: bold; padding: 5px 8px; text-align: right; }
-  th.izq { text-align: left; }
-  td { padding: 4px 8px; border-bottom: 1px solid #dddddd; text-align: right; }
-  td.izq { text-align: left; }
-  td.vencido { color: #b91c1c; font-weight: bold; }
+  h1 { font-size: 14pt; margin: 0; color: #1a1a1a; }
+  .cliente { font-size: 11pt; font-weight: bold; color: #7a1f1f; margin: 2px 0 8px; }
+  h2 { font-size: 9pt; margin: 12px 0 4px; color: #111827; }
+  table.resumen th { background-color: #7a1f1f; color: #ffffff; padding: 4px 8px; text-align: right; font-size: 7.6pt; }
+  table.resumen th.izq, table.resumen td.izq { text-align: left; }
+  table.resumen td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #e5e7eb; font-size: 8.4pt; }
+  table.resumen td.vencido { color: #b91c1c; font-weight: bold; }
+  table.det th { background-color: #C1502E; color: #ffffff; font-weight: bold; padding: 4px 4px; text-align: left; font-size: 6.8pt; }
+  table.det th.der, table.det td.der { text-align: right; }
+  table.det th.cen, table.det td.cen { text-align: center; }
+  table.det td { padding: 3px 4px; border-bottom: 1px solid #e5e7eb; text-align: left; font-size: 7pt; }
+  table.det td.vencido { color: #b91c1c; font-weight: bold; }
+  table.det tr.subtotal td { font-weight: bold; background-color: #f9fafb; border-top: 1px solid #9ca3af; }
+  .vacio { color: #6b7280; font-style: italic; margin: 2px 0 6px; }
+  .contacto { margin-top: 12px; border: 1px solid #e5e7eb; background-color: #fffbeb; padding: 6px 10px; font-size: 8pt; }
 </style>
 </head>
 <body>
   {% include "_encabezado_pdf.html" %}
-  <h1>Antigüedad de Saldos</h1>
-  <p class="sub">Generado {{ generado_en.strftime('%Y-%m-%d %H:%M') }} — datos en vivo de CargoLink</p>
-  <table class="caja">
-    <tr>
-      <td>{{ cliente }} · {{ moneda }}</td>
-      <td style="text-align:right;">{{ facturas|length }} factura(s)</td>
-      <td style="text-align:right;">Total {{ "{:,.2f}".format(total) }}</td>
-    </tr>
-  </table>
-  <table>
-    <thead>
-      <tr>
-        <th class="izq">Booking</th><th class="izq">Folio</th>
-        <th class="izq">Fecha factura</th><th class="izq">Vencimiento</th><th class="izq">Estado</th><th>Total</th>
-      </tr>
-    </thead>
+  {% set ec = estado %}
+  <h1>Estado de cuenta</h1>
+  <div class="cliente">{{ ec.cliente }}</div>
+
+  <table class="resumen">
+    <thead><tr><th class="izq">Divisa</th><th>Total de saldos vencidos</th><th>Total por vencer</th><th>Saldo total</th></tr></thead>
     <tbody>
-      {% for f in facturas %}
-      {% set dias = f.dias_vencimiento %}
-      <tr>
-        <td class="izq">{{ f.booking or "—" }}</td>
-        <td class="izq">{{ f.folio or "—" }}</td>
-        <td class="izq">{{ f.fecha_factura or "—" }}</td>
-        <td class="izq">{{ f.vencimiento or "—" }}</td>
-        {% if dias is none %}
-        <td class="izq">—</td>
-        {% elif dias < 0 %}
-        <td class="izq vencido">Vencido hace {{ (dias|abs)|round|int }} días</td>
-        {% else %}
-        <td class="izq">Vence en {{ dias|round|int }} días</td>
-        {% endif %}
-        <td>{{ "{:,.2f}".format(f.total) }}</td>
-      </tr>
+      {% for mon, r in ec.resumen.items() %}
+      <tr><td class="izq"><b>{{ mon }}</b></td><td class="vencido">${{ "{:,.2f}".format(r.vencido) }}</td><td>${{ "{:,.2f}".format(r.por_vencer) }}</td><td><b>${{ "{:,.2f}".format(r.total) }}</b></td></tr>
       {% endfor %}
     </tbody>
   </table>
+
+  {% macro tabla(filas, vencidas) %}
+  {% if filas %}
+  <table class="det" repeat="1">
+    <thead>
+      <tr>
+        <th style="width: 10%;">Booking</th><th style="width: 11%;">Referencia de cliente</th><th style="width: 13%;">Contenedor</th>
+        <th style="width: 6%;">Factura</th><th style="width: 7.5%;">Fecha factura</th><th style="width: 8.5%;">Fecha de vencimiento</th>
+        <th class="cen" style="width: 6%;">Días de crédito</th><th class="cen" style="width: 7%;">Días transcurridos</th>
+        <th class="cen" style="width: 6%;">Demoras</th><th class="cen" style="width: 5%;">Divisa</th><th class="der" style="width: 10%;">Importe</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in filas %}
+      <tr>
+        <td>{{ f.booking or "—" }}</td><td>{{ f.referencia or "—" }}</td><td>{{ f.contenedor or "—" }}</td>
+        <td>{{ f.folio or "—" }}</td><td>{{ f.fecha_factura or "—" }}</td><td>{{ f.vencimiento or "—" }}</td>
+        <td class="cen">{{ f.dias_credito }}</td>
+        <td class="cen{{ ' vencido' if vencidas else '' }}">{{ f.dias_transcurridos if f.dias_transcurridos is not none else "—" }}</td>
+        <td class="cen">{{ 'Sí' if f.demoras else 'No' }}</td><td class="cen">{{ f.moneda }}</td>
+        <td class="der">${{ "{:,.2f}".format(f.total) }}</td>
+      </tr>
+      {% endfor %}
+      {% for mon, tot in filas|groupby('moneda') %}
+      <tr class="subtotal"><td colspan="9">Total {{ 'vencido' if vencidas else 'por vencer' }} {{ mon }}</td><td class="cen">{{ mon }}</td><td class="der">${{ "{:,.2f}".format(tot|sum(attribute='total')) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="vacio">Sin documentos.</p>
+  {% endif %}
+  {% endmacro %}
+
+  <h2>Información detallada de los documentos vencidos hasta {{ ec.fecha }}</h2>
+  {{ tabla(ec.vencidas, true) }}
+
+  <h2>Información detallada de los documentos por vencer</h2>
+  {{ tabla(ec.por_vencer, false) }}
+
+  {% set c = ec.contacto %}
+  <div class="contacto">
+    <b>Para cualquier aclaración o para programar su pago, comuníquese con:</b>
+    {% if c.nombre %}{{ c.nombre }}{% if c.puesto %}, {{ c.puesto }}{% endif %}{% else %}Departamento de Cobranza, AV2 Logistics{% endif %}
+    {% if c.telefono %} · Tel. {{ c.telefono }}{% endif %}{% if c.correo %} · {{ c.correo }}{% endif %}
+  </div>
 </body>
 </html>
