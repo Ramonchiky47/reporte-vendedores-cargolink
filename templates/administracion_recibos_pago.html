@@ -164,10 +164,10 @@
   </div>
 
   <div class="rp-filtros">
-    <span class="rp-filtro-activo" id="rp-filtro-activo">Mostrando: <b>todo lo pendiente</b></span>
+    <span class="rp-filtro-activo" id="rp-filtro-activo">Mostrando: <b>lo que requiere acción</b></span>
     <button type="button" class="btn small secondary" id="rp-quitar-filtro" hidden>Quitar filtro</button>
     <input type="search" id="rp-buscar" placeholder="Buscar proveedor, archivo, referencia, monto…">
-    <label class="rp-filtro"><input type="checkbox" id="rp-mostrar-hechos"> Incluir adjuntados / conciliados ({{ C.hecho.n }})</label>
+    <label class="rp-filtro" title="Por defecto se ocultan porque no requieren acción"><input type="checkbox" id="rp-mostrar-hechos"> Mostrar ya en CargoLink, traspasos propios y adjuntados / conciliados ({{ C.ya_cargolink.n + C.traspaso.n + C.hecho.n }})</label>
   </div>
   <p class="hint rp-nota" id="rp-sin-resultados" hidden>Ningún recibo coincide con el filtro.</p>
   <div class="rp-tabla-wrap">
@@ -310,14 +310,19 @@
         var visibles = 0;
         filas.forEach(function (tr) {
           var cat = tr.getAttribute('data-cat');
-          var ok = filtro ? cat === filtro : (cat !== 'hecho' && cat !== 'descartado') || (caja.checked && cat === 'hecho');
+          // Sin tarjeta seleccionada: se ocultan los que no requieren acción
+          // (ya en CargoLink, traspasos propios, adjuntados/conciliados) salvo
+          // que la casilla esté marcada. Una tarjeta seleccionada muestra su grupo.
+          var resueltos = ['ya_cargolink', 'traspaso', 'hecho'];
+          var ok = filtro ? cat === filtro
+                          : cat !== 'descartado' && (caja.checked || resueltos.indexOf(cat) === -1);
           if (ok && q) ok = tr.getAttribute('data-texto').indexOf(q) !== -1;
           tr.hidden = !ok;
           if (ok) visibles++;
         });
         tarjetas.forEach(function (t) { t.classList.toggle('activo', t.getAttribute('data-filtro') === filtro); });
         var tarjeta = filtro && document.querySelector('[data-filtro="' + filtro + '"] .l');
-        etiqueta.innerHTML = 'Mostrando: <b>' + (tarjeta ? tarjeta.textContent : 'todo lo pendiente') + '</b>' + (q ? ' · “' + q.replace(/</g, '') + '”' : '') + ' (' + visibles + ')';
+        etiqueta.innerHTML = 'Mostrando: <b>' + (tarjeta ? tarjeta.textContent : (caja.checked ? 'todo' : 'lo que requiere acción')) + '</b>' + (q ? ' · “' + q.replace(/</g, '') + '”' : '') + ' (' + visibles + ')';
         quitar.hidden = !filtro && !q;
         vacio.hidden = visibles > 0;
         try { localStorage.setItem('rp-mostrar-hechos', caja.checked ? '1' : '0'); } catch (e) {}
