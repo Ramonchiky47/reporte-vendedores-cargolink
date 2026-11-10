@@ -30,6 +30,10 @@
   .rp-nota.espera { color: #92400e; } .rp-nota.listo { color: #166534; font-weight: 600; }
   .rp-ref { font-size: .72rem; color: var(--ink-3); }
   .rp-tabla-wrap { overflow-x: auto; }
+  .rp-tabla tr.rp-hecho { display: none; }
+  .rp-tabla.mostrar-hechos tr.rp-hecho { display: table-row; background: #f9fafb; }
+  .rp-filtro { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; font-weight: 600; color: var(--ink-2, #374151); margin: .25rem 0 .6rem; cursor: pointer; user-select: none; }
+  .rp-filtro input { width: 16px; height: 16px; cursor: pointer; }
   .rp-mensaje { color: var(--danger-dark); font-size: .75rem; margin-top: .3rem; }
   .rp-accion-form { display: flex; flex-direction: column; gap: .4rem; margin-top: .3rem; }
   .rp-btn-eliminar {
@@ -99,8 +103,10 @@
     Si el proveedor no se reconoce (apodos, nóminas), se <b>propone</b> el pago de CargoLink con el mismo monto y moneda más cercano a la fecha — revísalo y confírmalo en su fila.
     Si un recibo queda en <b>“Esperando registro”</b> es porque ese pago todavía no se captura en CargoLink: cuando lo capturen, presiona <b>Volver a buscar</b>.
   </p>
+  {% set hechos = recibos | selectattr('estatus', 'in', ['adjuntado', 'conciliado']) | list %}
+  <label class="rp-filtro"><input type="checkbox" id="rp-mostrar-hechos"> Mostrar adjuntados / conciliados ({{ hechos | length }})</label>
   <div class="rp-tabla-wrap">
-  <table class="rp-tabla">
+  <table class="rp-tabla" id="rp-tabla">
     <thead>
       <tr>
         <th>Archivo</th><th>Leído</th><th>Proveedor (CargoLink)</th><th>Pago (CargoLink)</th><th>Estatus</th><th></th>
@@ -108,7 +114,13 @@
     </thead>
     <tbody>
       {% for r in recibos %}
-      <tr>
+      {% set ns = namespace(con_comp=none) %}
+      {% if r.estatus == 'pendiente' and not ((r.candidatos_pago or []) | rejectattr('url_pago') | list) %}
+        {% for p in (r.candidatos_pago or []) %}
+          {% if p.url_pago and p.moneda_mov == r.moneda_extraida and ((p.Total | float) - (r.monto_extraido | float)) | abs < 0.5 and ns.con_comp is none %}{% set ns.con_comp = p %}{% endif %}
+        {% endfor %}
+      {% endif %}
+      <tr class="{{ 'rp-hecho' if r.estatus in ('adjuntado', 'conciliado') else '' }}">
         <td>{{ r.nombre_archivo }}<br><small class="hint">{{ r.creado_en.strftime("%d/%m/%Y %H:%M") }}</small></td>
         <td>
           {% if r.monto_extraido is not none %}
@@ -148,10 +160,6 @@
         <td>
           {% if r.estatus == 'pendiente' %}
             {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
-            {% set ns = namespace(con_comp=none) %}
-            {% for p in (r.candidatos_pago or []) %}
-              {% if p.url_pago and p.moneda_mov == r.moneda_extraida and ((p.Total | float) - (r.monto_extraido | float)) | abs < 0.5 and ns.con_comp is none %}{% set ns.con_comp = p %}{% endif %}
-            {% endfor %}
             {% if not pagos_disponibles and ns.con_comp %}
             <span class="rp-nota ok">El pago {{ ns.con_comp.Id }} ({{ ns.con_comp.Fecha[:10] }} · {{ ns.con_comp.Nombre }}) con este monto <b>ya tiene comprobante</b> en CargoLink: probablemente ya se adjuntó. Puedes descartar este recibo.</span>
             {% elif not pagos_disponibles and not r.id_proveedor_elegido %}
@@ -187,6 +195,7 @@
         <td>
           {% if r.estatus == 'pendiente' and r.id_pago_elegido and r.origen_coincidencia in ('fecha_monto', 'suma', 'aproximado') %}<span class="rp-badge propuesto">propuesto</span>
           {% elif r.estatus == 'pendiente' and r.id_pago_elegido %}<span class="rp-badge listo">listo</span>
+          {% elif r.estatus == 'pendiente' and ns.con_comp %}<span class="rp-badge conciliado">ya en CargoLink</span>
           {% elif r.estatus == 'pendiente' %}<span class="rp-badge espera">esperando registro</span>
           {% elif r.estatus == 'conciliado' %}<span class="rp-badge conciliado">ya conciliado</span>
           {% elif r.estatus == 'traspaso' %}<span class="rp-badge traspaso">traspaso propio</span>
@@ -213,6 +222,20 @@
     </tbody>
   </table>
   </div>
+  <script>
+    (function () {
+      var caja = document.getElementById('rp-mostrar-hechos');
+      var tabla = document.getElementById('rp-tabla');
+      if (!caja || !tabla) return;
+      try { caja.checked = localStorage.getItem('rp-mostrar-hechos') === '1'; } catch (e) {}
+      function aplicar() {
+        tabla.classList.toggle('mostrar-hechos', caja.checked);
+        try { localStorage.setItem('rp-mostrar-hechos', caja.checked ? '1' : '0'); } catch (e) {}
+      }
+      caja.addEventListener('change', aplicar);
+      aplicar();
+    })();
+  </script>
   {% endif %}
 </div>
 {% endblock %}
