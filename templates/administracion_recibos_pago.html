@@ -186,7 +186,7 @@
         {% endfor %}
       {% endif %}
       <tr data-cat="{{ r.categoria }}" data-texto="{{ [r.nombre_archivo, r.proveedor_extraido, r.referencia_extraida, r.moneda_extraida, '%.2f' % (r.monto_extraido or 0), r.id_pago_elegido] | select | join(' ') | lower }}">
-        <td>{{ r.nombre_archivo }}<br><small class="hint">Subido {{ r.creado_en.strftime("%d/%m/%Y %H:%M") }}</small>
+        <td>{{ r.nombre_archivo }}<br><small class="hint">Subido {{ r.creado_en | hora_mx("%d/%m/%Y %H:%M") }} (hora centro)</small>
           {% if r.dias is not none and r.categoria in ('recurrente', 'espera', 'sin_proveedor', 'propuesto', 'listo') %}<br><small class="rp-edad {{ 'viejo' if r.dias > 30 else '' }}">{{ r.dias }} día{{ '' if r.dias == 1 else 's' }} desde el pago</small>{% endif %}</td>
         <td>
           {% if r.monto_extraido is not none %}
@@ -227,7 +227,7 @@
           {% if r.estatus == 'pendiente' %}
             {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
             {% if not pagos_disponibles and ns.con_comp %}
-            <span class="rp-nota ok">El pago {{ ns.con_comp.Id }} ({{ ns.con_comp.Fecha[:10] }} · {{ ns.con_comp.Nombre }}) con este monto <b>ya tiene comprobante</b> en CargoLink: probablemente ya se adjuntó. Puedes descartar este recibo.</span>
+            <span class="rp-nota ok">El pago {{ ns.con_comp.Id }} ({{ ns.con_comp.Fecha | fecha_cargolink }} · {{ ns.con_comp.Nombre }}) con este monto <b>ya tiene comprobante</b> en CargoLink: probablemente ya se adjuntó. Puedes descartar este recibo.</span>
             {% elif not pagos_disponibles and not r.id_proveedor_elegido %}
             <span class="rp-nota espera">No reconocí al proveedor y no hay ningún pago en CargoLink con este monto y moneda en esas fechas. Elige el proveedor o espera a que se capture el pago.</span>
             {% elif not pagos_disponibles %}
@@ -245,7 +245,7 @@
                 <option value="">Selecciona...</option>
                 {% for p in pagos_disponibles %}
                 <option value="{{ p.Id }}" {{ 'selected' if p.Id == r.id_pago_elegido else '' }}>
-                  {{ p.Fecha }} · {{ p.moneda_mov }} ${{ p.Total }} · {{ p.Nombre }}
+                  {{ p.Fecha | fecha_cargolink(true) }} · {{ p.moneda_mov }} ${{ p.Total }} · {{ p.Nombre }}
                 </option>
                 {% endfor %}
               </select>

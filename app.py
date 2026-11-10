@@ -3014,6 +3014,18 @@ def hora_mx(valor, formato="%Y-%m-%d %H:%M"):
     return valor.astimezone(TZ_LOCAL).strftime(formato)
 
 
+@app.template_filter("fecha_cargolink")
+def fecha_cargolink(valor, con_hora=False):
+    """'2026-11-05 13:50:25' de CargoLink (ya viene en hora del centro de
+    México) → '05/11/2026' o '05/11/2026 13:50'."""
+    texto = str(valor or "")
+    try:
+        dt = datetime.strptime(texto[:16] if len(texto) >= 16 else texto[:10], "%Y-%m-%d %H:%M" if len(texto) >= 16 else "%Y-%m-%d")
+    except ValueError:
+        return texto
+    return dt.strftime("%d/%m/%Y %H:%M" if con_hora and len(texto) >= 16 else "%d/%m/%Y")
+
+
 @app.template_filter("nombre_usuario")
 def nombre_usuario(correo):
     """Correo de un usuario -> su nombre en el sistema (vendedor asociado,
@@ -6861,7 +6873,7 @@ def administracion_recibos_pago():
                         )
                         if previo:
                             mensaje_recibo = (f"Pago recurrente: el anterior de este monto fue el pago {previo['Id']} del "
-                                              f"{previo['Fecha'][:10]}. Falta capturar el de este periodo en CargoLink.")
+                                              f"{fecha_cargolink(previo['Fecha'])}. Falta capturar el de este periodo en CargoLink.")
                     if id_pago_elegido and db.execute(
                         "SELECT 1 FROM recibos_pago_procesados WHERE id_pago_elegido = %s AND estatus IN ('pendiente', 'adjuntado')",
                         (id_pago_elegido,),
@@ -7130,7 +7142,7 @@ def administracion_recibos_pago_volver_a_buscar():
                 previo = pago_recurrente_anterior(r["monto_extraido"], r["moneda_extraida"], r["fecha_extraida"], id_prov, pagos_periodo)
                 if previo:
                     mensaje = (f"Pago recurrente: el anterior de este monto fue el pago {previo['Id']} del "
-                               f"{previo['Fecha'][:10]}. Falta capturar el de este periodo en CargoLink.")
+                               f"{fecha_cargolink(previo['Fecha'])}. Falta capturar el de este periodo en CargoLink.")
             if r["monto_verificado"] is None and r["contenido_archivo"] is not None:
                 verificados.append((verificar_monto_en_pdf(r["contenido_archivo"], r["tipo_mime"], r["monto_extraido"]), r["id"]))
             if id_pago and id_pago in usados:
@@ -7213,7 +7225,7 @@ def administracion_recibos_pago_marcar_conciliados():
         p = pago_ya_con_comprobante(r, usados)
         if p:
             usados[p["Id"]] = r["nombre_archivo"]
-            cambios.append((p["Id"], f"Ya tenía comprobante en CargoLink: pago {p['Id']} del {p['Fecha'][:10]} ({p.get('Nombre')}).", r["id"]))
+            cambios.append((p["Id"], f"Ya tenía comprobante en CargoLink: pago {p['Id']} del {fecha_cargolink(p['Fecha'])} ({p.get('Nombre')}).", r["id"]))
     if cambios:
         with db.cursor() as cur:
             cur.executemany("""
