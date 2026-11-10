@@ -116,6 +116,8 @@
           <small>{{ r.proveedor_extraido or "—" }}</small><br>
           <small>{{ r.fecha_extraida.strftime("%d/%m/%Y") if r.fecha_extraida else "sin fecha" }}</small>
           {% if r.referencia_extraida %}<br><span class="rp-ref">Ref: {{ r.referencia_extraida }}</span>{% endif %}
+          {% if r.monto_verificado == true %}<br><span class="rp-nota ok" title="El monto aparece textual en el PDF">✓ monto verificado en el PDF</span>
+          {% elif r.monto_verificado == false %}<br><span class="rp-nota espera" title="La IA leyó un monto que no aparece textual en el PDF">⚠ revisa el monto: no aparece así en el PDF</span>{% endif %}
           {% else %}
           <span class="hint">—</span>
           {% endif %}
@@ -157,7 +159,10 @@
             {% elif not pagos_disponibles %}
             <span class="rp-nota espera">Este pago aún no está capturado en CargoLink (Egresos → Pagos). Cuando lo capturen, presiona <b>Volver a buscar</b>.</span>
             {% else %}
-            {% if r.id_pago_elegido and r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Propuesto por fecha y monto — revisa y confirma</span>
+            {% if r.id_pago_elegido and r.origen_coincidencia == 'suma' %}<span class="rp-nota propuesto">Propuesto: la suma de varios pagos del proveedor da el monto exacto — al confirmar se adjunta a cada uno</span>
+            {% elif r.id_pago_elegido and r.origen_coincidencia == 'aproximado' %}<span class="rp-nota propuesto">Propuesto por monto aproximado del mismo proveedor (≤2% o $50) — revisa la diferencia y confirma</span>
+            {% elif r.origen_coincidencia == 'suma' %}<span class="rp-nota propuesto">Hay varias combinaciones de pagos que suman este monto: elige la correcta</span>
+            {% elif r.id_pago_elegido and r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Propuesto por fecha y monto — revisa y confirma</span>
             {% elif r.id_pago_elegido %}<span class="rp-nota listo">✓ Coincidencia exacta</span>
             {% elif r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Varios pagos con este monto: elige el correcto</span>{% endif %}
             <form class="rp-accion-form" method="post" action="{{ url_for('administracion_recibos_pago_confirmar', recibo_id=r.id) }}">
@@ -180,14 +185,14 @@
           {% endif %}
         </td>
         <td>
-          {% if r.estatus == 'pendiente' and r.id_pago_elegido and r.origen_coincidencia == 'fecha_monto' %}<span class="rp-badge propuesto">propuesto</span>
+          {% if r.estatus == 'pendiente' and r.id_pago_elegido and r.origen_coincidencia in ('fecha_monto', 'suma', 'aproximado') %}<span class="rp-badge propuesto">propuesto</span>
           {% elif r.estatus == 'pendiente' and r.id_pago_elegido %}<span class="rp-badge listo">listo</span>
           {% elif r.estatus == 'pendiente' %}<span class="rp-badge espera">esperando registro</span>
           {% elif r.estatus == 'conciliado' %}<span class="rp-badge conciliado">ya conciliado</span>
           {% elif r.estatus == 'traspaso' %}<span class="rp-badge traspaso">traspaso propio</span>
           <p class="rp-nota">Entre cuentas de AV2: no se adjunta a ningún pago.</p>
           {% else %}<span class="rp-badge {{ r.estatus }}">{{ r.estatus }}</span>{% endif %}
-          {% if r.mensaje %}<p class="rp-mensaje">{{ r.mensaje }}</p>{% endif %}
+          {% if r.mensaje %}<p class="{{ 'rp-nota' if r.mensaje.startswith('Pago recurrente') or r.mensaje.startswith('Ya tenía') else 'rp-mensaje' }}">{{ r.mensaje }}</p>{% endif %}
         </td>
         <td>
           {% if r.estatus in ('pendiente', 'error') %}

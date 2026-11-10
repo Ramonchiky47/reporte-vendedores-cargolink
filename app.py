@@ -15,6 +15,7 @@ import hashlib
 import inspect
 import hmac
 import io
+import itertools
 import json
 import mimetypes
 import os
@@ -443,6 +444,7 @@ def init_db():
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS revisado_en timestamptz")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS origen_coincidencia text")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS proveedor_manual boolean NOT NULL DEFAULT false")
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS monto_verificado boolean")
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
             id bigint generated always as identity primary key,
@@ -1798,6 +1800,83 @@ def _mismo_monto(p, monto, moneda):
     return p.get("moneda_mov") == moneda and abs(float(p.get("Total") or 0) - float(monto or 0)) < 0.5
 
 
+def verificar_monto_en_pdf(contenido, tipo_mime, monto):
+    """True si el monto que leyó la IA aparece textual en el PDF (p.ej.
+    "20,000.93"), False si no aparece, None si no se puede saber (imagen o
+    PDF escaneado sin texto). Sirve para detectar lecturas equivocadas."""
+    if tipo_mime != "application/pdf" or monto is None:
+        return None
+    try:
+        import pypdf
+        texto = " ".join(pg.extract_text() or "" for pg in pypdf.PdfReader(io.BytesIO(bytes(contenido))).pages)
+    except Exception:
+        return None
+    objetivo = float(monto)
+    for token in re.findall(r"\d[\d.,]*\d|\d", texto):
+        # Formato americano (20,000.93), europeo (1.200,00) o entero (250).
+        variantes = {token.replace(",", ""), token.replace(".", "").replace(",", ".")}
+        for v in variantes:
+            try:
+                if abs(float(v) - objetivo) < 0.005:
+                    return True
+            except ValueError:
+                pass
+    return False
+
+
+RECIBO_TOLERANCIA_PCT = 0.02   # aproximado: hasta 2% de diferencia...
+RECIBO_TOLERANCIA_MIN = 50.0   # ...o hasta $50 (comisiones, redondeos), lo que sea mayor
+
+
+def propuestas_mismo_proveedor(monto, moneda, pagos_proveedor):
+    """Cuando no hay un pago del proveedor con el monto EXACTO:
+    - 'suma': 2 a 5 pagos sin comprobante del mismo proveedor que suman el
+      monto del recibo (una transferencia que cubre varias facturas que en
+      CargoLink se capturaron como pagos separados).
+    - 'aproximado': un pago sin comprobante del mismo proveedor con
+      diferencia de hasta 2% o $50.
+    Regresa una lista de candidatos sintéticos (dicts como los de CargoLink,
+    con 'Id' = ids separados por coma para las sumas)."""
+    libres = [p for p in pagos_proveedor if p.get("moneda_mov") == moneda and not p.get("url_pago")]
+    salida = []
+    if 2 <= len(libres) <= 15:
+        for k in range(2, min(5, len(libres)) + 1):
+            for combo in itertools.combinations(libres, k):
+                total = sum(float(p.get("Total") or 0) for p in combo)
+                if abs(total - float(monto)) < 0.5:
+                    salida.append({
+                        "Id": ",".join(str(p["Id"]) for p in combo), "tipo": "suma",
+                        "Fecha": min(p["Fecha"] for p in combo), "Total": f"{total:.2f}", "moneda_mov": moneda,
+                        "Nombre": f"Suma de {k} pagos de {combo[0].get('Nombre')}: "
+                                  + " + ".join(f"{p['Id']} (${float(p['Total']):,.2f})" for p in combo),
+                    })
+                    if len(salida) >= 3:
+                        return salida
+    tolerancia = max(RECIBO_TOLERANCIA_PCT * float(monto), RECIBO_TOLERANCIA_MIN)
+    for p in sorted(libres, key=lambda p: abs(float(p.get("Total") or 0) - float(monto))):
+        dif = float(p.get("Total") or 0) - float(monto)
+        if 0.5 <= abs(dif) <= tolerancia:
+            salida.append(dict(p, tipo="aproximado", Nombre=f"{p.get('Nombre')} — diferencia ${dif:+,.2f}"))
+    return salida
+
+
+def pago_recurrente_anterior(monto, moneda, fecha, id_proveedor, pagos_periodo):
+    """Último pago ANTERIOR del mismo proveedor con el mismo monto (p.ej. la
+    renta o el pago mensual de una persona): ayuda a explicar que falta
+    capturar el pago de este periodo."""
+    if not id_proveedor or not pagos_periodo:
+        return None
+    # Solo pagos ANTERIORES a la ventana del recibo: uno dentro de la ventana
+    # con comprobante es, casi seguro, el de este mismo recibo ya adjuntado.
+    corte = ventana_recibo(fecha)[0] or "0000"
+    previos = [
+        p for p in pagos_periodo
+        if str(p.get("id_proveedor")) == str(id_proveedor) and _mismo_monto(p, monto, moneda)
+        and (p.get("Fecha") or "")[:10] < corte and p.get("url_pago")
+    ]
+    return max(previos, key=lambda p: p["Fecha"]) if previos else None
+
+
 def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveedores, rfc=None,
                         id_proveedor_fijo=None, conexion=None, pagos_periodo=None):
     """Busca a qué pago de CargoLink corresponde un recibo. Regresa
@@ -1837,10 +1916,16 @@ def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveed
         if coincidencias:
             break  # varias del mismo monto: que el usuario elija
 
+    # Mismo proveedor sin monto exacto: suma de varios pagos o aproximado.
+    propuestas = propuestas_mismo_proveedor(monto, moneda, pagos_elegido) if elegido else []
+    sumas = [p for p in propuestas if p["tipo"] == "suma"]
+    if len(sumas) == 1:
+        return candidatos_proveedor, elegido, sumas + pagos_elegido, sumas[0]["Id"], "suma"
+
     # Respaldo: cualquier pago del periodo con el mismo monto y moneda.
     if pagos_periodo is None and desde:
         pagos_periodo, _ = descargar_pagos_cargolink(desde, hasta, conexion, presupuesto_segundos=25)
-    if not pagos_periodo:
+    if not pagos_periodo and not propuestas:
         return candidatos_proveedor, elegido, pagos_elegido, None, None
     try:
         f0 = datetime.strptime(_fecha_txt(fecha), "%Y-%m-%d").date()
@@ -1854,10 +1939,16 @@ def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveed
             return 999
 
     mismos = sorted(
-        (p for p in pagos_periodo if _mismo_monto(p, monto, moneda) and en_ventana(p)),
+        (p for p in (pagos_periodo or []) if _mismo_monto(p, monto, moneda) and en_ventana(p)),
         key=lambda p: (bool(p.get("url_pago")), distancia(p)),
     )[:8]
     if not mismos:
+        aproximados = [p for p in propuestas if p["tipo"] == "aproximado"]
+        if aproximados:
+            # El más cercano se propone; se confirma a mano (no entra al bloque).
+            return candidatos_proveedor, elegido, propuestas + pagos_elegido, aproximados[0]["Id"], "aproximado"
+        if propuestas:
+            return candidatos_proveedor, elegido, propuestas + pagos_elegido, None, "suma"
         return candidatos_proveedor, elegido, pagos_elegido, None, None
     libres = [p for p in mismos if not p.get("url_pago")]
     # Se propone solo si hay UN pago libre con ese monto, o si el más cercano
@@ -6748,6 +6839,7 @@ def administracion_recibos_pago():
                 extraido = extraer_datos_recibo_ia(nombre, contenido, tipo_mime)
                 if es_traspaso_propio(extraido["proveedor"], nombre):
                     candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido, origen = [], None, [], None, None
+                    mensaje_recibo = None
                     estatus = "traspaso"
                 else:
                     if conexion is None:
@@ -6762,6 +6854,14 @@ def administracion_recibos_pago():
                         proveedores, rfc=extraido["rfc"], conexion=conexion, pagos_periodo=pagos_por_ventana.get(ventana),
                     )
                     estatus = "pendiente"
+                    mensaje_recibo = None
+                    if not id_pago_elegido:
+                        previo = pago_recurrente_anterior(
+                            extraido["monto"], extraido["moneda"], extraido["fecha"], id_proveedor_elegido, pagos_por_ventana.get(ventana)
+                        )
+                        if previo:
+                            mensaje_recibo = (f"Pago recurrente: el anterior de este monto fue el pago {previo['Id']} del "
+                                              f"{previo['Fecha'][:10]}. Falta capturar el de este periodo en CargoLink.")
                     if id_pago_elegido and db.execute(
                         "SELECT 1 FROM recibos_pago_procesados WHERE id_pago_elegido = %s AND estatus IN ('pendiente', 'adjuntado')",
                         (id_pago_elegido,),
@@ -6773,13 +6873,14 @@ def administracion_recibos_pago():
                         (nombre_archivo, contenido_archivo, tipo_mime, monto_extraido, moneda_extraida,
                          proveedor_extraido, fecha_extraida, candidatos_proveedor, candidatos_pago,
                          id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id,
-                         rfc_extraido, referencia_extraida, origen_coincidencia)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         rfc_extraido, referencia_extraida, origen_coincidencia, mensaje, monto_verificado)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     nombre, contenido, tipo_mime, extraido["monto"], extraido["moneda"],
                     extraido["proveedor"], extraido["fecha"], json.dumps(candidatos_proveedor),
                     json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido, estatus,
-                    session.get("usuario_id"), extraido["rfc"], extraido["referencia"], origen,
+                    session.get("usuario_id"), extraido["rfc"], extraido["referencia"], origen, mensaje_recibo,
+                    verificar_monto_en_pdf(contenido, tipo_mime, extraido["monto"]),
                 ))
                 db.commit()
                 procesados += 1
@@ -6802,13 +6903,14 @@ def administracion_recibos_pago():
     recibos = db.execute("""
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
                candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en,
-               rfc_extraido, referencia_extraida, origen_coincidencia
+               rfc_extraido, referencia_extraida, origen_coincidencia, monto_verificado
         FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 200
     """).fetchall()
     # Resumen sobre TODOS los recibos (no solo los que caben en la tabla).
     resumen = {k: {"n": 0, "montos": {}} for k in ("listo", "propuesto", "espera", "traspaso", "adjuntado")}
     for f in db.execute("""
-        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL AND origen_coincidencia = 'fecha_monto' THEN 'propuesto'
+        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL
+                         AND origen_coincidencia IN ('fecha_monto', 'suma', 'aproximado') THEN 'propuesto'
                     WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL THEN 'listo'
                     WHEN estatus = 'pendiente' THEN 'espera'
                     WHEN estatus = 'conciliado' THEN 'adjuntado' ELSE estatus END AS grupo,
@@ -6891,7 +6993,9 @@ def administracion_recibos_pago_confirmar(recibo_id):
         return redirect(url_for("administracion_recibos_pago"))
 
     try:
-        adjuntar_comprobante_pago_cargolink(id_pago, recibo["nombre_archivo"], bytes(recibo["contenido_archivo"]), recibo["tipo_mime"])
+        # Una suma de pagos llega como "id1,id2,...": el recibo se adjunta a cada uno.
+        for id_unico in [x.strip() for x in id_pago.split(",") if x.strip()]:
+            adjuntar_comprobante_pago_cargolink(id_unico, recibo["nombre_archivo"], bytes(recibo["contenido_archivo"]), recibo["tipo_mime"])
         db.execute("""
             UPDATE recibos_pago_procesados
             SET estatus = 'adjuntado', id_pago_elegido = %s, procesado_en = now()
@@ -6918,7 +7022,8 @@ def administracion_recibos_pago_volver_a_buscar():
     # aunque CargoLink no alcance a responder todo en un solo intento.
     pendientes = db.execute("""
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
-               rfc_extraido, id_proveedor_elegido, proveedor_manual
+               rfc_extraido, id_proveedor_elegido, proveedor_manual, monto_verificado, tipo_mime,
+               CASE WHEN monto_verificado IS NULL THEN contenido_archivo END AS contenido_archivo
         FROM recibos_pago_procesados
         WHERE estatus = 'pendiente' AND monto_extraido IS NOT NULL
         ORDER BY creado_en ASC LIMIT 300
@@ -6931,7 +7036,7 @@ def administracion_recibos_pago_volver_a_buscar():
             WHERE id_pago_elegido IS NOT NULL AND estatus = 'adjuntado'
         """).fetchall()
     }
-    exactos, propuestos, traspasos, duplicados = 0, 0, 0, 0
+    exactos, propuestos, aproximados, traspasos, duplicados = 0, 0, 0, 0, 0
     try:
         proveedores = obtener_proveedores_cargolink() if pendientes else []
         conexion = list(_conectar_pagos_cargolink()) if pendientes else None
@@ -6950,11 +7055,13 @@ def administracion_recibos_pago_volver_a_buscar():
         ventanas = [v for v in ventanas if v[0]]
         pagos_periodo, completo = ([], True)
         if ventanas:
+            # 35 días extra hacia atrás para reconocer pagos recurrentes anteriores.
+            desde_hist = (datetime.strptime(min(v[0] for v in ventanas), "%Y-%m-%d").date() - timedelta(days=35)).isoformat()
             pagos_periodo, completo = descargar_pagos_cargolink(
-                min(v[0] for v in ventanas), max(v[1] for v in ventanas), conexion, presupuesto_segundos=40
+                desde_hist, max(v[1] for v in ventanas), conexion, presupuesto_segundos=35
             )
 
-        cambios = []
+        cambios, verificados = [], []
         for r in por_revisar:
             candidatos_proveedor, id_prov, candidatos_pago, id_pago, origen = cotejar_recibo_pago(
                 r["monto_extraido"], r["moneda_extraida"], r["proveedor_extraido"], r["fecha_extraida"],
@@ -6965,6 +7072,17 @@ def administracion_recibos_pago_volver_a_buscar():
             if not id_pago and not completo:
                 continue  # faltaron páginas de CargoLink: no se marca como "no encontrado"
             mensaje = None
+            ya_conciliado = pago_ya_con_comprobante({
+                "fecha_extraida": r["fecha_extraida"], "candidatos_pago": candidatos_pago, "monto_extraido": r["monto_extraido"],
+                "moneda_extraida": r["moneda_extraida"], "nombre_archivo": r["nombre_archivo"],
+            })
+            if not id_pago and not ya_conciliado:
+                previo = pago_recurrente_anterior(r["monto_extraido"], r["moneda_extraida"], r["fecha_extraida"], id_prov, pagos_periodo)
+                if previo:
+                    mensaje = (f"Pago recurrente: el anterior de este monto fue el pago {previo['Id']} del "
+                               f"{previo['Fecha'][:10]}. Falta capturar el de este periodo en CargoLink.")
+            if r["monto_verificado"] is None and r["contenido_archivo"] is not None:
+                verificados.append((verificar_monto_en_pdf(r["contenido_archivo"], r["tipo_mime"], r["monto_extraido"]), r["id"]))
             if id_pago and id_pago in usados:
                 mensaje = f"Posible duplicado: el pago {id_pago} ya está ligado al recibo #{usados[id_pago]}."
                 id_pago = None
@@ -6973,6 +7091,8 @@ def administracion_recibos_pago_volver_a_buscar():
                 usados[id_pago] = r["id"]
                 if origen == "proveedor":
                     exactos += 1
+                elif origen in ("suma", "aproximado"):
+                    aproximados += 1
                 else:
                     propuestos += 1
             cambios.append((json.dumps(candidatos_proveedor), id_prov, json.dumps(candidatos_pago), id_pago, mensaje, origen, r["id"]))
@@ -6984,9 +7104,13 @@ def administracion_recibos_pago_volver_a_buscar():
                         origen_coincidencia = %s, revisado_en = now()
                     WHERE id = %s
                 """, cambios)
+        if verificados:
+            with db.cursor() as cur:
+                cur.executemany("UPDATE recibos_pago_procesados SET monto_verificado = %s WHERE id = %s", verificados)
         db.commit()
         msg = (f"Revisé {len(pendientes)} recibo(s) contra {len(pagos_periodo)} pagos de CargoLink: "
-               f"{exactos} coinciden por proveedor y {propuestos} propuestos por fecha y monto.")
+               f"{exactos} coinciden por proveedor, {propuestos} propuestos por fecha y monto"
+               f" y {aproximados} por suma o monto aproximado.")
         if duplicados:
             msg += f" {duplicados} parecen duplicados (mismo pago que otro recibo)."
         if traspasos:
