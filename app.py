@@ -1956,13 +1956,12 @@ def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveed
             return candidatos_proveedor, elegido, propuestas + pagos_elegido, None, "suma"
         return candidatos_proveedor, elegido, pagos_elegido, None, None
     libres = [p for p in mismos if not p.get("url_pago")]
-    # Se propone solo si hay UN pago libre con ese monto, o si el más cercano
-    # cae el mismo día del recibo y el siguiente no.
-    propuesto = None
-    if len(libres) == 1 or (len(libres) > 1 and distancia(libres[0]) == 0 and distancia(libres[1]) > 0):
-        propuesto = libres[0]
-    if propuesto:
-        return candidatos_proveedor, str(propuesto.get("id_proveedor") or "0"), mismos, propuesto["Id"], "fecha_monto"
+    # Solo coincide el monto (y la moneda): se PROPONE el pago libre más
+    # cercano a la fecha aunque haya varios o sea de otro proveedor — el
+    # usuario abre el PDF, revisa la ficha del pago y decide (nunca entra al
+    # adjuntado en bloque).
+    if libres:
+        return candidatos_proveedor, str(libres[0].get("id_proveedor") or "0"), mismos, libres[0]["Id"], "fecha_monto"
     return candidatos_proveedor, elegido, mismos, None, "fecha_monto"
 
 
@@ -7037,6 +7036,38 @@ def estadisticas_recibos_pago(recibos):
         "edades": edades,
         "top_proveedores": sorted(proveedores.values(), key=lambda p: -p["n"])[:6],
     }
+
+
+@app.route("/administracion/recibos-pago/<int:recibo_id>/archivo")
+@administracion_o_admin_required
+def administracion_recibos_pago_archivo(recibo_id):
+    """Abre (en el navegador, no descarga) el PDF/imagen del recibo subido."""
+    db = get_db()
+    r = db.execute("SELECT nombre_archivo, contenido_archivo, tipo_mime FROM recibos_pago_procesados WHERE id = %s", (recibo_id,)).fetchone()
+    db.close()
+    if r is None:
+        return "Recibo no encontrado", 404
+    return send_file(io.BytesIO(bytes(r["contenido_archivo"])), mimetype=r["tipo_mime"],
+                     as_attachment=False, download_name=r["nombre_archivo"])
+
+
+@app.route("/administracion/recibos-pago/comprobante-cargolink")
+@administracion_o_admin_required
+def administracion_recibos_pago_comprobante_cargolink():
+    """Muestra el comprobante que un pago YA tiene adjunto en CargoLink, para
+    compararlo con el recibo. Solo lectura; solo rutas PDF_PAGOS/<hash>.pdf."""
+    ruta = request.args.get("ruta", "")
+    if not re.fullmatch(r"PDF_PAGOS/[A-Za-z0-9_\-]+\.(pdf|png|jpe?g)", ruta):
+        return "Ruta no válida", 400
+    try:
+        sesion, headers, _ = _conectar_pagos_cargolink()
+        resp = sesion.get(f"https://fwd.cargolink.mx/{ruta}", headers=headers, timeout=60)
+    except (RuntimeError, requests.RequestException) as e:
+        return f"No se pudo consultar CargoLink: {e}", 502
+    if resp.status_code != 200:
+        return "CargoLink no regresó el comprobante.", 502
+    return send_file(io.BytesIO(resp.content), mimetype=resp.headers.get("content-type", "application/pdf").split(";")[0],
+                     as_attachment=False, download_name=ruta.rsplit("/", 1)[-1])
 
 
 @app.route("/administracion/recibos-pago/<int:recibo_id>/reasignar-proveedor", methods=["POST"])

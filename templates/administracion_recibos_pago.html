@@ -60,6 +60,14 @@
   .rp-filtros { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .2rem 0 .7rem; }
   .rp-filtros input[type=search] { flex: 1; min-width: 220px; padding: .45rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; }
   .rp-filtro-activo { font-size: .82rem; }
+  .rp-ver { font-size: .76rem; font-weight: 600; text-decoration: none; color: #0369a1; }
+  .rp-ver:hover { text-decoration: underline; }
+  .rp-ficha { border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 8px; padding: .45rem .6rem; font-size: .74rem; line-height: 1.45; max-width: 420px; }
+  .rp-ficha div { display: flex; gap: .4rem; }
+  .rp-ficha span { color: var(--ink-3); min-width: 78px; }
+  .rp-ficha .rp-dif { color: #b45309; font-style: normal; font-weight: 700; }
+  .rp-ficha .rp-igual { color: #166534; font-style: normal; font-weight: 700; }
+  .rp-ficha .rp-alerta { color: #b91c1c; font-weight: 700; margin-top: .2rem; }
   .rp-edad { color: #b45309; font-weight: 600; } .rp-edad.viejo { color: #b91c1c; }
   .rp-filtro { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; font-weight: 600; color: var(--ink-2, #374151); margin: .25rem 0 .6rem; cursor: pointer; user-select: none; }
   .rp-filtro input { width: 16px; height: 16px; cursor: pointer; }
@@ -186,7 +194,7 @@
         {% endfor %}
       {% endif %}
       <tr data-cat="{{ r.categoria }}" data-texto="{{ [r.nombre_archivo, r.proveedor_extraido, r.referencia_extraida, r.moneda_extraida, '%.2f' % (r.monto_extraido or 0), r.id_pago_elegido] | select | join(' ') | lower }}">
-        <td>{{ r.nombre_archivo }}<br><small class="hint">Subido {{ r.creado_en | hora_mx("%d/%m/%Y %H:%M") }} (hora centro)</small>
+        <td>{{ r.nombre_archivo }}<br><a class="rp-ver" href="{{ url_for('administracion_recibos_pago_archivo', recibo_id=r.id) }}" target="_blank" rel="noopener">📄 Ver recibo</a><br><small class="hint">Subido {{ r.creado_en | hora_mx("%d/%m/%Y %H:%M") }} (hora centro)</small>
           {% if r.dias is not none and r.categoria in ('recurrente', 'espera', 'sin_proveedor', 'propuesto', 'listo') %}<br><small class="rp-edad {{ 'viejo' if r.dias > 30 else '' }}">{{ r.dias }} día{{ '' if r.dias == 1 else 's' }} desde el pago</small>{% endif %}</td>
         <td>
           {% if r.monto_extraido is not none %}
@@ -228,6 +236,7 @@
             {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
             {% if not pagos_disponibles and ns.con_comp %}
             <span class="rp-nota ok">El pago {{ ns.con_comp.Id }} ({{ ns.con_comp.Fecha | fecha_cargolink }} · {{ ns.con_comp.Nombre }}) con este monto <b>ya tiene comprobante</b> en CargoLink: probablemente ya se adjuntó. Puedes descartar este recibo.</span>
+            <br><a class="rp-ver" href="{{ url_for('administracion_recibos_pago_comprobante_cargolink', ruta=ns.con_comp.url_pago) }}" target="_blank" rel="noopener">📎 Ver comprobante que tiene en CargoLink</a>
             {% elif not pagos_disponibles and not r.id_proveedor_elegido %}
             <span class="rp-nota espera">No reconocí al proveedor y no hay ningún pago en CargoLink con este monto y moneda en esas fechas. Elige el proveedor o espera a que se capture el pago.</span>
             {% elif not pagos_disponibles %}
@@ -236,12 +245,12 @@
             {% if r.id_pago_elegido and r.origen_coincidencia == 'suma' %}<span class="rp-nota propuesto">Propuesto: la suma de varios pagos del proveedor da el monto exacto — al confirmar se adjunta a cada uno</span>
             {% elif r.id_pago_elegido and r.origen_coincidencia == 'aproximado' %}<span class="rp-nota propuesto">Propuesto por monto aproximado del mismo proveedor (≤2% o $50) — revisa la diferencia y confirma</span>
             {% elif r.origen_coincidencia == 'suma' %}<span class="rp-nota propuesto">Hay varias combinaciones de pagos que suman este monto: elige la correcta</span>
-            {% elif r.id_pago_elegido and r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Propuesto por fecha y monto — revisa y confirma</span>
+            {% elif r.id_pago_elegido and r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Propuesta: solo coincide el monto y la moneda{% if pagos_disponibles | length > 1 %} ({{ pagos_disponibles | length }} pagos con este monto; se preselecciona el más cercano a la fecha){% endif %}. Abre el recibo, revisa la ficha del pago y decide.</span>
             {% elif r.id_pago_elegido %}<span class="rp-nota listo">✓ Coincidencia exacta</span>
             {% elif r.origen_coincidencia == 'fecha_monto' %}<span class="rp-nota propuesto">Varios pagos con este monto: elige el correcto</span>{% endif %}
             <form class="rp-accion-form" method="post" action="{{ url_for('administracion_recibos_pago_confirmar', recibo_id=r.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <select name="id_pago" required>
+              <select name="id_pago" required class="rp-sel-pago">
                 <option value="">Selecciona...</option>
                 {% for p in pagos_disponibles %}
                 <option value="{{ p.Id }}" {{ 'selected' if p.Id == r.id_pago_elegido else '' }}>
@@ -249,6 +258,22 @@
                 </option>
                 {% endfor %}
               </select>
+              {% set prov_recibo = (r.candidatos_proveedor or [{}])[0] %}
+              {% for p in pagos_disponibles[:10] %}
+              <div class="rp-ficha" data-pago="{{ p.Id }}" {{ '' if p.Id == r.id_pago_elegido else 'hidden' }}>
+                <div><span>Pago</span><b>{{ p.Id }}</b>{% if p.tipo == 'suma' %} <i>(suma)</i>{% endif %}</div>
+                <div><span>A nombre de</span><b>{{ p.Nombre }}</b></div>
+                {% if p.observaciones_movimiento and p.observaciones_movimiento != 'Pago a: ' ~ p.Nombre %}<div><span>Concepto</span>{{ p.observaciones_movimiento }}</div>{% endif %}
+                <div><span>Fecha</span>{{ p.Fecha | fecha_cargolink(true) }}</div>
+                <div><span>Monto</span><b>{{ p.moneda_mov }} ${{ "{:,.2f}".format(p.Total | float) }}</b>
+                  {% set dif = (p.Total | float) - (r.monto_extraido | float) %}{% if dif | abs >= 0.01 %} <em class="rp-dif">dif. ${{ "{:+,.2f}".format(dif) }}</em>{% else %} <em class="rp-igual">= recibo</em>{% endif %}</div>
+                {% if p.Banco or p.TipoReferencia %}<div><span>Banco</span>{{ p.Banco or "" }} {{ p.TipoReferencia or "" }}</div>{% endif %}
+                {% if p.no_booking %}<div><span>Booking</span>{{ p.no_booking }}</div>{% endif %}
+                {% if p.usuario_pago %}<div><span>Capturó</span>{{ p.usuario_pago }}</div>{% endif %}
+                {% if p.id_proveedor and prov_recibo.id_proveedor and prov_recibo.score is defined and prov_recibo.score >= 0.82 and p.id_proveedor | string != prov_recibo.id_proveedor | string %}
+                <div class="rp-alerta">⚠ Proveedor distinto al del recibo ({{ prov_recibo.razonsocial }})</div>{% endif %}
+              </div>
+              {% endfor %}
               <button type="submit" class="btn small" onclick="return confirm('¿Adjuntar este recibo al pago seleccionado en CargoLink? Esta acción modifica un registro real.');">Confirmar y adjuntar</button>
             </form>
             {% endif %}
@@ -337,6 +362,11 @@
       });
       Array.prototype.forEach.call(document.querySelectorAll('[data-buscar]'), function (b) {
         b.addEventListener('click', function () { buscar.value = b.getAttribute('data-buscar').toLowerCase(); filtro = null; aplicar(); tabla.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.rp-sel-pago'), function (sel) {
+        sel.addEventListener('change', function () {
+          Array.prototype.forEach.call(sel.form.querySelectorAll('.rp-ficha'), function (f) { f.hidden = f.getAttribute('data-pago') !== sel.value; });
+        });
       });
       quitar.addEventListener('click', function () { filtro = null; buscar.value = ''; aplicar(); });
       buscar.addEventListener('input', aplicar);
