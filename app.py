@@ -6904,42 +6904,92 @@ def administracion_recibos_pago():
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
                candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en,
                rfc_extraido, referencia_extraida, origen_coincidencia, monto_verificado
-        FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 200
+        FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 1000
     """).fetchall()
-    # Resumen sobre TODOS los recibos (no solo los que caben en la tabla).
-    resumen = {k: {"n": 0, "montos": {}} for k in ("listo", "propuesto", "espera", "traspaso", "adjuntado")}
-    for f in db.execute("""
-        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL
-                         AND origen_coincidencia IN ('fecha_monto', 'suma', 'aproximado') THEN 'propuesto'
-                    WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL THEN 'listo'
-                    WHEN estatus = 'pendiente' THEN 'espera'
-                    WHEN estatus = 'conciliado' THEN 'adjuntado' ELSE estatus END AS grupo,
-               moneda_extraida AS moneda, count(*) AS n, coalesce(sum(monto_extraido), 0) AS total
-        FROM recibos_pago_procesados
-        WHERE estatus IN ('pendiente', 'traspaso', 'adjuntado', 'conciliado')
-        GROUP BY 1, 2 ORDER BY 2
-    """).fetchall():
-        grupo = resumen[f["grupo"]]
-        grupo["n"] += f["n"]
-        if f["moneda"]:
-            grupo["montos"][f["moneda"]] = float(f["total"])
-    # Pendientes cuyo pago ya tiene comprobante en CargoLink (para el botón).
-    ya_conciliables = db.execute("""
-        SELECT id, nombre_archivo, monto_extraido, moneda_extraida, fecha_extraida, candidatos_pago
-        FROM recibos_pago_procesados
-        WHERE estatus = 'pendiente' AND id_pago_elegido IS NULL AND monto_extraido IS NOT NULL
-    """).fetchall()
-    resumen["conciliables"] = 0
-    for r in ya_conciliables:
-        if pago_ya_con_comprobante(r):
-            resumen["conciliables"] += 1
-            resumen["espera"]["n"] -= 1
-            mon = r["moneda_extraida"]
-            if mon in resumen["espera"]["montos"]:
-                resumen["espera"]["montos"][mon] -= float(r["monto_extraido"] or 0)
-    resumen["espera"]["montos"] = {m: t for m, t in resumen["espera"]["montos"].items() if abs(t) >= 0.01}
     db.close()
-    return render_template("administracion_recibos_pago.html", recibos=recibos, resumen=resumen)
+    estadisticas = estadisticas_recibos_pago(recibos)
+    return render_template("administracion_recibos_pago.html", recibos=recibos, est=estadisticas)
+
+
+# Categorías de la pantalla de Recibos de pago, en el orden en que se muestran.
+# (clave, título, qué hacer) — la misma clave se usa para filtrar la tabla.
+CATEGORIAS_RECIBO = [
+    ("listo", "Listos para adjuntar", "Coinciden exacto con un pago del proveedor: adjúntalos en bloque."),
+    ("propuesto", "Propuestos (revisar)", "Por fecha y monto, suma de pagos o monto aproximado: confirma uno por uno."),
+    ("ya_cargolink", "Ya en CargoLink", "Su pago ya tiene comprobante (alguien lo adjuntó): márcalos como conciliados."),
+    ("recurrente", "Recurrentes sin capturar", "Se pagan seguido con el mismo monto (sueldos, rentas, cuotas): pide a CxP capturar el de este periodo."),
+    ("espera", "Esperando captura", "El pago aún no existe en CargoLink: CxP debe capturarlo."),
+    ("sin_proveedor", "Proveedor no reconocido", "No hay proveedor ni pago con ese monto: elige el proveedor o dalo de alta."),
+    ("duplicado", "Duplicados", "Mismo pago que otro recibo (archivo subido dos veces): elimínalos."),
+    ("traspaso", "Traspasos propios", "Entre cuentas de AV2: no llevan comprobante en Pagos."),
+    ("error", "Con error", "Falló la lectura o el adjunto: revisa el mensaje."),
+    ("hecho", "Adjuntados / conciliados", "Terminados."),
+]
+CATEGORIAS_PENDIENTES = ("listo", "propuesto", "recurrente", "espera", "sin_proveedor")
+
+
+def categoria_recibo(r):
+    estatus = r["estatus"]
+    if estatus in ("adjuntado", "conciliado"):
+        return "hecho"
+    if estatus in ("traspaso", "error", "descartado"):
+        return estatus
+    mensaje = r.get("mensaje") or ""
+    if r["id_pago_elegido"]:
+        return "propuesto" if r.get("origen_coincidencia") in ("fecha_monto", "suma", "aproximado") else "listo"
+    if mensaje.startswith("Posible duplicado"):
+        return "duplicado"
+    if pago_ya_con_comprobante(r):
+        return "ya_cargolink"
+    if mensaje.startswith("Pago recurrente"):
+        return "recurrente"
+    if not r["id_proveedor_elegido"]:
+        return "sin_proveedor"
+    return "espera"
+
+
+def estadisticas_recibos_pago(recibos):
+    """Agrega a cada recibo su 'categoria' y 'dias' (antigüedad desde la
+    fecha del pago) y arma el resumen: por categoría (número, montos por
+    moneda, el más antiguo), antigüedad de lo pendiente y proveedores con
+    más pendientes — para decidir qué atender primero."""
+    hoy = datetime.now(TZ_LOCAL).date()
+    cats = {c: {"clave": c, "titulo": t, "accion": a, "n": 0, "montos": {}, "max_dias": 0} for c, t, a in CATEGORIAS_RECIBO}
+    edades = {"0–7 días": 0, "8–30 días": 0, "31–60 días": 0, "Más de 60 días": 0}
+    proveedores = {}
+    pendientes = {"n": 0, "montos": {}}
+    for r in recibos:
+        cat = categoria_recibo(r)
+        r["categoria"] = cat
+        r["dias"] = (hoy - r["fecha_extraida"]).days if r["fecha_extraida"] else None
+        if cat not in cats:
+            continue
+        c = cats[cat]
+        c["n"] += 1
+        monto = float(r["monto_extraido"] or 0)
+        if r["moneda_extraida"]:
+            c["montos"][r["moneda_extraida"]] = c["montos"].get(r["moneda_extraida"], 0) + monto
+        if r["dias"] is not None:
+            c["max_dias"] = max(c["max_dias"], r["dias"])
+        if cat in CATEGORIAS_PENDIENTES:
+            pendientes["n"] += 1
+            if r["moneda_extraida"]:
+                pendientes["montos"][r["moneda_extraida"]] = pendientes["montos"].get(r["moneda_extraida"], 0) + monto
+            d = r["dias"] or 0
+            edades["0–7 días" if d <= 7 else "8–30 días" if d <= 30 else "31–60 días" if d <= 60 else "Más de 60 días"] += 1
+            if cat in ("recurrente", "espera", "sin_proveedor"):
+                nombre = (r["proveedor_extraido"] or r["nombre_archivo"] or "—").strip()[:45]
+                pv = proveedores.setdefault(nombre, {"nombre": nombre, "n": 0, "montos": {}})
+                pv["n"] += 1
+                if r["moneda_extraida"]:
+                    pv["montos"][r["moneda_extraida"]] = pv["montos"].get(r["moneda_extraida"], 0) + monto
+    return {
+        "categorias": [cats[c] for c, _, _ in CATEGORIAS_RECIBO],
+        "por_clave": cats,
+        "pendientes": pendientes,
+        "edades": edades,
+        "top_proveedores": sorted(proveedores.values(), key=lambda p: -p["n"])[:6],
+    }
 
 
 @app.route("/administracion/recibos-pago/<int:recibo_id>/reasignar-proveedor", methods=["POST"])

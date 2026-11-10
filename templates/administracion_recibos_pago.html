@@ -30,8 +30,37 @@
   .rp-nota.espera { color: #92400e; } .rp-nota.listo { color: #166534; font-weight: 600; }
   .rp-ref { font-size: .72rem; color: var(--ink-3); }
   .rp-tabla-wrap { overflow-x: auto; }
-  .rp-tabla tr.rp-hecho { display: none; }
-  .rp-tabla.mostrar-hechos tr.rp-hecho { display: table-row; background: #f9fafb; }
+  .rp-tabla tr[data-cat="hecho"] { background: #f9fafb; }
+  .rp-decision { display: grid; grid-template-columns: 1.1fr 1fr 1.2fr; gap: .75rem; margin-bottom: 1rem; }
+  @media (max-width: 900px) { .rp-decision { grid-template-columns: 1fr; } }
+  .rp-dec-main, .rp-dec-box { border: 1px solid var(--border); border-radius: 12px; padding: .8rem 1rem; }
+  .rp-dec-main { background: linear-gradient(135deg, #7a1f1f, #a83232); color: #fff; border: none; }
+  .rp-dec-main .l, .rp-dec-box .l { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .85; margin-bottom: .3rem; }
+  .rp-dec-box .l { color: var(--ink-3); }
+  .rp-dec-main .n { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+  .rp-dec-main .m { font-size: .85rem; margin-top: .3rem; }
+  .rp-dec-sub { font-size: .76rem; margin-top: .55rem; opacity: .92; line-height: 1.6; }
+  .rp-barra { display: grid; grid-template-columns: 100px 1fr 32px; align-items: center; gap: .5rem; font-size: .76rem; margin: .3rem 0; }
+  .rp-barra .b { background: #f3f4f6; border-radius: 99px; height: 9px; overflow: hidden; }
+  .rp-barra .b i { display: block; height: 100%; background: #d97706; border-radius: 99px; }
+  .rp-barra .b i.viejo { background: #b91c1c; }
+  .rp-barra .v { text-align: right; font-weight: 700; }
+  .rp-prov { display: grid; grid-template-columns: 1fr auto; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--border); padding: .3rem .1rem; cursor: pointer; font: inherit; font-size: .76rem; color: inherit; }
+  .rp-prov:hover { background: #f9fafb; }
+  .rp-prov small { grid-column: 1 / -1; color: var(--ink-3); font-size: .7rem; }
+  button.rp-kpi { text-align: left; background: var(--surface, #fff); font: inherit; color: inherit; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+  button.rp-kpi:hover { box-shadow: 0 4px 14px rgba(0,0,0,.08); transform: translateY(-1px); }
+  button.rp-kpi.activo { outline: 3px solid #7a1f1f; outline-offset: 1px; }
+  .rp-kpi .d { font-size: .72rem; color: #b45309; margin-top: .2rem; font-weight: 600; }
+  .rp-kpi .a { font-size: .7rem; color: var(--ink-3); margin-top: .35rem; line-height: 1.35; }
+  .rp-kpi.ya_cargolink { border-left-color: #22c55e; } .rp-kpi.recurrente { border-left-color: #9333ea; }
+  .rp-kpi.sin_proveedor { border-left-color: #f59e0b; } .rp-kpi.duplicado, .rp-kpi.error { border-left-color: #dc2626; }
+  .rp-kpi.hecho { border-left-color: #6b7280; }
+  .rp-badge.recurrente { background: #f3e8ff; color: #6b21a8; }
+  .rp-filtros { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .2rem 0 .7rem; }
+  .rp-filtros input[type=search] { flex: 1; min-width: 220px; padding: .45rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; }
+  .rp-filtro-activo { font-size: .82rem; }
+  .rp-edad { color: #b45309; font-weight: 600; } .rp-edad.viejo { color: #b91c1c; }
   .rp-filtro { display: inline-flex; align-items: center; gap: .45rem; font-size: .82rem; font-weight: 600; color: var(--ink-2, #374151); margin: .25rem 0 .6rem; cursor: pointer; user-select: none; }
   .rp-filtro input { width: 16px; height: 16px; cursor: pointer; }
   .rp-mensaje { color: var(--danger-dark); font-size: .75rem; margin-top: .3rem; }
@@ -68,43 +97,79 @@
   {% if not recibos %}
   <p class="empty">Todavía no has subido ningún recibo.</p>
   {% else %}
-  {% macro montos(g) %}{% for mon, tot in g.montos.items() %}{{ mon }} ${{ "{:,.2f}".format(tot) }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
-  <div class="rp-resumen">
-    <div class="rp-kpi listo"><div class="l">Listos para adjuntar</div><div class="n">{{ resumen.listo.n }}</div><div class="m">{{ montos(resumen.listo) }}</div></div>
-    <div class="rp-kpi propuesto"><div class="l">Propuestos por fecha y monto</div><div class="n">{{ resumen.propuesto.n }}</div><div class="m">{{ montos(resumen.propuesto) }}</div></div>
-    <div class="rp-kpi espera"><div class="l">Esperando registro en CargoLink</div><div class="n">{{ resumen.espera.n }}</div><div class="m">{{ montos(resumen.espera) }}</div></div>
-    <div class="rp-kpi traspaso"><div class="l">Traspasos entre cuentas</div><div class="n">{{ resumen.traspaso.n }}</div><div class="m">{{ montos(resumen.traspaso) }}</div></div>
-    <div class="rp-kpi adjuntado"><div class="l">Ya adjuntados / conciliados</div><div class="n">{{ resumen.adjuntado.n }}</div><div class="m">{{ montos(resumen.adjuntado) }}</div></div>
+  {% macro montos(g) %}{% for mon, tot in g.montos | dictsort %}{{ mon }} ${{ "{:,.2f}".format(tot) }}{% if not loop.last %} · {% endif %}{% endfor %}{% endmacro %}
+  {% set C = est.por_clave %}
+
+  <div class="rp-decision">
+    <div class="rp-dec-main">
+      <div class="l">Pendientes por adjuntar</div>
+      <div class="n">{{ est.pendientes.n }}</div>
+      <div class="m">{{ montos(est.pendientes) or "—" }}</div>
+      <div class="rp-dec-sub">
+        <span><b>{{ C.listo.n }}</b> listos</span> · <span><b>{{ C.propuesto.n }}</b> por revisar</span> ·
+        <span><b>{{ C.recurrente.n }}</b> recurrentes</span> · <span><b>{{ C.espera.n }}</b> esperando captura</span> ·
+        <span><b>{{ C.sin_proveedor.n }}</b> sin proveedor</span>
+      </div>
+    </div>
+    <div class="rp-dec-box">
+      <div class="l">Antigüedad de lo pendiente</div>
+      {% set maxe = [est.edades.values() | max, 1] | max %}
+      {% for etiqueta, n in est.edades.items() %}
+      <div class="rp-barra"><span class="t">{{ etiqueta }}</span><span class="b"><i style="width: {{ (n / maxe * 100) | round(1) }}%" class="{{ 'viejo' if loop.index > 2 else '' }}"></i></span><span class="v">{{ n }}</span></div>
+      {% endfor %}
+    </div>
+    <div class="rp-dec-box">
+      <div class="l">Proveedores con más pagos sin capturar</div>
+      {% for p in est.top_proveedores %}
+      <button type="button" class="rp-prov" data-buscar="{{ p.nombre }}"><span>{{ p.nombre }}</span><b>{{ p.n }}</b><small>{{ montos(p) }}</small></button>
+      {% else %}
+      <p class="hint">Nada sin capturar 🎉</p>
+      {% endfor %}
+    </div>
   </div>
+
+  <div class="rp-resumen">
+    {% for c in est.categorias if c.n or c.clave in ('listo', 'propuesto', 'espera') %}
+    <button type="button" class="rp-kpi {{ c.clave }}" data-filtro="{{ c.clave }}" title="{{ c.accion }}">
+      <div class="l">{{ c.titulo }}</div>
+      <div class="n">{{ c.n }}</div>
+      <div class="m">{{ montos(c) or "—" }}</div>
+      {% if c.n and c.clave not in ('hecho', 'traspaso') %}<div class="d">Más antiguo: {{ c.max_dias }} día{{ '' if c.max_dias == 1 else 's' }}</div>{% endif %}
+      <div class="a">{{ c.accion }}</div>
+    </button>
+    {% endfor %}
+  </div>
+
   <div class="rp-acciones">
-    {% if resumen.listo.n %}
+    {% if C.listo.n %}
     <form method="post" action="{{ url_for('administracion_recibos_pago_adjuntar_coincidencias') }}"
-          onsubmit="return confirm('¿Adjuntar en CargoLink los {{ resumen.listo.n }} recibo(s) con coincidencia exacta (mismo proveedor, monto y moneda)? Esta acción modifica registros reales.');">
+          onsubmit="return confirm('¿Adjuntar en CargoLink los {{ C.listo.n }} recibo(s) con coincidencia exacta (mismo proveedor, monto y moneda)? Esta acción modifica registros reales.');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn">Adjuntar {{ resumen.listo.n }} coincidencia(s) exacta(s)</button>
+      <button type="submit" class="btn">Adjuntar {{ C.listo.n }} coincidencia(s) exacta(s)</button>
     </form>
     {% endif %}
-    {% if resumen.conciliables %}
+    {% if C.ya_cargolink.n %}
     <form method="post" action="{{ url_for('administracion_recibos_pago_marcar_conciliados') }}"
-          onsubmit="return confirm('¿Marcar {{ resumen.conciliables }} recibo(s) como ya conciliados? Su pago (mismo monto y moneda) ya tiene comprobante en CargoLink. Solo cambia el estatus aquí, no toca CargoLink.');">
+          onsubmit="return confirm('¿Marcar {{ C.ya_cargolink.n }} recibo(s) como ya conciliados? Su pago (mismo monto y moneda) ya tiene comprobante en CargoLink. Solo cambia el estatus aquí, no toca CargoLink.');">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn secondary">Marcar {{ resumen.conciliables }} ya conciliado(s) en CargoLink</button>
+      <button type="submit" class="btn secondary">Marcar {{ C.ya_cargolink.n }} ya conciliado(s)</button>
     </form>
     {% endif %}
-    {% if resumen.espera.n or resumen.listo.n or resumen.propuesto.n %}
+    {% if est.pendientes.n %}
     <form method="post" action="{{ url_for('administracion_recibos_pago_volver_a_buscar') }}" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Buscando en CargoLink… (hasta 1 min)';">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit" class="btn secondary">Volver a buscar en CargoLink ({{ resumen.espera.n + resumen.listo.n + resumen.propuesto.n }})</button>
+      <button type="submit" class="btn secondary">Volver a buscar en CargoLink</button>
     </form>
     {% endif %}
   </div>
-  <p class="hint rp-nota">
-    Se cotejan por <b>proveedor + monto + moneda</b> contra los pagos <b>sin comprobante</b> de Egresos → Pagos (7 días antes a 30 días después de la fecha del recibo).
-    Si el proveedor no se reconoce (apodos, nóminas), se <b>propone</b> el pago de CargoLink con el mismo monto y moneda más cercano a la fecha — revísalo y confírmalo en su fila.
-    Si un recibo queda en <b>“Esperando registro”</b> es porque ese pago todavía no se captura en CargoLink: cuando lo capturen, presiona <b>Volver a buscar</b>.
-  </p>
-  {% set hechos = recibos | selectattr('estatus', 'in', ['adjuntado', 'conciliado']) | list %}
-  <label class="rp-filtro"><input type="checkbox" id="rp-mostrar-hechos"> Mostrar adjuntados / conciliados ({{ hechos | length }})</label>
+
+  <div class="rp-filtros">
+    <span class="rp-filtro-activo" id="rp-filtro-activo">Mostrando: <b>todo lo pendiente</b></span>
+    <button type="button" class="btn small secondary" id="rp-quitar-filtro" hidden>Quitar filtro</button>
+    <input type="search" id="rp-buscar" placeholder="Buscar proveedor, archivo, referencia, monto…">
+    <label class="rp-filtro"><input type="checkbox" id="rp-mostrar-hechos"> Incluir adjuntados / conciliados ({{ C.hecho.n }})</label>
+  </div>
+  <p class="hint rp-nota" id="rp-sin-resultados" hidden>Ningún recibo coincide con el filtro.</p>
   <div class="rp-tabla-wrap">
   <table class="rp-tabla" id="rp-tabla">
     <thead>
@@ -120,8 +185,9 @@
           {% if p.url_pago and p.moneda_mov == r.moneda_extraida and ((p.Total | float) - (r.monto_extraido | float)) | abs < 0.5 and ns.con_comp is none %}{% set ns.con_comp = p %}{% endif %}
         {% endfor %}
       {% endif %}
-      <tr class="{{ 'rp-hecho' if r.estatus in ('adjuntado', 'conciliado') else '' }}">
-        <td>{{ r.nombre_archivo }}<br><small class="hint">{{ r.creado_en.strftime("%d/%m/%Y %H:%M") }}</small></td>
+      <tr data-cat="{{ r.categoria }}" data-texto="{{ [r.nombre_archivo, r.proveedor_extraido, r.referencia_extraida, r.moneda_extraida, '%.2f' % (r.monto_extraido or 0), r.id_pago_elegido] | select | join(' ') | lower }}">
+        <td>{{ r.nombre_archivo }}<br><small class="hint">Subido {{ r.creado_en.strftime("%d/%m/%Y %H:%M") }}</small>
+          {% if r.dias is not none and r.categoria in ('recurrente', 'espera', 'sin_proveedor', 'propuesto', 'listo') %}<br><small class="rp-edad {{ 'viejo' if r.dias > 30 else '' }}">{{ r.dias }} día{{ '' if r.dias == 1 else 's' }} desde el pago</small>{% endif %}</td>
         <td>
           {% if r.monto_extraido is not none %}
           {{ r.moneda_extraida }} ${{ "{:,.2f}".format(r.monto_extraido) }}<br>
@@ -195,8 +261,11 @@
         <td>
           {% if r.estatus == 'pendiente' and r.id_pago_elegido and r.origen_coincidencia in ('fecha_monto', 'suma', 'aproximado') %}<span class="rp-badge propuesto">propuesto</span>
           {% elif r.estatus == 'pendiente' and r.id_pago_elegido %}<span class="rp-badge listo">listo</span>
-          {% elif r.estatus == 'pendiente' and ns.con_comp %}<span class="rp-badge conciliado">ya en CargoLink</span>
-          {% elif r.estatus == 'pendiente' %}<span class="rp-badge espera">esperando registro</span>
+          {% elif r.categoria == 'ya_cargolink' %}<span class="rp-badge conciliado">ya en CargoLink</span>
+          {% elif r.categoria == 'recurrente' %}<span class="rp-badge recurrente">recurrente sin capturar</span>
+          {% elif r.categoria == 'duplicado' %}<span class="rp-badge error">duplicado</span>
+          {% elif r.categoria == 'sin_proveedor' %}<span class="rp-badge espera">proveedor no reconocido</span>
+          {% elif r.estatus == 'pendiente' %}<span class="rp-badge espera">esperando captura</span>
           {% elif r.estatus == 'conciliado' %}<span class="rp-badge conciliado">ya conciliado</span>
           {% elif r.estatus == 'traspaso' %}<span class="rp-badge traspaso">traspaso propio</span>
           <p class="rp-nota">Entre cuentas de AV2: no se adjunta a ningún pago.</p>
@@ -224,14 +293,48 @@
   </div>
   <script>
     (function () {
-      var caja = document.getElementById('rp-mostrar-hechos');
       var tabla = document.getElementById('rp-tabla');
-      if (!caja || !tabla) return;
+      if (!tabla) return;
+      var filas = Array.prototype.slice.call(tabla.querySelectorAll('tbody tr[data-cat]'));
+      var caja = document.getElementById('rp-mostrar-hechos');
+      var buscar = document.getElementById('rp-buscar');
+      var etiqueta = document.getElementById('rp-filtro-activo');
+      var quitar = document.getElementById('rp-quitar-filtro');
+      var vacio = document.getElementById('rp-sin-resultados');
+      var tarjetas = Array.prototype.slice.call(document.querySelectorAll('[data-filtro]'));
+      var filtro = null;
       try { caja.checked = localStorage.getItem('rp-mostrar-hechos') === '1'; } catch (e) {}
+
       function aplicar() {
-        tabla.classList.toggle('mostrar-hechos', caja.checked);
+        var q = (buscar.value || '').trim().toLowerCase();
+        var visibles = 0;
+        filas.forEach(function (tr) {
+          var cat = tr.getAttribute('data-cat');
+          var ok = filtro ? cat === filtro : (cat !== 'hecho' && cat !== 'descartado') || (caja.checked && cat === 'hecho');
+          if (ok && q) ok = tr.getAttribute('data-texto').indexOf(q) !== -1;
+          tr.hidden = !ok;
+          if (ok) visibles++;
+        });
+        tarjetas.forEach(function (t) { t.classList.toggle('activo', t.getAttribute('data-filtro') === filtro); });
+        var tarjeta = filtro && document.querySelector('[data-filtro="' + filtro + '"] .l');
+        etiqueta.innerHTML = 'Mostrando: <b>' + (tarjeta ? tarjeta.textContent : 'todo lo pendiente') + '</b>' + (q ? ' · “' + q.replace(/</g, '') + '”' : '') + ' (' + visibles + ')';
+        quitar.hidden = !filtro && !q;
+        vacio.hidden = visibles > 0;
         try { localStorage.setItem('rp-mostrar-hechos', caja.checked ? '1' : '0'); } catch (e) {}
       }
+      tarjetas.forEach(function (t) {
+        t.addEventListener('click', function () {
+          var f = t.getAttribute('data-filtro');
+          filtro = filtro === f ? null : f;
+          aplicar();
+          tabla.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-buscar]'), function (b) {
+        b.addEventListener('click', function () { buscar.value = b.getAttribute('data-buscar').toLowerCase(); filtro = null; aplicar(); tabla.scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+      });
+      quitar.addEventListener('click', function () { filtro = null; buscar.value = ''; aplicar(); });
+      buscar.addEventListener('input', aplicar);
       caja.addEventListener('change', aplicar);
       aplicar();
     })();
