@@ -441,6 +441,8 @@ def init_db():
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS rfc_extraido text")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS referencia_extraida text")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS revisado_en timestamptz")
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS origen_coincidencia text")
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS proveedor_manual boolean NOT NULL DEFAULT false")
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
             id bigint generated always as identity primary key,
@@ -1535,6 +1537,66 @@ def emparejar_proveedores_cargolink(nombre_extraido, nombre_archivo, proveedores
 _CANDADO_SESION_PAGOS = threading.Lock()
 
 
+def _pagina_pagos_cargolink(body, pagina, conexion):
+    """Una página (40 registros) de Egresos → Pagos. `conexion` es una lista
+    [sesion, headers, token] que se renueva en el lugar si CargoLink
+    invalida la sesión (solo permite una por usuario: si otro proceso entra,
+    la nuestra responde {"status_conexion": "Invalida"} con cero resultados)."""
+    for intento in range(4):
+        sesion, headers, token = conexion
+        r = sesion.post(
+            f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit={pagina}",
+            json=body, headers={"Content-Type": "application/json"}, timeout=60,
+        )
+        if r.status_code != 200:
+            raise RuntimeError("Error al consultar los pagos en CargoLink.")
+        datos = r.json()
+        if datos.get("status_conexion") == "Invalida":
+            if intento < 3:
+                # A veces un login recién hecho nace inválido y el siguiente
+                # sí funciona (comprobado): se reintenta con pausa corta. Con
+                # consultas en paralelo solo UN hilo renueva la sesión (cada
+                # login invalida el anterior); los demás toman el token nuevo.
+                with _CANDADO_SESION_PAGOS:
+                    if conexion[2] == token:
+                        time.sleep(1.5)
+                        conexion[:] = _conectar_pagos_cargolink()
+                continue
+            raise RuntimeError("CargoLink cerró la sesión (alguien más entró con el mismo usuario). Intenta de nuevo.")
+        return datos
+    return {}
+
+
+def descargar_pagos_cargolink(fecha_ini, fecha_fin, conexion, presupuesto_segundos=40):
+    """TODOS los pagos (de cualquier proveedor, incluidos 'Otros Retiros'
+    como la nómina) entre dos fechas, bajando las páginas en paralelo.
+    Regresa (pagos, completo): completo=False si alguna página no alcanzó
+    a responder dentro del presupuesto de tiempo."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
+    inicio = time.time()
+    body = {"filtros": {}, "filtros2": {"fechaini": fecha_ini, "fechafin": fecha_fin}, "filtros3": {}}
+    primera = _pagina_pagos_cargolink(body, 0, conexion)
+    pagos = list(primera.get("valores", []))
+    paginas = (int(primera.get("total") or 0) + 39) // 40
+    if paginas <= 1:
+        return pagos, True
+    pool = ThreadPoolExecutor(max_workers=8)
+    futuros = [pool.submit(_pagina_pagos_cargolink, body, n, conexion) for n in range(1, paginas)]
+    recibidas = 0
+    try:
+        for fut in as_completed(futuros, timeout=max(1, presupuesto_segundos - (time.time() - inicio))):
+            try:
+                pagos += fut.result().get("valores", [])
+                recibidas += 1
+            except (RuntimeError, requests.RequestException, ValueError):
+                pass
+    except FuturesTimeout:
+        pass
+    pool.shutdown(wait=False, cancel_futures=True)
+    unicos = {p["Id"]: p for p in pagos}
+    return list(unicos.values()), recibidas == paginas - 1
+
+
 def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PAGO_VENTANA_DIAS, dias_despues=None, conexion=None):
     """Movimientos bancarios (Pagos) de un proveedor en CargoLink dentro de
     una ventana de días alrededor de la fecha leída del recibo — para poder
@@ -1561,28 +1623,18 @@ def buscar_pagos_proveedor_cargolink(id_proveedor, fecha, dias_ventana=RECIBO_PA
         "filtros2": {"fechaini": fecha_ini, "fechafin": fecha_fin},
         "filtros3": {"id_proveedor": str(id_proveedor)},
     }
-    for intento in range(4):
-        sesion, headers, token = conexion
-        r = sesion.post(
-            f"https://fwd.cargolink.mx/ws/cliente_conexion.php?token={token}&cat=api2&fn=consulaPagoProveedores&limit=0",
-            json=body, headers={"Content-Type": "application/json"}, timeout=60,
-        )
-        if r.status_code != 200:
-            raise RuntimeError("Error al consultar los pagos del proveedor en CargoLink.")
-        datos = r.json()
-        if datos.get("status_conexion") == "Invalida":
-            if intento < 3:
-                # A veces un login recién hecho nace inválido y el siguiente
-                # sí funciona (comprobado): se reintenta con pausa corta. Con
-                # consultas en paralelo solo UN hilo renueva la sesión (cada
-                # login invalida el anterior); los demás toman el token nuevo.
-                with _CANDADO_SESION_PAGOS:
-                    if conexion[2] == token:
-                        time.sleep(1.5)
-                        conexion[:] = _conectar_pagos_cargolink()
-                continue
-            raise RuntimeError("CargoLink cerró la sesión (alguien más entró con el mismo usuario). Intenta de nuevo.")
-        return datos.get("valores", [])
+    # CargoLink pagina de 40 en 40 ("limit" es el número de página).
+    datos = _pagina_pagos_cargolink(body, 0, conexion)
+    pagos = datos.get("valores", [])
+    total = int(datos.get("total") or 0)
+    pagina = 1
+    while len(pagos) < total and pagina < 10:
+        mas = _pagina_pagos_cargolink(body, pagina, conexion).get("valores", [])
+        if not mas:
+            break
+        pagos += mas
+        pagina += 1
+    return pagos
 
 
 def pagos_con_facturas_ligadas_cargolink(id_proveedor):
@@ -1733,69 +1785,89 @@ def _fecha_txt(fecha):
     return fecha.isoformat() if hasattr(fecha, "isoformat") else fecha
 
 
-def precargar_pagos_cargolink(llaves, conexion, presupuesto_segundos=35):
-    """Consulta en paralelo los pagos de varios (id_proveedor, fecha) — cada
-    consulta tarda ~3 s en CargoLink, en paralelo baja ~4x. Regresa un dict
-    {(id_proveedor, fecha): pagos}; lo que no alcance a responder dentro del
-    presupuesto simplemente no queda en el dict."""
-    llaves = list(dict.fromkeys(llaves))
-    if not llaves:
-        return {}
-    inicio = time.time()
-    from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
-    pool = ThreadPoolExecutor(max_workers=8)
-    futuros = {
-        pool.submit(buscar_pagos_proveedor_cargolink, idp, f, RECIBO_PAGO_DIAS_ANTES, RECIBO_PAGO_DIAS_DESPUES, conexion): (idp, f)
-        for idp, f in llaves
-    }
-    cache = {}
+def ventana_recibo(fecha):
+    """(desde, hasta) en texto YYYY-MM-DD donde se busca el pago de un recibo."""
     try:
-        for fut in as_completed(futuros, timeout=max(1, presupuesto_segundos - (time.time() - inicio))):
-            try:
-                cache[futuros[fut]] = fut.result()
-            except (RuntimeError, requests.RequestException, ValueError):
-                pass
-    except FuturesTimeout:
-        pass
-    pool.shutdown(wait=False, cancel_futures=True)
-    return cache
+        f = datetime.strptime(_fecha_txt(fecha), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None, None
+    return (f - timedelta(days=RECIBO_PAGO_DIAS_ANTES)).isoformat(), (f + timedelta(days=RECIBO_PAGO_DIAS_DESPUES)).isoformat()
 
 
-def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveedores, rfc=None, id_proveedor_fijo=None, conexion=None, cache=None):
+def _mismo_monto(p, monto, moneda):
+    return p.get("moneda_mov") == moneda and abs(float(p.get("Total") or 0) - float(monto or 0)) < 0.5
+
+
+def cotejar_recibo_pago(monto, moneda, proveedor, fecha, nombre_archivo, proveedores, rfc=None,
+                        id_proveedor_fijo=None, conexion=None, pagos_periodo=None):
     """Busca a qué pago de CargoLink corresponde un recibo. Regresa
-    (candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido).
+    (candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido, origen).
 
-    - Proveedor: por RFC y nombre (ver proveedores_recibo).
-    - Pago: misma moneda, diferencia < 0.50 y sin comprobante, dentro de
-      7 días antes / 30 días después de la fecha del recibo.
-    - Si no hay ninguno, el recibo se queda 'esperando registro' y se
-      vuelve a buscar con el botón de reintento.
-    `cache` = resultado de precargar_pagos_cargolink (lo que falte se consulta)."""
+    1. Por proveedor (RFC / nombre): mismo monto y moneda, sin comprobante,
+       de 7 días antes a 30 días después → origen 'proveedor' (confiable,
+       entra al botón de adjuntar en bloque).
+    2. Si el proveedor no se reconoce (apodos en nóminas, nombres
+       distintos) o no hay coincidencia con él: se busca en TODOS los pagos
+       del periodo por monto + moneda + fecha → origen 'fecha_monto' (es una
+       propuesta: se confirma uno por uno).
+    `pagos_periodo` = descargar_pagos_cargolink(...) ya hecho; si no se da,
+    se consulta lo necesario."""
     candidatos_proveedor, ids = proveedores_recibo(proveedor, nombre_archivo, proveedores, rfc, id_proveedor_fijo)
-    if not ids:
-        return candidatos_proveedor, None, [], None
+    desde, hasta = ventana_recibo(fecha)
+    if conexion is None:
+        conexion = list(_conectar_pagos_cargolink())
 
-    fecha_txt = _fecha_txt(fecha)
-    elegido, pagos_elegido, id_pago = ids[0], [], None
+    def en_ventana(p):
+        f = (p.get("Fecha") or "")[:10]
+        return not desde or desde <= f <= hasta
+
+    elegido, pagos_elegido = (ids[0] if ids else None), []
     for i, id_prov in enumerate(ids):
-        if cache is not None and (id_prov, fecha_txt) in cache:
-            pagos = cache[(id_prov, fecha_txt)]
+        if pagos_periodo is not None:
+            pagos = [p for p in pagos_periodo if str(p.get("id_proveedor")) == str(id_prov) and en_ventana(p)]
         else:
-            if conexion is None:
-                conexion = list(_conectar_pagos_cargolink())
             pagos = buscar_pagos_proveedor_cargolink(
-                id_prov, fecha_txt, dias_ventana=RECIBO_PAGO_DIAS_ANTES, dias_despues=RECIBO_PAGO_DIAS_DESPUES, conexion=conexion
+                id_prov, _fecha_txt(fecha), dias_ventana=RECIBO_PAGO_DIAS_ANTES, dias_despues=RECIBO_PAGO_DIAS_DESPUES, conexion=conexion
             )
-        coincidencias = [
-            p for p in pagos
-            if p.get("moneda_mov") == moneda and abs(float(p.get("Total") or 0) - float(monto or 0)) < 0.5 and not p.get("url_pago")
-        ]
+        coincidencias = [p for p in pagos if _mismo_monto(p, monto, moneda) and not p.get("url_pago")]
         if i == 0 or coincidencias or (pagos and not pagos_elegido):
             elegido, pagos_elegido = id_prov, pagos
-            id_pago = coincidencias[0]["Id"] if len(coincidencias) == 1 else None
+        if len(coincidencias) == 1:
+            return candidatos_proveedor, id_prov, pagos, coincidencias[0]["Id"], "proveedor"
         if coincidencias:
-            break
-    return candidatos_proveedor, elegido, pagos_elegido, id_pago
+            break  # varias del mismo monto: que el usuario elija
+
+    # Respaldo: cualquier pago del periodo con el mismo monto y moneda.
+    if pagos_periodo is None and desde:
+        pagos_periodo, _ = descargar_pagos_cargolink(desde, hasta, conexion, presupuesto_segundos=25)
+    if not pagos_periodo:
+        return candidatos_proveedor, elegido, pagos_elegido, None, None
+    try:
+        f0 = datetime.strptime(_fecha_txt(fecha), "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        f0 = None
+
+    def distancia(p):
+        try:
+            return abs((datetime.strptime(p["Fecha"][:10], "%Y-%m-%d").date() - f0).days) if f0 else 0
+        except (KeyError, ValueError):
+            return 999
+
+    mismos = sorted(
+        (p for p in pagos_periodo if _mismo_monto(p, monto, moneda) and en_ventana(p)),
+        key=lambda p: (bool(p.get("url_pago")), distancia(p)),
+    )[:8]
+    if not mismos:
+        return candidatos_proveedor, elegido, pagos_elegido, None, None
+    libres = [p for p in mismos if not p.get("url_pago")]
+    # Se propone solo si hay UN pago libre con ese monto, o si el más cercano
+    # cae el mismo día del recibo y el siguiente no.
+    propuesto = None
+    if len(libres) == 1 or (len(libres) > 1 and distancia(libres[0]) == 0 and distancia(libres[1]) > 0):
+        propuesto = libres[0]
+    if propuesto:
+        return candidatos_proveedor, str(propuesto.get("id_proveedor") or "0"), mismos, propuesto["Id"], "fecha_monto"
+    return candidatos_proveedor, elegido, mismos, None, "fecha_monto"
 
 
 def descargar_concentrado_cobros_cargolink(fecha_ini, fecha_fin):
@@ -6661,6 +6733,7 @@ def administracion_recibos_pago():
 
         procesados, con_error = 0, 0
         conexion = None
+        pagos_por_ventana = {}
         for archivo in archivos:
             nombre = archivo.filename
             extension = nombre.rsplit(".", 1)[-1].lower() if "." in nombre else ""
@@ -6674,14 +6747,19 @@ def administracion_recibos_pago():
             try:
                 extraido = extraer_datos_recibo_ia(nombre, contenido, tipo_mime)
                 if es_traspaso_propio(extraido["proveedor"], nombre):
-                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido = [], None, [], None
+                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido, origen = [], None, [], None, None
                     estatus = "traspaso"
                 else:
                     if conexion is None:
                         conexion = list(_conectar_pagos_cargolink())
-                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido = cotejar_recibo_pago(
+                    # Todos los pagos del periodo se bajan una sola vez por
+                    # ventana (los recibos de una subida suelen ser del mismo día).
+                    ventana = ventana_recibo(extraido["fecha"])
+                    if ventana[0] and ventana not in pagos_por_ventana:
+                        pagos_por_ventana[ventana] = descargar_pagos_cargolink(ventana[0], ventana[1], conexion, presupuesto_segundos=25)[0]
+                    candidatos_proveedor, id_proveedor_elegido, candidatos_pago, id_pago_elegido, origen = cotejar_recibo_pago(
                         extraido["monto"], extraido["moneda"], extraido["proveedor"], extraido["fecha"], nombre,
-                        proveedores, rfc=extraido["rfc"], conexion=conexion,
+                        proveedores, rfc=extraido["rfc"], conexion=conexion, pagos_periodo=pagos_por_ventana.get(ventana),
                     )
                     estatus = "pendiente"
                     if id_pago_elegido and db.execute(
@@ -6695,13 +6773,13 @@ def administracion_recibos_pago():
                         (nombre_archivo, contenido_archivo, tipo_mime, monto_extraido, moneda_extraida,
                          proveedor_extraido, fecha_extraida, candidatos_proveedor, candidatos_pago,
                          id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id,
-                         rfc_extraido, referencia_extraida)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         rfc_extraido, referencia_extraida, origen_coincidencia)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     nombre, contenido, tipo_mime, extraido["monto"], extraido["moneda"],
                     extraido["proveedor"], extraido["fecha"], json.dumps(candidatos_proveedor),
                     json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido, estatus,
-                    session.get("usuario_id"), extraido["rfc"], extraido["referencia"],
+                    session.get("usuario_id"), extraido["rfc"], extraido["referencia"], origen,
                 ))
                 db.commit()
                 procesados += 1
@@ -6724,23 +6802,40 @@ def administracion_recibos_pago():
     recibos = db.execute("""
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
                candidatos_proveedor, candidatos_pago, id_proveedor_elegido, id_pago_elegido, estatus, mensaje, creado_en,
-               rfc_extraido, referencia_extraida
+               rfc_extraido, referencia_extraida, origen_coincidencia
         FROM recibos_pago_procesados ORDER BY creado_en DESC LIMIT 200
     """).fetchall()
     # Resumen sobre TODOS los recibos (no solo los que caben en la tabla).
-    resumen = {k: {"n": 0, "montos": {}} for k in ("listo", "espera", "traspaso", "adjuntado")}
+    resumen = {k: {"n": 0, "montos": {}} for k in ("listo", "propuesto", "espera", "traspaso", "adjuntado")}
     for f in db.execute("""
-        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL THEN 'listo'
-                    WHEN estatus = 'pendiente' THEN 'espera' ELSE estatus END AS grupo,
+        SELECT CASE WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL AND origen_coincidencia = 'fecha_monto' THEN 'propuesto'
+                    WHEN estatus = 'pendiente' AND id_pago_elegido IS NOT NULL THEN 'listo'
+                    WHEN estatus = 'pendiente' THEN 'espera'
+                    WHEN estatus = 'conciliado' THEN 'adjuntado' ELSE estatus END AS grupo,
                moneda_extraida AS moneda, count(*) AS n, coalesce(sum(monto_extraido), 0) AS total
         FROM recibos_pago_procesados
-        WHERE estatus IN ('pendiente', 'traspaso', 'adjuntado')
+        WHERE estatus IN ('pendiente', 'traspaso', 'adjuntado', 'conciliado')
         GROUP BY 1, 2 ORDER BY 2
     """).fetchall():
         grupo = resumen[f["grupo"]]
         grupo["n"] += f["n"]
         if f["moneda"]:
             grupo["montos"][f["moneda"]] = float(f["total"])
+    # Pendientes cuyo pago ya tiene comprobante en CargoLink (para el botón).
+    ya_conciliables = db.execute("""
+        SELECT id, nombre_archivo, monto_extraido, moneda_extraida, fecha_extraida, candidatos_pago
+        FROM recibos_pago_procesados
+        WHERE estatus = 'pendiente' AND id_pago_elegido IS NULL AND monto_extraido IS NOT NULL
+    """).fetchall()
+    resumen["conciliables"] = 0
+    for r in ya_conciliables:
+        if pago_ya_con_comprobante(r):
+            resumen["conciliables"] += 1
+            resumen["espera"]["n"] -= 1
+            mon = r["moneda_extraida"]
+            if mon in resumen["espera"]["montos"]:
+                resumen["espera"]["montos"][mon] -= float(r["monto_extraido"] or 0)
+    resumen["espera"]["montos"] = {m: t for m, t in resumen["espera"]["montos"].items() if abs(t) >= 0.01}
     db.close()
     return render_template("administracion_recibos_pago.html", recibos=recibos, resumen=resumen)
 
@@ -6756,13 +6851,20 @@ def administracion_recibos_pago_reasignar_proveedor(recibo_id):
         return redirect(url_for("administracion_recibos_pago"))
 
     try:
-        _, _, candidatos_pago, id_pago_elegido = cotejar_recibo_pago(
-            recibo["monto_extraido"], recibo["moneda_extraida"], None, recibo["fecha_extraida"], "",
-            None, id_proveedor_fijo=id_proveedor,
+        conexion = list(_conectar_pagos_cargolink())
+        candidatos_pago = buscar_pagos_proveedor_cargolink(
+            id_proveedor, _fecha_txt(recibo["fecha_extraida"]), dias_ventana=RECIBO_PAGO_DIAS_ANTES,
+            dias_despues=RECIBO_PAGO_DIAS_DESPUES, conexion=conexion,
         )
+        coincidencias = [
+            p for p in candidatos_pago
+            if _mismo_monto(p, recibo["monto_extraido"], recibo["moneda_extraida"]) and not p.get("url_pago")
+        ]
+        id_pago_elegido = coincidencias[0]["Id"] if len(coincidencias) == 1 else None
         db.execute("""
             UPDATE recibos_pago_procesados
-            SET id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s
+            SET id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s,
+                origen_coincidencia = 'proveedor', proveedor_manual = true, mensaje = NULL
             WHERE id = %s
         """, (id_proveedor, json.dumps(candidatos_pago), id_pago_elegido, recibo_id))
         db.commit()
@@ -6816,10 +6918,10 @@ def administracion_recibos_pago_volver_a_buscar():
     # aunque CargoLink no alcance a responder todo en un solo intento.
     pendientes = db.execute("""
         SELECT id, nombre_archivo, monto_extraido, moneda_extraida, proveedor_extraido, fecha_extraida,
-               rfc_extraido, id_proveedor_elegido
+               rfc_extraido, id_proveedor_elegido, proveedor_manual
         FROM recibos_pago_procesados
         WHERE estatus = 'pendiente' AND monto_extraido IS NOT NULL
-        ORDER BY revisado_en ASC NULLS FIRST, creado_en ASC LIMIT 200
+        ORDER BY creado_en ASC LIMIT 300
     """).fetchall()
     # Un pago de CargoLink solo puede llevar un comprobante: si otro recibo
     # (p.ej. el mismo PDF subido dos veces) ya lo tiene, no se vuelve a proponer.
@@ -6829,33 +6931,39 @@ def administracion_recibos_pago_volver_a_buscar():
             WHERE id_pago_elegido IS NOT NULL AND estatus = 'adjuntado'
         """).fetchall()
     }
-    encontrados, traspasos, duplicados, sin_respuesta = 0, 0, 0, 0
+    exactos, propuestos, traspasos, duplicados = 0, 0, 0, 0
     try:
         proveedores = obtener_proveedores_cargolink() if pendientes else []
         conexion = list(_conectar_pagos_cargolink()) if pendientes else None
 
-        por_revisar, llaves = [], []
+        por_revisar = []
         for r in pendientes:
             if es_traspaso_propio(r["proveedor_extraido"], r["nombre_archivo"]):
                 db.execute("UPDATE recibos_pago_procesados SET estatus = 'traspaso', id_pago_elegido = NULL WHERE id = %s", (r["id"],))
                 traspasos += 1
-                continue
-            _, ids = proveedores_recibo(r["proveedor_extraido"], r["nombre_archivo"], proveedores, r["rfc_extraido"], r["id_proveedor_elegido"])
-            llaves += [(i, _fecha_txt(r["fecha_extraida"])) for i in ids]
-            por_revisar.append(r)
-        cache = precargar_pagos_cargolink(llaves, conexion)
+            else:
+                por_revisar.append(r)
+
+        # Se bajan TODOS los pagos del periodo una sola vez (en paralelo) y
+        # el cotejo se hace aquí — mucho más rápido que proveedor por proveedor.
+        ventanas = [ventana_recibo(r["fecha_extraida"]) for r in por_revisar]
+        ventanas = [v for v in ventanas if v[0]]
+        pagos_periodo, completo = ([], True)
+        if ventanas:
+            pagos_periodo, completo = descargar_pagos_cargolink(
+                min(v[0] for v in ventanas), max(v[1] for v in ventanas), conexion, presupuesto_segundos=40
+            )
 
         cambios = []
         for r in por_revisar:
-            _, ids = proveedores_recibo(r["proveedor_extraido"], r["nombre_archivo"], proveedores, r["rfc_extraido"], r["id_proveedor_elegido"])
-            if any((i, _fecha_txt(r["fecha_extraida"])) not in cache for i in ids):
-                sin_respuesta += 1
-                continue  # CargoLink no alcanzó a responder: se queda como estaba
-            candidatos_proveedor, id_prov, candidatos_pago, id_pago = cotejar_recibo_pago(
+            candidatos_proveedor, id_prov, candidatos_pago, id_pago, origen = cotejar_recibo_pago(
                 r["monto_extraido"], r["moneda_extraida"], r["proveedor_extraido"], r["fecha_extraida"],
-                r["nombre_archivo"], proveedores, rfc=r["rfc_extraido"], id_proveedor_fijo=r["id_proveedor_elegido"],
-                cache=cache,
+                r["nombre_archivo"], proveedores, rfc=r["rfc_extraido"],
+                id_proveedor_fijo=r["id_proveedor_elegido"] if r["proveedor_manual"] else None,
+                conexion=conexion, pagos_periodo=pagos_periodo,
             )
+            if not id_pago and not completo:
+                continue  # faltaron páginas de CargoLink: no se marca como "no encontrado"
             mensaje = None
             if id_pago and id_pago in usados:
                 mensaje = f"Posible duplicado: el pago {id_pago} ya está ligado al recibo #{usados[id_pago]}."
@@ -6863,28 +6971,84 @@ def administracion_recibos_pago_volver_a_buscar():
                 duplicados += 1
             elif id_pago:
                 usados[id_pago] = r["id"]
-                encontrados += 1
-            cambios.append((json.dumps(candidatos_proveedor), id_prov, json.dumps(candidatos_pago), id_pago, mensaje, r["id"]))
+                if origen == "proveedor":
+                    exactos += 1
+                else:
+                    propuestos += 1
+            cambios.append((json.dumps(candidatos_proveedor), id_prov, json.dumps(candidatos_pago), id_pago, mensaje, origen, r["id"]))
         if cambios:
             with db.cursor() as cur:
                 cur.executemany("""
                     UPDATE recibos_pago_procesados
                     SET candidatos_proveedor = %s, id_proveedor_elegido = %s, candidatos_pago = %s, id_pago_elegido = %s, mensaje = %s,
-                        revisado_en = now()
+                        origen_coincidencia = %s, revisado_en = now()
                     WHERE id = %s
                 """, cambios)
         db.commit()
-        msg = f"Revisé {len(pendientes)} recibo(s): {encontrados} ya tienen su pago en CargoLink."
+        msg = (f"Revisé {len(pendientes)} recibo(s) contra {len(pagos_periodo)} pagos de CargoLink: "
+               f"{exactos} coinciden por proveedor y {propuestos} propuestos por fecha y monto.")
         if duplicados:
             msg += f" {duplicados} parecen duplicados (mismo pago que otro recibo)."
         if traspasos:
             msg += f" {traspasos} marcado(s) como traspaso entre cuentas propias."
-        if sin_respuesta:
-            msg += f" {sin_respuesta} sin respuesta de CargoLink a tiempo: presiona otra vez."
+        if not completo:
+            msg += " CargoLink no respondió todas las páginas a tiempo: presiona otra vez para completar."
         flash(msg)
     except RuntimeError as e:
         db.commit()
         flash(f"No se pudo consultar CargoLink: {e}")
+    db.close()
+    return redirect(url_for("administracion_recibos_pago"))
+
+
+def pago_ya_con_comprobante(recibo, usados=None):
+    """Entre los pagos candidatos guardados de un recibo, el de mismo monto
+    y moneda que YA tiene comprobante en CargoLink (el más cercano a la
+    fecha). Si existe, ese recibo muy probablemente ya se adjuntó a mano."""
+    usados = usados or {}
+    fecha = _fecha_txt(recibo["fecha_extraida"]) or ""
+    opciones = [
+        p for p in (recibo["candidatos_pago"] or [])
+        if p.get("url_pago") and _mismo_monto(p, recibo["monto_extraido"], recibo["moneda_extraida"])
+        and usados.get(p["Id"], recibo["nombre_archivo"]) == recibo["nombre_archivo"]
+    ]
+    def distancia(p):
+        try:
+            return abs((datetime.strptime(p["Fecha"][:10], "%Y-%m-%d").date() - datetime.strptime(fecha, "%Y-%m-%d").date()).days)
+        except ValueError:
+            return 999
+    return min(opciones, key=distancia) if opciones else None
+
+
+@app.route("/administracion/recibos-pago/marcar-conciliados", methods=["POST"])
+@administracion_o_admin_required
+def administracion_recibos_pago_marcar_conciliados():
+    """Marca como 'conciliado' los recibos pendientes cuyo pago (mismo monto
+    y moneda) ya tiene comprobante en CargoLink. Solo cambia el estatus en
+    esta app — no toca CargoLink. Cada pago se usa para un solo recibo
+    (salvo copias del mismo archivo)."""
+    db = get_db()
+    pendientes = db.execute("""
+        SELECT id, nombre_archivo, monto_extraido, moneda_extraida, fecha_extraida, candidatos_pago
+        FROM recibos_pago_procesados
+        WHERE estatus = 'pendiente' AND id_pago_elegido IS NULL AND monto_extraido IS NOT NULL
+        ORDER BY creado_en ASC
+    """).fetchall()
+    usados, cambios = {}, []
+    for r in pendientes:
+        p = pago_ya_con_comprobante(r, usados)
+        if p:
+            usados[p["Id"]] = r["nombre_archivo"]
+            cambios.append((p["Id"], f"Ya tenía comprobante en CargoLink: pago {p['Id']} del {p['Fecha'][:10]} ({p.get('Nombre')}).", r["id"]))
+    if cambios:
+        with db.cursor() as cur:
+            cur.executemany("""
+                UPDATE recibos_pago_procesados
+                SET estatus = 'conciliado', id_pago_elegido = %s, mensaje = %s, procesado_en = now()
+                WHERE id = %s
+            """, cambios)
+        db.commit()
+    flash(f"{len(cambios)} recibo(s) marcados como ya conciliados en CargoLink.")
     db.close()
     return redirect(url_for("administracion_recibos_pago"))
 
@@ -6898,7 +7062,8 @@ def administracion_recibos_pago_adjuntar_coincidencias():
     db = get_db()
     listos = db.execute("""
         SELECT id, nombre_archivo, contenido_archivo, tipo_mime, id_pago_elegido
-        FROM recibos_pago_procesados WHERE estatus = 'pendiente' AND id_pago_elegido IS NOT NULL
+        FROM recibos_pago_procesados
+        WHERE estatus = 'pendiente' AND id_pago_elegido IS NOT NULL AND coalesce(origen_coincidencia, 'proveedor') = 'proveedor'
     """).fetchall()
     ok, fallas, omitidos = 0, 0, 0
     ya_adjuntados = {
