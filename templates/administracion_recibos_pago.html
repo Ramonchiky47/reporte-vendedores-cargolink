@@ -60,6 +60,18 @@
   .rp-filtros { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: .2rem 0 .7rem; }
   .rp-filtros input[type=search] { flex: 1; min-width: 220px; padding: .45rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; }
   .rp-filtro-activo { font-size: .82rem; }
+  .rp-archivo { color: inherit; font-weight: 600; text-decoration: none; border-bottom: 1px dashed #93c5fd; }
+  .rp-archivo:hover { color: #0369a1; }
+  .rp-btn-ver { display: inline-flex; align-items: center; gap: .3rem; margin: .3rem 0 .15rem; padding: .3rem .65rem; border: 1px solid #0369a1; border-radius: 7px; background: #f0f9ff; color: #0369a1; font-size: .76rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+  .rp-btn-ver:hover { background: #0369a1; color: #fff; }
+  .rp-botones-pago { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  .rp-visor { position: fixed; inset: 0; background: rgba(17,24,39,.6); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .rp-visor[hidden] { display: none; }
+  .rp-visor-caja { background: #fff; border-radius: 12px; width: min(1000px, 100%); height: min(92vh, 1100px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .rp-visor-barra { display: flex; align-items: center; gap: .6rem; padding: .6rem .9rem; border-bottom: 1px solid var(--border); font-size: .85rem; font-weight: 700; }
+  .rp-visor-barra .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-visor-barra a, .rp-visor-barra button { font-size: .78rem; }
+  .rp-visor iframe { flex: 1; border: 0; width: 100%; background: #f3f4f6; }
   .rp-ver { font-size: .76rem; font-weight: 600; text-decoration: none; color: #0369a1; }
   .rp-ver:hover { text-decoration: underline; }
   .rp-ficha { border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 8px; padding: .45rem .6rem; font-size: .74rem; line-height: 1.45; max-width: 420px; }
@@ -194,7 +206,9 @@
         {% endfor %}
       {% endif %}
       <tr data-cat="{{ r.categoria }}" data-texto="{{ [r.nombre_archivo, r.proveedor_extraido, r.referencia_extraida, r.moneda_extraida, '%.2f' % (r.monto_extraido or 0), r.id_pago_elegido] | select | join(' ') | lower }}">
-        <td>{{ r.nombre_archivo }}<br><a class="rp-ver" href="{{ url_for('administracion_recibos_pago_archivo', recibo_id=r.id) }}" target="_blank" rel="noopener">📄 Ver recibo</a><br><small class="hint">Subido {{ r.creado_en | hora_mx("%d/%m/%Y %H:%M") }} (hora centro)</small>
+        {% set url_recibo = url_for('administracion_recibos_pago_archivo', recibo_id=r.id) %}
+        <td><a class="rp-archivo" href="{{ url_recibo }}" target="_blank" rel="noopener" data-visor="{{ url_recibo }}" data-titulo="{{ r.nombre_archivo }}">{{ r.nombre_archivo }}</a>
+          <br><a class="rp-btn-ver" href="{{ url_recibo }}" target="_blank" rel="noopener" data-visor="{{ url_recibo }}" data-titulo="{{ r.nombre_archivo }}">📄 Abrir recibo</a><br><small class="hint">Subido {{ r.creado_en | hora_mx("%d/%m/%Y %H:%M") }} (hora centro)</small>
           {% if r.dias is not none and r.categoria in ('recurrente', 'espera', 'sin_proveedor', 'propuesto', 'listo') %}<br><small class="rp-edad {{ 'viejo' if r.dias > 30 else '' }}">{{ r.dias }} día{{ '' if r.dias == 1 else 's' }} desde el pago</small>{% endif %}</td>
         <td>
           {% if r.monto_extraido is not none %}
@@ -236,7 +250,8 @@
             {% set pagos_disponibles = (r.candidatos_pago or []) | rejectattr('url_pago') | list %}
             {% if not pagos_disponibles and ns.con_comp %}
             <span class="rp-nota ok">El pago {{ ns.con_comp.Id }} ({{ ns.con_comp.Fecha | fecha_cargolink }} · {{ ns.con_comp.Nombre }}) con este monto <b>ya tiene comprobante</b> en CargoLink: probablemente ya se adjuntó. Puedes descartar este recibo.</span>
-            <br><a class="rp-ver" href="{{ url_for('administracion_recibos_pago_comprobante_cargolink', ruta=ns.con_comp.url_pago) }}" target="_blank" rel="noopener">📎 Ver comprobante que tiene en CargoLink</a>
+            {% set url_comp = url_for('administracion_recibos_pago_comprobante_cargolink', ruta=ns.con_comp.url_pago) %}
+            <br><a class="rp-btn-ver" href="{{ url_comp }}" target="_blank" rel="noopener" data-visor="{{ url_comp }}" data-titulo="Comprobante en CargoLink · pago {{ ns.con_comp.Id }}">📎 Ver comprobante en CargoLink</a>
             {% elif not pagos_disponibles and not r.id_proveedor_elegido %}
             <span class="rp-nota espera">No reconocí al proveedor y no hay ningún pago en CargoLink con este monto y moneda en esas fechas. Elige el proveedor o espera a que se capture el pago.</span>
             {% elif not pagos_disponibles %}
@@ -274,7 +289,10 @@
                 <div class="rp-alerta">⚠ Proveedor distinto al del recibo ({{ prov_recibo.razonsocial }})</div>{% endif %}
               </div>
               {% endfor %}
-              <button type="submit" class="btn small" onclick="return confirm('¿Adjuntar este recibo al pago seleccionado en CargoLink? Esta acción modifica un registro real.');">Confirmar y adjuntar</button>
+              <div class="rp-botones-pago">
+                <a class="rp-btn-ver" href="{{ url_recibo }}" target="_blank" rel="noopener" data-visor="{{ url_recibo }}" data-titulo="{{ r.nombre_archivo }}">📄 Abrir recibo</a>
+                <button type="submit" class="btn small" onclick="return confirm('¿Adjuntar este recibo al pago seleccionado en CargoLink? Esta acción modifica un registro real.');">Confirmar y adjuntar</button>
+              </div>
             </form>
             {% endif %}
           {% elif r.id_pago_elegido %}
@@ -316,6 +334,35 @@
     </tbody>
   </table>
   </div>
+  <div class="rp-visor" id="rp-visor" hidden>
+    <div class="rp-visor-caja" role="dialog" aria-modal="true">
+      <div class="rp-visor-barra">
+        <span class="t" id="rp-visor-titulo">Recibo</span>
+        <a class="btn small secondary" id="rp-visor-pestana" href="#" target="_blank" rel="noopener">Abrir en otra pestaña</a>
+        <button type="button" class="btn small" id="rp-visor-cerrar">Cerrar ✕</button>
+      </div>
+      <iframe id="rp-visor-frame" title="Recibo"></iframe>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var visor = document.getElementById('rp-visor');
+      var marco = document.getElementById('rp-visor-frame');
+      function cerrar() { visor.hidden = true; marco.src = 'about:blank'; }
+      document.addEventListener('click', function (ev) {
+        var a = ev.target.closest && ev.target.closest('[data-visor]');
+        if (!a || ev.metaKey || ev.ctrlKey || ev.shiftKey) return;  // con Cmd/Ctrl abre pestaña normal
+        ev.preventDefault();
+        marco.src = a.getAttribute('data-visor');
+        document.getElementById('rp-visor-titulo').textContent = a.getAttribute('data-titulo') || 'Recibo';
+        document.getElementById('rp-visor-pestana').href = a.getAttribute('data-visor');
+        visor.hidden = false;
+      });
+      document.getElementById('rp-visor-cerrar').addEventListener('click', cerrar);
+      visor.addEventListener('click', function (ev) { if (ev.target === visor) cerrar(); });
+      document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !visor.hidden) cerrar(); });
+    })();
+  </script>
   <script>
     (function () {
       var tabla = document.getElementById('rp-tabla');

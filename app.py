@@ -2932,6 +2932,8 @@ def agregar_cabeceras_seguridad(resp):
         # propio; sin esto el navegador lo bloquea y el visor sale en blanco.
         "transporte_terrestre_pdf", "transporte_nacional_pdf", "crm_cotizacion_pdf",
         "transporte_nacional_reenviar", "crm_contacto_nuevo",
+        # Visor de recibos de pago (Administración) y comprobante de CargoLink.
+        "administracion_recibos_pago_archivo", "administracion_recibos_pago_comprobante_cargolink",
     ):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
         resp.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
