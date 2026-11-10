@@ -445,6 +445,11 @@ def init_db():
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS origen_coincidencia text")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS proveedor_manual boolean NOT NULL DEFAULT false")
     db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS monto_verificado boolean")
+    # Huella del archivo para no permitir subir dos veces el mismo recibo
+    # (aunque lo renombren).
+    db.execute("ALTER TABLE recibos_pago_procesados ADD COLUMN IF NOT EXISTS hash_archivo text")
+    db.execute("UPDATE recibos_pago_procesados SET hash_archivo = encode(sha256(contenido_archivo), 'hex') WHERE hash_archivo IS NULL")
+    db.execute("CREATE INDEX IF NOT EXISTS recibos_pago_hash_idx ON recibos_pago_procesados (hash_archivo)")
     db.execute("""
         CREATE TABLE IF NOT EXISTS antiguedad_saldos_egresos (
             id bigint generated always as identity primary key,
@@ -6834,7 +6839,8 @@ def administracion_recibos_pago():
             db.close()
             return redirect(url_for("administracion_recibos_pago"))
 
-        procesados, con_error = 0, 0
+        procesados, con_error, duplicados = 0, 0, 0
+        huellas_lote = set()
         conexion = None
         pagos_por_ventana = {}
         for archivo in archivos:
@@ -6846,6 +6852,21 @@ def administracion_recibos_pago():
                 continue
             contenido = archivo.read()
             tipo_mime = TIPOS_MIME_RECIBO[extension]
+            huella = hashlib.sha256(contenido).hexdigest()
+            if huella in huellas_lote:
+                flash(f"{nombre}: viene repetido en esta misma carga; se subió solo una vez.")
+                duplicados += 1
+                continue
+            previo = db.execute("""
+                SELECT id, nombre_archivo, estatus, creado_en FROM recibos_pago_procesados
+                WHERE hash_archivo = %s ORDER BY id LIMIT 1
+            """, (huella,)).fetchone()
+            if previo:
+                flash(f"{nombre}: este archivo ya se había subido el {hora_mx(previo['creado_en'], '%d/%m/%Y %H:%M')} "
+                      f"como «{previo['nombre_archivo']}» (recibo #{previo['id']}, {previo['estatus']}). No se volvió a subir.")
+                duplicados += 1
+                continue
+            huellas_lote.add(huella)
 
             try:
                 extraido = extraer_datos_recibo_ia(nombre, contenido, tipo_mime)
@@ -6885,27 +6906,29 @@ def administracion_recibos_pago():
                         (nombre_archivo, contenido_archivo, tipo_mime, monto_extraido, moneda_extraida,
                          proveedor_extraido, fecha_extraida, candidatos_proveedor, candidatos_pago,
                          id_proveedor_elegido, id_pago_elegido, estatus, creado_por_user_id,
-                         rfc_extraido, referencia_extraida, origen_coincidencia, mensaje, monto_verificado)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         rfc_extraido, referencia_extraida, origen_coincidencia, mensaje, monto_verificado, hash_archivo)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     nombre, contenido, tipo_mime, extraido["monto"], extraido["moneda"],
                     extraido["proveedor"], extraido["fecha"], json.dumps(candidatos_proveedor),
                     json.dumps(candidatos_pago), id_proveedor_elegido, id_pago_elegido, estatus,
                     session.get("usuario_id"), extraido["rfc"], extraido["referencia"], origen, mensaje_recibo,
-                    verificar_monto_en_pdf(contenido, tipo_mime, extraido["monto"]),
+                    verificar_monto_en_pdf(contenido, tipo_mime, extraido["monto"]), huella,
                 ))
                 db.commit()
                 procesados += 1
             except RuntimeError as e:
                 db.execute("""
                     INSERT INTO recibos_pago_procesados
-                        (nombre_archivo, contenido_archivo, tipo_mime, estatus, mensaje, creado_por_user_id)
-                    VALUES (%s, %s, %s, 'error', %s, %s)
-                """, (nombre, contenido, tipo_mime, str(e), session.get("usuario_id")))
+                        (nombre_archivo, contenido_archivo, tipo_mime, estatus, mensaje, creado_por_user_id, hash_archivo)
+                    VALUES (%s, %s, %s, 'error', %s, %s, %s)
+                """, (nombre, contenido, tipo_mime, str(e), session.get("usuario_id"), huella))
                 db.commit()
                 con_error += 1
 
         mensaje = f"{procesados} recibo(s) procesado(s)."
+        if duplicados:
+            mensaje += f" {duplicados} no se subieron por estar repetidos."
         if con_error:
             mensaje += f" {con_error} con error."
         flash(mensaje)
@@ -6938,6 +6961,18 @@ CATEGORIAS_RECIBO = [
     ("hecho", "Adjuntados / conciliados", "Terminados."),
 ]
 CATEGORIAS_PENDIENTES = ("listo", "propuesto", "recurrente", "espera", "sin_proveedor")
+
+
+def recibo_ya_adjuntado_mismo_archivo(db, recibo_id):
+    """Si OTRO recibo con el mismo archivo (misma huella) ya está adjuntado
+    o conciliado, lo regresa (id, estatus, id_pago_elegido); si no, None."""
+    return db.execute("""
+        SELECT o.id, o.estatus, o.id_pago_elegido
+        FROM recibos_pago_procesados r
+        JOIN recibos_pago_procesados o ON o.hash_archivo = r.hash_archivo AND o.id <> r.id
+        WHERE r.id = %s AND o.estatus IN ('adjuntado', 'conciliado')
+        ORDER BY o.id LIMIT 1
+    """, (recibo_id,)).fetchone()
 
 
 def categoria_recibo(r):
@@ -7053,6 +7088,14 @@ def administracion_recibos_pago_confirmar(recibo_id):
         flash("Elige a qué pago de CargoLink corresponde este recibo antes de confirmar.")
         db.close()
         return redirect(url_for("administracion_recibos_pago"))
+    otro = recibo_ya_adjuntado_mismo_archivo(db, recibo_id)
+    if otro:
+        flash(f"No se adjuntó: este mismo archivo ya está {otro['estatus']} en el pago {otro['id_pago_elegido']} (recibo #{otro['id']}).")
+        db.execute("UPDATE recibos_pago_procesados SET mensaje = %s, id_pago_elegido = NULL WHERE id = %s",
+                   (f"Posible duplicado: este mismo archivo ya está {otro['estatus']} en el pago {otro['id_pago_elegido']} (recibo #{otro['id']}).", recibo_id))
+        db.commit()
+        db.close()
+        return redirect(url_for("administracion_recibos_pago"))
 
     try:
         # Una suma de pagos llega como "id1,id2,...": el recibo se adjunta a cada uno.
@@ -7099,6 +7142,16 @@ def administracion_recibos_pago_volver_a_buscar():
         """).fetchall()
     }
     exactos, propuestos, aproximados, traspasos, duplicados = 0, 0, 0, 0, 0
+    # Copias pendientes de un archivo que ya se adjuntó/concilió en otro recibo.
+    mismo_archivo = {
+        f["id_pendiente"]: f for f in db.execute("""
+            SELECT DISTINCT ON (r.id) r.id AS id_pendiente, o.id, o.estatus, o.id_pago_elegido
+            FROM recibos_pago_procesados r
+            JOIN recibos_pago_procesados o ON o.hash_archivo = r.hash_archivo AND o.id <> r.id
+            WHERE r.estatus = 'pendiente' AND o.estatus IN ('adjuntado', 'conciliado')
+            ORDER BY r.id, o.id
+        """).fetchall()
+    }
     try:
         proveedores = obtener_proveedores_cargolink() if pendientes else []
         conexion = list(_conectar_pagos_cargolink()) if pendientes else None
@@ -7145,7 +7198,12 @@ def administracion_recibos_pago_volver_a_buscar():
                                f"{fecha_cargolink(previo['Fecha'])}. Falta capturar el de este periodo en CargoLink.")
             if r["monto_verificado"] is None and r["contenido_archivo"] is not None:
                 verificados.append((verificar_monto_en_pdf(r["contenido_archivo"], r["tipo_mime"], r["monto_extraido"]), r["id"]))
-            if id_pago and id_pago in usados:
+            if r["id"] in mismo_archivo:
+                otro = mismo_archivo[r["id"]]
+                mensaje = f"Posible duplicado: este mismo archivo ya está {otro['estatus']} en el pago {otro['id_pago_elegido']} (recibo #{otro['id']})."
+                id_pago = None
+                duplicados += 1
+            elif id_pago and id_pago in usados:
                 mensaje = f"Posible duplicado: el pago {id_pago} ya está ligado al recibo #{usados[id_pago]}."
                 id_pago = None
                 duplicados += 1
@@ -7174,7 +7232,7 @@ def administracion_recibos_pago_volver_a_buscar():
                f"{exactos} coinciden por proveedor, {propuestos} propuestos por fecha y monto"
                f" y {aproximados} por suma o monto aproximado.")
         if duplicados:
-            msg += f" {duplicados} parecen duplicados (mismo pago que otro recibo)."
+            msg += f" {duplicados} parecen duplicados (mismo archivo ya adjuntado o mismo pago que otro recibo)."
         if traspasos:
             msg += f" {traspasos} marcado(s) como traspaso entre cuentas propias."
         if not completo:
@@ -7258,6 +7316,15 @@ def administracion_recibos_pago_adjuntar_coincidencias():
         ).fetchall()
     }
     for r in listos:
+        otro = recibo_ya_adjuntado_mismo_archivo(db, r["id"])
+        if otro:
+            db.execute(
+                "UPDATE recibos_pago_procesados SET id_pago_elegido = NULL, mensaje = %s WHERE id = %s",
+                (f"Posible duplicado: este mismo archivo ya está {otro['estatus']} en el pago {otro['id_pago_elegido']} (recibo #{otro['id']}).", r["id"]),
+            )
+            db.commit()
+            omitidos += 1
+            continue
         if r["id_pago_elegido"] in ya_adjuntados:
             db.execute(
                 "UPDATE recibos_pago_procesados SET id_pago_elegido = NULL, mensaje = %s WHERE id = %s",
