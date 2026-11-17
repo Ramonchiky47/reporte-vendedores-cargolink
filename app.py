@@ -4245,7 +4245,22 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
     # el reporte de bookings que ya se guardó arriba, solo se avisa.
     mensaje_clientes = ""
     try:
-        clientes = descargar_reporte_clientes_cargolink()
+        clientes_crudos = descargar_reporte_clientes_cargolink()
+        # Sin folio (0 o vacío) no se puede guardar: folio es la llave. En
+        # CargoLink aparecen así registros que no son clientes reales (p.ej.
+        # personal dado de alta en bloque el 11/11/2026) o clientes recién
+        # creados que aún no tienen folio. Además, si un folio viniera
+        # repetido, Postgres rechaza TODO el lote ("ON CONFLICT DO UPDATE
+        # command cannot affect row a second time"): se deja una sola fila
+        # por folio (la última que manda CargoLink).
+        sin_folio = [c for c in clientes_crudos if str(c.get("folio") or "").strip() in ("", "0")]
+        por_folio = {}
+        for c in clientes_crudos:
+            folio = str(c.get("folio") or "").strip()
+            if folio not in ("", "0"):
+                por_folio[folio] = c
+        repetidos = len(clientes_crudos) - len(sin_folio) - len(por_folio)
+        clientes = list(por_folio.values())
         columnas_clientes = [
             "folio", "razon_social", "vendedor", "desarrollador",
             "tipo_cliente", "fecha_creacion", "cant_booking", "fecha_ultimo_booking",
@@ -4271,6 +4286,10 @@ def ejecutar_generacion_reporte(fecha_inicio, fecha_fin):
             )
         db.commit()
         mensaje_clientes = f" Reporte de clientes actualizado ({len(clientes)} clientes)."
+        if sin_folio:
+            mensaje_clientes += f" Se omitieron {len(sin_folio)} registro(s) de CargoLink sin folio (no son clientes identificables)."
+        if repetidos:
+            mensaje_clientes += f" {repetidos} folio(s) venían repetidos y se guardaron una sola vez."
     except Exception as e:
         db.rollback()
         mensaje_clientes = f" Aviso: el reporte de bookings sí se guardó, pero el reporte de clientes falló ({str(e)[:300]})."
