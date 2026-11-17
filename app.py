@@ -8706,7 +8706,8 @@ def construir_resultados_acumulado(
     meses_ordenados = sorted(meses_lista)
     db = get_db()
 
-    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0, "customer_facing_visit": 0, "virtual_meeting": 0, "calls": 0}
+    kpis = {"cotizaciones": 0, "ganadas": 0, "perdidas": 0, "bookings": 0, "venta": 0.0, "profit": 0.0, "clientes_nuevos": 0, "customer_facing_visit": 0, "virtual_meeting": 0, "calls": 0,
+            "ganadas_creadas_periodo": 0, "perdidas_creadas_periodo": 0}
     resumen_vendedor = {}
     ranking_desarrolladores_map = {}
     plazas_opciones = set()
@@ -8731,8 +8732,9 @@ def construir_resultados_acumulado(
             vendedores_permitidos=vendedores_permitidos, desarrolladores_permitidos=desarrolladores_permitidos,
         )
         k = datos_mes["kpis"]
-        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting", "calls"):
-            kpis[campo] += k[campo]
+        for campo in ("cotizaciones", "ganadas", "perdidas", "bookings", "venta", "profit", "clientes_nuevos", "customer_facing_visit", "virtual_meeting", "calls",
+                      "ganadas_creadas_periodo", "perdidas_creadas_periodo"):
+            kpis[campo] += k.get(campo, 0)
 
         for key, fila in datos_mes["resumen_vendedor"].items():
             acc = resumen_vendedor.setdefault(key, {

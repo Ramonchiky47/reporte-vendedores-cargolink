@@ -433,13 +433,13 @@
       <span class="ledger__label">Ganadas</span>
       <span class="ledger__value num">{{ kpis.ganadas }}</span>
       {{ delta(kpis.ganadas_delta, kpis.ganadas_anterior) }}
-      {% if kpis.ganadas %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se ganaron, no por cuándo se crearon">{{ kpis.ganadas_creadas_periodo }} creadas en el mes · {{ kpis.ganadas - kpis.ganadas_creadas_periodo }} de antes</span>{% endif %}
+      {% if kpis.ganadas and kpis.ganadas_creadas_periodo is defined %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se ganaron, no por cuándo se crearon">{{ kpis.ganadas_creadas_periodo | default(0) }} creadas en el mes · {{ kpis.ganadas - kpis.ganadas_creadas_periodo | default(0) }} de antes</span>{% endif %}
     </div>
     <div class="ledger__item">
       <span class="ledger__label">Perdidas</span>
       <span class="ledger__value num">{{ kpis.perdidas }}</span>
       {{ delta(kpis.perdidas_delta, kpis.perdidas_anterior, invertir=true) }}
-      {% if kpis.perdidas %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se marcaron perdidas, no por cuándo se crearon">{{ kpis.perdidas_creadas_periodo }} creadas en el mes · {{ kpis.perdidas - kpis.perdidas_creadas_periodo }} de antes</span>{% endif %}
+      {% if kpis.perdidas and kpis.perdidas_creadas_periodo is defined %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se marcaron perdidas, no por cuándo se crearon">{{ kpis.perdidas_creadas_periodo | default(0) }} creadas en el mes · {{ kpis.perdidas - kpis.perdidas_creadas_periodo | default(0) }} de antes</span>{% endif %}
     </div>
     <div class="ledger__item">
       <span class="ledger__label">Booking</span>
