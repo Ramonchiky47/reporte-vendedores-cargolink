@@ -402,7 +402,10 @@
         const vendedorNorm = normalizarTexto(vendedor);
         let visibles = 0, otroCriterio = 0, otrosCreadores = 0;
         filas.forEach((fila) => {
-          const coincideTexto = !termino || fila.textContent.toLowerCase().includes(termino);
+          // El texto de la fila se lee una sola vez (leer textContent de 2,500
+          // filas en cada tecla/fecha era lo que hacía lento el filtro).
+          if (termino && fila._texto === undefined) fila._texto = fila.textContent.toLowerCase();
+          const coincideTexto = !termino || fila._texto.includes(termino);
           const coincideEstatus = estatusActivos.has(fila.dataset.estatus);
           const coincidePlaza = !plaza || fila.dataset.plaza === plaza;
           const esCreador = normalizarTexto(fila.dataset.creador) === vendedorNorm;
@@ -432,7 +435,9 @@
         }
       }
 
-      input.addEventListener('input', aplicarFiltros);
+      // Al teclear se espera un instante para no filtrar 2,500 filas por letra.
+      let esperaBusqueda = null;
+      input.addEventListener('input', () => { clearTimeout(esperaBusqueda); esperaBusqueda = setTimeout(aplicarFiltros, 180); });
       checksEstatus.forEach((c) => c.addEventListener('change', aplicarFiltros));
       selectPlaza.addEventListener('change', () => {
         poblarVendedores(selectPlaza.value);
