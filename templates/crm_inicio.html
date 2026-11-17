@@ -37,6 +37,7 @@
   .kpi.kpi-perdida { border-color: var(--peligro); background: linear-gradient(180deg, #fdecea, #fff 65%); }
   a.kpi-link { color: inherit; text-decoration: none; border-color: #f59e0b; background: linear-gradient(180deg, #fef3c7, #fff 65%); }
   a.kpi-link:hover { box-shadow: 0 4px 12px rgba(20,16,10,0.08); }
+  .kpi__desglose { font-size: .74rem; color: #6b7280; margin-top: .35rem; line-height: 1.3; }
   .kpi__etiqueta { font-size: 0.7rem; color: #666; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
   .kpi__valor { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
   .kpi__delta { font-size: 0.75rem; font-weight: 600; }
@@ -169,11 +170,13 @@
       <div class="kpi__etiqueta">Cotizaciones ganadas</div>
       <div class="kpi__valor">{{ kpis.ganadas }}</div>
       {{ delta(kpis.ganadas_delta, kpis.ganadas_anterior, etiqueta_anterior) }}
+      {% if kpis.ganadas %}<div class="kpi__desglose" title="Se cuentan por la fecha en que se ganaron, no por cuándo se crearon">{{ kpis.ganadas_creadas_periodo }} creadas en el periodo · {{ kpis.ganadas - kpis.ganadas_creadas_periodo }} de antes</div>{% endif %}
     </div>
     <div class="kpi kpi-perdida">
       <div class="kpi__etiqueta">Cotizaciones perdidas</div>
       <div class="kpi__valor">{{ kpis.perdidas }}</div>
       {{ delta(kpis.perdidas_delta, kpis.perdidas_anterior, etiqueta_anterior) }}
+      {% if kpis.perdidas %}<div class="kpi__desglose" title="Se cuentan por la fecha en que se marcaron perdidas, no por cuándo se crearon">{{ kpis.perdidas_creadas_periodo }} creadas en el periodo · {{ kpis.perdidas - kpis.perdidas_creadas_periodo }} de antes</div>{% endif %}
     </div>
     <div class="kpi">
       <div class="kpi__etiqueta">Bookings cerrados</div>

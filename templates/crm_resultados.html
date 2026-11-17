@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
 {% endblock %}
 {% block extra_style %}
+  .ledger__desglose { display: block; font-size: .72rem; color: #6b7280; margin-top: .3rem; line-height: 1.3; font-family: 'IBM Plex Sans', sans-serif; }
   :root{
     --paper:#F1F3F6; --surface:#FFFFFF; --surface-2:#E9EDF2;
     --ink:#161A20; --ink-soft:#56606E; --ink-faint:#93A0AF;
@@ -432,11 +433,13 @@
       <span class="ledger__label">Ganadas</span>
       <span class="ledger__value num">{{ kpis.ganadas }}</span>
       {{ delta(kpis.ganadas_delta, kpis.ganadas_anterior) }}
+      {% if kpis.ganadas %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se ganaron, no por cuándo se crearon">{{ kpis.ganadas_creadas_periodo }} creadas en el mes · {{ kpis.ganadas - kpis.ganadas_creadas_periodo }} de antes</span>{% endif %}
     </div>
     <div class="ledger__item">
       <span class="ledger__label">Perdidas</span>
       <span class="ledger__value num">{{ kpis.perdidas }}</span>
       {{ delta(kpis.perdidas_delta, kpis.perdidas_anterior, invertir=true) }}
+      {% if kpis.perdidas %}<span class="ledger__desglose" title="Se cuentan por la fecha en que se marcaron perdidas, no por cuándo se crearon">{{ kpis.perdidas_creadas_periodo }} creadas en el mes · {{ kpis.perdidas - kpis.perdidas_creadas_periodo }} de antes</span>{% endif %}
     </div>
     <div class="ledger__item">
       <span class="ledger__label">Booking</span>

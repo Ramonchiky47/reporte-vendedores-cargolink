@@ -41,6 +41,7 @@
   .buscador-fechas-cot input:invalid { border-color: #c0392b; }
   .btn-limpiar-fechas { padding: 0.42rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: #333; font: inherit; font-size: 0.82rem; cursor: pointer; }
   .btn-limpiar-fechas:hover { background: #f5f5f5; }
+  .nota-criterio-cot { margin-left: .5rem; color: #92400e; background: #fef3c7; border-radius: 6px; padding: .1rem .45rem; font-size: .8rem; }
   .buscador-fechas-cot input[type=date] { cursor: pointer; min-width: 9.5rem; }
   .atajos-fechas-cot { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
   .atajos-fechas-cot .btn-limpiar-fechas { padding: 0.32rem 0.6rem; font-size: 0.76rem; }
@@ -112,15 +113,19 @@
       <select id="filtro-plaza-cot">
         <option value="">Todas las plazas</option>
       </select>
+      <select id="filtro-criterio-cot" title="Quién cuenta la cotización: quien la creó (igual que Inicio y Resultados) o el vendedor del cliente">
+        <option value="creador">Creada por</option>
+        <option value="vendedor">Vendedor del cliente</option>
+      </select>
       <select id="filtro-vendedor-cot">
-        <option value="">Todos los vendedores</option>
+        <option value="">Todos</option>
       </select>
     </div>
   </div>
   <p class="aviso-rango-cot" id="aviso-rango-cot" hidden><b id="rango-cot-creador"></b><span id="rango-cot-fechas"> del <b id="rango-cot-desde"></b> al <b id="rango-cot-hasta"></b></span> (desde Inicio) · <a href="#" id="rango-cot-quitar">Quitar filtro</a></p>
 
   {% if cotizaciones %}
-  <p class="pista"><span id="contador-cotizaciones-visibles">{{ cotizaciones|length }}</span> de {{ cotizaciones|length }} cotización(es).</p>
+  <p class="pista"><span id="contador-cotizaciones-visibles">{{ cotizaciones|length }}</span> de {{ cotizaciones|length }} cotización(es).<span id="nota-criterio-cot" class="nota-criterio-cot" hidden></span></p>
   <div class="tabla-scroll">
     <table class="tabla-ordenable">
       <thead>
@@ -268,6 +273,15 @@
         const vendedor = fila.dataset.vendedor || '';
         if (vendedor && !plazaPorVendedor.has(vendedor)) plazaPorVendedor.set(vendedor, plaza);
       });
+      // Creadores (quien registró la cotización) con su plaza: la de su
+      // nombre como vendedor si lo es; si no, la de su primera cotización.
+      const plazaPorCreador = new Map();
+      filas.forEach((fila) => {
+        const creador = fila.dataset.creador || '';
+        if (creador && !plazaPorCreador.has(creador)) plazaPorCreador.set(creador, plazaPorVendedor.get(creador) || fila.dataset.plaza || '');
+      });
+      const selectCriterio = document.getElementById('filtro-criterio-cot');
+      const notaCriterio = document.getElementById('nota-criterio-cot');
       const plazasDisponibles = Array.from(new Set(Array.from(plazaPorVendedor.values()).filter(Boolean))).sort();
       plazasDisponibles.forEach((p) => {
         const opt = document.createElement('option');
@@ -278,11 +292,12 @@
 
       function poblarVendedores(plaza) {
         const actual = selectVendedor.value;
-        const vendedores = Array.from(plazaPorVendedor.entries())
+        const mapa = selectCriterio.value === 'creador' ? plazaPorCreador : plazaPorVendedor;
+        const vendedores = Array.from(mapa.entries())
           .filter(([, p]) => !plaza || p === plaza)
           .map(([v]) => v)
           .sort();
-        selectVendedor.innerHTML = '<option value="">Todos los vendedores</option>' +
+        selectVendedor.innerHTML = '<option value="">Todos</option>' +
           vendedores.map((v) => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join('');
         if (vendedores.includes(actual)) selectVendedor.value = actual;
       }
@@ -383,20 +398,38 @@
         const estatusActivos = new Set(checksEstatus.filter((c) => c.checked).map((c) => c.value));
         const plaza = selectPlaza.value;
         const vendedor = selectVendedor.value;
-        let visibles = 0;
+        const porCreador = selectCriterio.value === 'creador';
+        const vendedorNorm = normalizarTexto(vendedor);
+        let visibles = 0, otroCriterio = 0, otrosCreadores = 0;
         filas.forEach((fila) => {
           const coincideTexto = !termino || fila.textContent.toLowerCase().includes(termino);
           const coincideEstatus = estatusActivos.has(fila.dataset.estatus);
           const coincidePlaza = !plaza || fila.dataset.plaza === plaza;
-          const coincideVendedor = !vendedor || fila.dataset.vendedor === vendedor;
+          const esCreador = normalizarTexto(fila.dataset.creador) === vendedorNorm;
+          const esVendedor = fila.dataset.vendedor === vendedor;
+          const coincideVendedor = !vendedor || (porCreador ? esCreador : esVendedor);
           const fecha = fila.dataset.fecha || '';
           const coincideRango = (!rangoDesde || fecha >= rangoDesde) && (!rangoHasta || fecha <= rangoHasta);
           const coincideCreador = !creadorFiltro || normalizarTexto(fila.dataset.creador) === normalizarTexto(creadorFiltro);
-          const coincide = coincideTexto && coincideEstatus && coincidePlaza && coincideVendedor && coincideRango && coincideCreador;
+          const base = coincideTexto && coincideEstatus && coincidePlaza && coincideRango && coincideCreador;
+          const coincide = base && coincideVendedor;
           fila.hidden = !coincide;
           if (coincide) visibles += 1;
+          // Cifra con el otro criterio, para explicar diferencias con Inicio.
+          if (vendedor && base && (porCreador ? esVendedor : esCreador)) {
+            otroCriterio += 1;
+            if (porCreador && !esCreador) otrosCreadores += 1;
+          }
         });
         contador.textContent = visibles;
+        if (vendedor && otroCriterio !== visibles) {
+          notaCriterio.textContent = porCreador
+            ? `Como vendedor del cliente: ${otroCriterio}` + (otrosCreadores ? ` (${otrosCreadores} creadas por otras personas)` : '')
+            : `Creadas por ${vendedor}: ${otroCriterio} (así cuentan Inicio y Resultados)`;
+          notaCriterio.hidden = false;
+        } else {
+          notaCriterio.hidden = true;
+        }
       }
 
       input.addEventListener('input', aplicarFiltros);
@@ -406,6 +439,10 @@
         aplicarFiltros();
       });
       selectVendedor.addEventListener('change', aplicarFiltros);
+      selectCriterio.addEventListener('change', () => {
+        poblarVendedores(selectPlaza.value);
+        aplicarFiltros();
+      });
       aplicarFiltros();
     })();
   </script>

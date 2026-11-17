@@ -9684,6 +9684,11 @@ def construir_inicio_crm(
         "ganadas_anterior": len(ganadas_anterior),
         "perdidas": len(perdidas_periodo), "perdidas_delta": delta_pct(len(perdidas_periodo), len(perdidas_anterior)),
         "perdidas_anterior": len(perdidas_anterior),
+        # Desglose: cuántas de las ganadas/perdidas del periodo se CREARON en
+        # el periodo y cuántas antes — explica por qué "perdidas" puede ser
+        # mayor que "creadas" (se cuentan por cuándo se marcaron).
+        "ganadas_creadas_periodo": sum(1 for f in ganadas_periodo if fecha_inicio <= f["d"] <= fecha_fin),
+        "perdidas_creadas_periodo": sum(1 for f in perdidas_periodo if fecha_inicio <= f["d"] <= fecha_fin),
         "bookings": len(booking_periodo), "bookings_delta": delta_pct(len(booking_periodo), len(booking_anterior)),
         "bookings_anterior": len(booking_anterior),
         "venta": venta_periodo, "venta_delta": delta_pct(venta_periodo, venta_anterior), "venta_anterior": venta_anterior,
