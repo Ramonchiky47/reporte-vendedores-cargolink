@@ -41,6 +41,9 @@
   .buscador-fechas-cot input:invalid { border-color: #c0392b; }
   .btn-limpiar-fechas { padding: 0.42rem 0.8rem; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: #333; font: inherit; font-size: 0.82rem; cursor: pointer; }
   .btn-limpiar-fechas:hover { background: #f5f5f5; }
+  .buscador-fechas-cot input[type=date] { cursor: pointer; min-width: 9.5rem; }
+  .atajos-fechas-cot { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+  .atajos-fechas-cot .btn-limpiar-fechas { padding: 0.32rem 0.6rem; font-size: 0.76rem; }
   .filtro-estatus-cot { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
   .filtro-estatus-cot label {
     display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: #333; cursor: pointer;
@@ -86,6 +89,12 @@
         <label for="fecha-hasta-cot">al</label>
         <input type="date" id="fecha-hasta-cot">
         <button type="button" id="btn-limpiar-fechas-cot" class="btn-limpiar-fechas">Limpiar fechas</button>
+        <span class="atajos-fechas-cot">
+          <button type="button" class="btn-limpiar-fechas" data-rango="mes">Este mes</button>
+          <button type="button" class="btn-limpiar-fechas" data-rango="mes-pasado">Mes pasado</button>
+          <button type="button" class="btn-limpiar-fechas" data-rango="30">Últimos 30 días</button>
+          <button type="button" class="btn-limpiar-fechas" data-rango="anio">Este año</button>
+        </span>
       </div>
     </div>
     <a class="btn-agregar" href="{{ url_for('crm_cotizacion_nueva') }}">+ Agregar cotización</a>
@@ -324,6 +333,27 @@
       }
       inputDesde.addEventListener('change', aplicarRangoFechas);
       inputHasta.addEventListener('change', aplicarRangoFechas);
+      // Safari no abre el calendario al hacer clic en un campo de fecha
+      // vacío (hay que teclear día/mes/año): se abre explícitamente.
+      [inputDesde, inputHasta].forEach((inp) => {
+        inp.addEventListener('click', () => { try { if (inp.showPicker) inp.showPicker(); } catch (e) {} });
+      });
+      // Atajos: Este mes, Mes pasado, Últimos 30 días, Este año (hora centro).
+      document.querySelectorAll('.atajos-fechas-cot [data-rango]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const [a, m, d] = hoyCot.split('-').map(Number);
+          const iso = (y, mo, da) => new Date(Date.UTC(y, mo - 1, da)).toISOString().slice(0, 10);
+          let desde = hoyCot, hasta = hoyCot;
+          const r = b.getAttribute('data-rango');
+          if (r === 'mes') desde = iso(a, m, 1);
+          else if (r === 'mes-pasado') { desde = iso(a, m - 1, 1); hasta = iso(a, m, 0); }
+          else if (r === '30') desde = iso(a, m, d - 29);
+          else if (r === 'anio') desde = iso(a, 1, 1);
+          inputDesde.value = desde;
+          inputHasta.value = hasta;
+          aplicarRangoFechas();
+        });
+      });
       document.getElementById('btn-limpiar-fechas-cot').addEventListener('click', () => {
         inputDesde.value = ''; inputHasta.value = ''; inputHasta.min = '';
         rangoDesde = ''; rangoHasta = '';
